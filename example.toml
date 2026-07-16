@@ -1,0 +1,208 @@
+# GNIL Settings/Style schema v1.
+# Copy this file to ~/.config/gnil/settings.toml. GNIL reads no other TOML
+# configuration file, so a temporary XDG profile and the normal profile have
+# identical defaults.
+schema_version = 1
+
+[settings.general]
+avatar_image = ""
+
+[settings.appearance]
+thickness = 6.0
+corner_radius = 8.0
+
+[settings.appearance.theme]
+mode = "light"
+light = "Ling Light"
+dark = "Ling Dark"
+dynamic = false
+matugen_type = "scheme-tonal-spot"
+live_wallpaper_output = "auto"
+
+[settings.appearance.font]
+sans = "Rubik"
+mono = "CaskaydiaCove NF"
+clock = "Rubik"
+
+[settings.bar]
+persistent = false
+show_on_hover = false
+monitors = []
+top = ["launcher", "workspaces", "media"]
+center = ["clock"]
+bottom = ["tray", "volume", "brightness", "network", "battery"]
+
+[settings.bar.workspaces]
+shown = 5
+show_number = true
+show_icons = true
+
+[settings.bar.tray]
+blacklist = []
+favourites = []
+colourize = false
+
+[settings.delay]
+pill = 200
+
+[settings.wallpaper]
+enabled = true
+overview_enabled = true
+directory = ""
+directory_light = ""
+directory_dark = ""
+per_monitor_directories = false
+recursive = false
+set_for_all_monitors = true
+default = ""
+fill_mode = "crop"
+fill_color = "#000000"
+monitors = []
+transition_duration = 500.0
+edge_smoothness = 0.05
+
+[settings.wallpaper.video.all]
+enabled = true
+path = ""
+mute = true
+hardware_decode = true
+auto_pause = true
+keep_last_frame = false
+mpv_options = ""
+
+[settings.brightness]
+step = 5
+enforce_minimum = true
+enable_ddc_support = false
+
+[settings.network]
+wifi_enabled = true
+
+[settings.audio]
+step = 5
+overdrive = false
+cava = true
+visualizer = true
+mpris_blacklist = []
+preferred_player = ""
+
+[settings.launcher]
+max_shown = 7
+special_prefix = "@"
+action_prefix = ">"
+hidden_apps = []
+max_wallpapers = 5
+
+[settings.session]
+gif = ""
+drag_threshold = 30
+vim_keybinds = false
+
+[settings.calendar]
+show_events_card = true
+
+# Optional logical-pixel overrides. Omit either axis to keep that panel's
+# natural/dynamic size. The Settings UI writes the same tables.
+# [settings.panels.network]
+# width = 520
+# height = 640
+
+[settings.lock]
+recolour_logo = false
+fingerprint = true
+max_fingerprint_tries = 3
+
+[settings.notifications]
+enabled = true
+show_app_name = true
+show_actions = true
+collapse_on_dismiss = true
+clear_threshold = 0.3
+expand_threshold = 20
+group_preview_count = 3
+open_expanded = false
+
+[settings.system_monitor]
+enabled = true
+cpu_poll_seconds = 2.0
+gpu_poll_seconds = 0.0
+memory_poll_seconds = 2.0
+network_poll_seconds = 3.0
+disk_poll_seconds = 10.0
+external_monitor = ""
+
+[style.rounding]
+small = 9.0
+normal = 17.0
+large = 25.0
+full = 1000.0
+
+[style.spacing]
+small = 7.0
+smaller = 10.0
+normal = 12.0
+larger = 15.0
+large = 20.0
+
+[style.padding]
+small = 5.0
+smaller = 7.0
+normal = 10.0
+larger = 12.0
+large = 15.0
+
+[style.font]
+small = 11.0
+smaller = 12.0
+normal = 13.0
+larger = 15.0
+large = 18.0
+extra_large = 28.0
+
+[style.animation]
+small = 200
+normal = 400
+large = 600
+extra_large = 1000
+expressive_fast_spatial = 350
+expressive_default_spatial = 500
+expressive_effects = 200
+settings_save_debounce = 1000
+
+[style.widget]
+size = 33.0
+slider_width = 200.0
+
+[style.bar]
+inner_height = 33.0
+tray_menu_width = 300.0
+
+[style.shadow]
+opacity = 0.85
+blur = 1.0
+blur_max = 22.0
+horizontal_offset = 2.0
+vertical_offset = 3.0
+
+[style.launcher]
+item_width = 600.0
+item_height = 52.0
+wallpaper_width = 280.0
+wallpaper_height = 200.0
+
+[style.lock]
+height_mult = 0.7
+ratio = 1.7777777778
+center_width = 560.0
+
+[style.notifications]
+width = 400.0
+image = 40.0
+badge = 20.0
+
+[style.session]
+button = 80.0
+
+[style.settings]
+width = 1280.0
+height = 720.0

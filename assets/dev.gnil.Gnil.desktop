@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=GNIL
+Comment=Niri-native Wayland desktop shell
+Exec=gnil --daemon
+Icon=gnil
+Terminal=false
+Categories=Settings;DesktopSettings;
+StartupNotify=false
+Actions=Settings;
+
+[Desktop Action Settings]
+Name=Open Settings
+Exec=sh -c "gnil msg panel toggle settings || { gnil --daemon && gnil msg panel toggle settings; }"

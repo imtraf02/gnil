@@ -1,0 +1,179 @@
+#include "shell/bar/widget.h"
+
+#include "render/animation/animation_manager.h"
+#include "render/scene/glyph_node.h"
+#include "render/scene/node.h"
+#include "ui/palette.h"
+
+#include <algorithm>
+
+namespace {
+
+  constexpr float kCapsuleInkEpsilon = 0.5f;
+
+} // namespace
+
+Widget::~Widget() {
+  if (m_animations != nullptr) {
+    m_animations->cancelForOwner(this);
+  }
+}
+
+ColorSpec Widget::widgetForegroundOr(const ColorSpec& fallback) const noexcept {
+  // Per-widget `color` must win over bar/widget `capsule_foreground`, otherwise a bar-level
+  // capsule_foreground (e.g. on_primary) overrides explicit `color = primary` after layout.
+  if (m_widgetForeground.has_value()) {
+    return *m_widgetForeground;
+  }
+  const auto& spec = m_barCapsuleSpec;
+  if (spec.enabled && spec.foreground.has_value()) {
+    return *spec.foreground;
+  }
+  return fallback;
+}
+
+ColorSpec Widget::widgetIconColorOr(const ColorSpec& fallback) const noexcept {
+  // `icon_color` overrides; otherwise the icon inherits the full foreground chain
+  // (`color` → `capsule_foreground` → fallback), so a bare `color` still tints icons.
+  if (m_widgetIconColor.has_value()) {
+    return *m_widgetIconColor;
+  }
+  return widgetForegroundOr(fallback);
+}
+
+bool Widget::shouldShowBarCapsule() const {
+  if (!m_barCapsuleSpec.enabled) {
+    return false;
+  }
+  const Node* r = root();
+  if (r == nullptr || !r->visible()) {
+    return false;
+  }
+  if (r->width() <= kCapsuleInkEpsilon || r->height() <= kCapsuleInkEpsilon) {
+    return false;
+  }
+  // No scene children ⇒ nothing to frame (spacer bare node, empty tray flex, etc.).
+  if (r->children().empty()) {
+    return false;
+  }
+  return true;
+}
+
+float Widget::resolvedBarCapsuleRadius(float width, float height) const noexcept {
+  const float maxRadius = std::max(0.0f, std::min(width, height) * 0.5f);
+  if (!m_barCapsuleSpec.radius.has_value()) {
+    return maxRadius;
+  }
+  return std::clamp(*m_barCapsuleSpec.radius * m_contentScale, 0.0f, maxRadius);
+}
+
+void Widget::setBarCapsuleScene(Node* shell, Box* box) noexcept {
+  m_capsuleShell = shell;
+  m_capsuleBox = box;
+}
+
+void Widget::setNonInteractive(bool nonInteractive) noexcept {
+  m_nonInteractive = nonInteractive;
+  if (Node* r = root(); r != nullptr) {
+    r->setHitTestVisible(!m_nonInteractive);
+  }
+}
+
+float Widget::width() const noexcept { return root() ? root()->width() : 0.0f; }
+
+float Widget::height() const noexcept { return root() ? root()->height() : 0.0f; }
+
+std::unique_ptr<Node> Widget::releaseRoot() {
+  m_rootPtr = m_root.get();
+  return std::move(m_root);
+}
+
+void Widget::setRoot(std::unique_ptr<Node> root) {
+  m_root = std::move(root);
+  if (m_root != nullptr) {
+    m_root->setHitTestVisible(!m_nonInteractive);
+  }
+}
+
+void Widget::setAnimationManager(AnimationManager* mgr) noexcept { m_animations = mgr; }
+
+void Widget::setUpdateCallback(UpdateCallback callback) { m_updateCallback = std::move(callback); }
+
+void Widget::setRedrawCallback(RedrawCallback callback) { m_redrawCallback = std::move(callback); }
+
+void Widget::setFrameTickRequestCallback(FrameTickRequestCallback callback) {
+  m_frameTickRequestCallback = std::move(callback);
+}
+
+void Widget::setPanelToggleCallback(PanelToggleCallback callback) { m_panelToggleCallback = std::move(callback); }
+
+void Widget::setPanelActive(bool active, bool animate) {
+  if (m_panelActive == active) {
+    return;
+  }
+  m_panelActive = active;
+  const float target = active ? 1.0f : 0.0f;
+  const auto apply = [this, target, animate](auto&& self, Node* node) -> void {
+    if (node == nullptr) {
+      return;
+    }
+    if (node->type() == NodeType::Glyph) {
+      auto* glyph = static_cast<GlyphNode*>(node);
+      if (!animate || m_animations == nullptr) {
+        glyph->setFill(target);
+      } else {
+        m_animations->cancelForOwner(glyph);
+        m_animations->animate(
+            glyph->fill(), target, 180.0f, Easing::EaseOutCubic, [glyph](float value) { glyph->setFill(value); }, {},
+            glyph
+        );
+      }
+    }
+    for (const auto& child : node->children()) {
+      self(self, child.get());
+    }
+  };
+  apply(apply, root());
+  requestFrameTick();
+  requestRedraw();
+}
+
+void Widget::requestUpdate() {
+  if (m_updateCallback) {
+    m_updateCallback();
+  }
+}
+
+void Widget::requestRedraw() {
+  if (m_redrawCallback) {
+    m_redrawCallback();
+  }
+}
+
+void Widget::requestFrameTick() {
+  if (m_frameTickRequestCallback) {
+    m_frameTickRequestCallback();
+  }
+}
+
+void Widget::requestPanelToggle(
+    std::string_view panelId, std::string_view context, std::optional<float> anchorSurfaceX,
+    std::optional<float> anchorSurfaceY
+) {
+  if (m_panelToggleCallback) {
+    // Bar popouts should follow their trigger, not whichever pixel happened to
+    // receive the click.  This also keeps keyboard-triggered opens aligned with
+    // the same icon and makes switching between rail panels feel spatially
+    // continuous.
+    if (!anchorSurfaceX.has_value() && !anchorSurfaceY.has_value()) {
+      if (const Node* trigger = root(); trigger != nullptr) {
+        float triggerX = 0.0f;
+        float triggerY = 0.0f;
+        Node::absolutePosition(trigger, triggerX, triggerY);
+        anchorSurfaceX = triggerX + trigger->width() * 0.5f;
+        anchorSurfaceY = triggerY + trigger->height() * 0.5f;
+      }
+    }
+    m_panelToggleCallback(panelId, context, anchorSurfaceX, anchorSurfaceY);
+  }
+}

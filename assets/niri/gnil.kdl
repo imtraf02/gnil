@@ -1,0 +1,22 @@
+// GNIL bindings for Niri. Include this file at top level in config.kdl:
+//
+//   include "/etc/gnil/niri.kdl"
+//
+// NixOS installs that path when programs.gnil.enable = true. Home Manager users
+// may instead include ~/.config/gnil/niri/gnil.kdl. Edit this copied snippet if
+// any shortcut conflicts with your existing Niri bindings.
+
+binds {
+    Mod+Space repeat=false hotkey-overlay-title="GNIL launcher" {
+        spawn "gnil" "msg" "panel" "toggle" "launcher";
+    }
+    Mod+N repeat=false hotkey-overlay-title="GNIL notifications" {
+        spawn "gnil" "msg" "panel" "toggle" "notifications";
+    }
+    Mod+Shift+S repeat=false hotkey-overlay-title="GNIL settings" {
+        spawn "gnil" "msg" "panel" "toggle" "settings";
+    }
+    Mod+Escape repeat=false hotkey-overlay-title="GNIL session" {
+        spawn "gnil" "msg" "panel" "toggle" "session";
+    }
+}

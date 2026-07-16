@@ -1,0 +1,130 @@
+#pragma once
+
+#include "render/core/render_styles.h"
+
+#include <cstdint>
+#include <string_view>
+
+enum class AttachedRevealDirection : std::uint8_t {
+  Down,
+  Up,
+  Right,
+  Left,
+};
+
+namespace attached_panel {
+
+  [[nodiscard]] inline CornerShapes cornerShapes(std::string_view barPosition) {
+    if (barPosition == "bottom") {
+      return CornerShapes{
+          .tl = CornerShape::Convex,
+          .tr = CornerShape::Convex,
+          .br = CornerShape::Concave,
+          .bl = CornerShape::Concave,
+      };
+    }
+    if (barPosition == "left") {
+      return CornerShapes{
+          .tl = CornerShape::Concave,
+          .tr = CornerShape::Convex,
+          .br = CornerShape::Convex,
+          .bl = CornerShape::Concave,
+      };
+    }
+    if (barPosition == "right") {
+      return CornerShapes{
+          .tl = CornerShape::Convex,
+          .tr = CornerShape::Concave,
+          .br = CornerShape::Concave,
+          .bl = CornerShape::Convex,
+      };
+    }
+    // top (default)
+    return CornerShapes{
+        .tl = CornerShape::Concave,
+        .tr = CornerShape::Concave,
+        .br = CornerShape::Convex,
+        .bl = CornerShape::Convex,
+    };
+  }
+
+  [[nodiscard]] inline CornerShapes
+  cornerShapes(std::string_view barPosition, bool joinsStartFrame, bool joinsEndFrame) {
+    CornerShapes shapes = cornerShapes(barPosition);
+    if (barPosition == "left") {
+      if (joinsStartFrame) {
+        shapes.tr = CornerShape::Concave;
+      }
+      if (joinsEndFrame) {
+        shapes.br = CornerShape::Concave;
+      }
+    } else if (barPosition == "right") {
+      if (joinsStartFrame) {
+        shapes.tl = CornerShape::Concave;
+      }
+      if (joinsEndFrame) {
+        shapes.bl = CornerShape::Concave;
+      }
+    } else if (barPosition == "bottom") {
+      if (joinsStartFrame) {
+        shapes.tl = CornerShape::Concave;
+      }
+      if (joinsEndFrame) {
+        shapes.tr = CornerShape::Concave;
+      }
+    } else {
+      if (joinsStartFrame) {
+        shapes.bl = CornerShape::Concave;
+      }
+      if (joinsEndFrame) {
+        shapes.br = CornerShape::Concave;
+      }
+    }
+    return shapes;
+  }
+
+  [[nodiscard]] inline RectInsets logicalInset(std::string_view barPosition, float radius) {
+    const bool vertical = (barPosition == "left" || barPosition == "right");
+    if (vertical) {
+      return RectInsets{
+          .left = 0.0f,
+          .top = radius,
+          .right = 0.0f,
+          .bottom = radius,
+      };
+    }
+    return RectInsets{
+        .left = radius,
+        .top = 0.0f,
+        .right = radius,
+        .bottom = 0.0f,
+    };
+  }
+
+  [[nodiscard]] inline AttachedRevealDirection revealDirection(std::string_view barPosition) {
+    if (barPosition == "bottom") {
+      return AttachedRevealDirection::Up;
+    }
+    if (barPosition == "left") {
+      return AttachedRevealDirection::Right;
+    }
+    if (barPosition == "right") {
+      return AttachedRevealDirection::Left;
+    }
+    return AttachedRevealDirection::Down;
+  }
+
+  [[nodiscard]] inline Radii cornerRadii(std::string_view barPosition, float radius) {
+    if (barPosition == "bottom") {
+      return Radii{0.0f, 0.0f, radius, radius};
+    }
+    if (barPosition == "left") {
+      return Radii{0.0f, radius, radius, 0.0f};
+    }
+    if (barPosition == "right") {
+      return Radii{radius, 0.0f, 0.0f, radius};
+    }
+    return Radii{radius, radius, 0.0f, 0.0f};
+  }
+
+} // namespace attached_panel

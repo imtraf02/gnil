@@ -1,0 +1,8 @@
+Material Symbols Rounded variable font
+Source: https://github.com/google/material-design-icons
+Commit: 819d78680a849ceef4c78f863d8753e3160b7c89
+Font: variablefont/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf
+Codepoints: variablefont/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].codepoints
+Font SHA-256: 82df1d78ab3e447c7e22957747d91784b675f7a85926016215b1ee7bffc05a5b
+Codepoints SHA-256: da2ca2773eaeebe793f6fcca4971a4975596ab4e04f133bc4e81641eac5ce550
+License SHA-256: 58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd

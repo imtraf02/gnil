@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>GNIL</title>
+  <rect width="256" height="256" rx="64" fill="#17151f"/>
+  <path d="M128 48a80 80 0 1 0 0 160c31.2 0 56-14.6 70-36.8V128h-70v32h35.8c-8.7 10.1-21.6 16-35.8 16a48 48 0 1 1 42.1-71.1l27.9-18.6A79.7 79.7 0 0 0 128 48Z" fill="#f3edf7"/>
+  <path d="M194 57v62" fill="none" stroke="#b9c4ff" stroke-linecap="round" stroke-width="18"/>
+  <circle cx="194" cy="143" r="10" fill="#b9c4ff"/>
+</svg>
