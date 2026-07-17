@@ -586,7 +586,7 @@ void DesktopWidgetsEditor::prepareFrame(OverlaySurface& surface, bool needsUpdat
   }
 
   if (needsLayout && surface.sceneRoot != nullptr) {
-    // Re-run each widget's own layout so async content (e.g. a plugin widget's
+    // Re-run each widget's own layout so async content (e.g. a widget's
     // first render() arriving after view creation) reconciles and the view
     // tracks the widget's natural size.
     bool intrinsicsChanged = false;

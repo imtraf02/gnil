@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   // Color generation strategies. The first nine are Material Design 3 schemes
   // (TonalPalette + tone tables, built on top of material_color_utilities).
@@ -47,4 +47,4 @@ namespace noctalia::theme {
   // String form used in CLI / JSON output.
   std::string_view schemeToString(Scheme s);
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

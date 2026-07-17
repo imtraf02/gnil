@@ -5,10 +5,8 @@
 #include "core/log.h"
 #include "core/scoped_timer.h"
 #include "ipc/ipc_service.h"
-#include "net/http_client.h"
 #include "system/day_night_schedule.h"
 #include "theme/builtin_palettes.h"
-#include "theme/community_palettes.h"
 #include "theme/custom_palettes.h"
 #include "theme/fixed_palette.h"
 #include "theme/image_loader.h"
@@ -16,7 +14,6 @@
 #include "theme/palette_transform.h"
 #include "theme/scheme.h"
 #include "ui/app_icon_colorization.h"
-#include "util/checksum.h"
 #include "util/string_utils.h"
 
 #include <cctype>
@@ -31,7 +28,7 @@
 #include <string_view>
 #include <system_error>
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   namespace {
 
@@ -60,8 +57,8 @@ namespace noctalia::theme {
     ResolvedTheme resolveBuiltin(const ThemeConfig& cfg, std::string_view mode) {
       const auto* palette = findBuiltinPalette(cfg.builtinPalette);
       if (palette == nullptr) {
-        kLog.warn("unknown builtin palette '{}', falling back to Noctalia", cfg.builtinPalette);
-        palette = findBuiltinPalette("Noctalia");
+        kLog.warn("unknown builtin palette '{}', falling back to GNIL", cfg.builtinPalette);
+        palette = findBuiltinPalette("GNIL");
       }
       const GeneratedPalette generated = expandBuiltinPalette(*palette);
       return {
@@ -154,12 +151,12 @@ namespace noctalia::theme {
       return readTerminalJson(*it);
     }
 
-    struct ParsedCommunityPalette {
+    struct ParsedFixedPalette {
       FixedPaletteMode dark;
       FixedPaletteMode light;
     };
 
-    std::optional<ParsedCommunityPalette> parseCommunityPaletteJson(const std::filesystem::path& path) {
+    std::optional<ParsedFixedPalette> parseFixedPaletteJson(const std::filesystem::path& path) {
       try {
         std::ifstream in(path);
         if (!in)
@@ -169,7 +166,7 @@ namespace noctalia::theme {
         auto root = nlohmann::json::parse(buf.str());
         if (!root.is_object())
           return std::nullopt;
-        ParsedCommunityPalette out{};
+        ParsedFixedPalette out{};
         if (auto it = root.find("dark"); it != root.end() && it->is_object()) {
           out.dark.palette = readPaletteJson(*it);
           if (auto terminal = readModeTerminalJson(*it)) {
@@ -192,14 +189,14 @@ namespace noctalia::theme {
         }
         return out;
       } catch (const std::exception& e) {
-        kLog.warn("failed to parse community palette '{}': {}", path.string(), e.what());
+        kLog.warn("failed to parse custom palette '{}': {}", path.string(), e.what());
         return std::nullopt;
       }
     }
 
-    ResolvedTheme makeResolvedFromParsed(const ParsedCommunityPalette& parsed, std::string_view mode) {
+    ResolvedTheme makeResolvedFromParsed(const ParsedFixedPalette& parsed, std::string_view mode) {
       BuiltinPalette bp{
-          .name = "community",
+          .name = "custom",
           .dark = parsed.dark,
           .light = parsed.light,
       };
@@ -217,8 +214,6 @@ namespace noctalia::theme {
         return theme.builtinPalette;
       case PaletteSource::Wallpaper:
         return theme.wallpaperScheme;
-      case PaletteSource::Community:
-        return theme.communityPalette;
       case PaletteSource::Custom:
         return theme.customPalette;
       }
@@ -238,13 +233,13 @@ namespace noctalia::theme {
     ) {
       const auto tokens = StringUtils::splitWhitespace(args);
       if (tokens.size() < 2) {
-        errorOut = "error: expected <builtin|wallpaper|community|custom> <name-or-scheme>\n";
+        errorOut = "error: expected <builtin|wallpaper|custom> <name-or-scheme>\n";
         return false;
       }
 
       const auto source = enumFromKey(kPaletteSources, tokens.front());
       if (!source.has_value()) {
-        errorOut = "error: unknown palette source (expected builtin, wallpaper, community, or custom)\n";
+        errorOut = "error: unknown palette source (expected builtin, wallpaper, or custom)\n";
         return false;
       }
 
@@ -268,8 +263,7 @@ namespace noctalia::theme {
 
   } // namespace
 
-  ThemeService::ThemeService(ConfigService& config, HttpClient& httpClient)
-      : m_config(config), m_httpClient(httpClient) {}
+  ThemeService::ThemeService(ConfigService& config) : m_config(config) {}
 
   void ThemeService::apply() { resolveAndSet(/*animate=*/false); }
 
@@ -374,35 +368,6 @@ namespace noctalia::theme {
     m_resolvedCallback(generated, mode);
   }
 
-  void ThemeService::startCommunityDownload(const std::string& name) {
-    if (m_inflightCommunityName == name) {
-      return;
-    }
-    m_inflightCommunityName = name;
-    const auto cachePath = communityPaletteCachePath(name);
-    std::error_code ec;
-    std::filesystem::create_directories(cachePath.parent_path(), ec);
-    const std::string url = communityPaletteDownloadUrl(name);
-    kLog.info("fetching community palette '{}' from {}", name, url);
-    m_httpClient.download(url, cachePath, [this, name, cachePath](bool success) {
-      if (m_inflightCommunityName == name) {
-        m_inflightCommunityName.clear();
-      }
-      if (!success) {
-        kLog.warn("community palette download failed for '{}'", name);
-        return;
-      }
-      // Validate the just-downloaded file. If it parses, trigger a re-resolve.
-      if (!parseCommunityPaletteJson(cachePath).has_value()) {
-        kLog.warn("community palette '{}' downloaded but failed to parse; removing cache", name);
-        std::error_code rmEc;
-        std::filesystem::remove(cachePath, rmEc);
-        return;
-      }
-      resolveAndSet(/*animate=*/true);
-    });
-  }
-
   std::optional<GeneratedPalette>
   ThemeService::resolveWallpaperGenerated(const ThemeConfig& cfg, const std::string& wallpaperPath) {
     if (wallpaperPath.empty()) {
@@ -498,7 +463,7 @@ namespace noctalia::theme {
     if (cfg.source == PaletteSource::Custom && !cfg.customPalette.empty()) {
       const auto path = customPalettePath(cfg.customPalette);
       if (std::filesystem::exists(path)) {
-        if (auto parsed = parseCommunityPaletteJson(path)) {
+        if (auto parsed = parseFixedPaletteJson(path)) {
           resolved = makeResolvedFromParsed(*parsed, mode);
         }
       }
@@ -524,34 +489,13 @@ namespace noctalia::theme {
             .mode = mode,
         };
       }
-    } else if (cfg.source == PaletteSource::Community && !cfg.communityPalette.empty()) {
-      const auto cachePath = communityPaletteCachePath(cfg.communityPalette);
-      bool stale = true;
-      if (std::filesystem::exists(cachePath)) {
-        if (auto parsed = parseCommunityPaletteJson(cachePath)) {
-          resolved = makeResolvedFromParsed(*parsed, mode);
-          // Re-fetch when the catalog advertises a different checksum than the
-          // cached copy. An empty catalog md5 means "freshness unknown" — keep
-          // the cached palette rather than re-downloading on every resolve.
-          const std::string expectedMd5 = communityPaletteCatalogMd5(cfg.communityPalette);
-          stale = !expectedMd5.empty() && util::fileMd5Hex(cachePath) != StringUtils::toLower(expectedMd5);
-        } else {
-          std::error_code rmEc;
-          std::filesystem::remove(cachePath, rmEc);
-        }
-      }
-      // A stale-but-valid cache still resolves above, so the fresh copy fades in
-      // via the download callback instead of flashing the builtin palette.
-      if (stale) {
-        startCommunityDownload(cfg.communityPalette);
-      }
     }
     if (!resolved.has_value()) {
       resolved = resolveBuiltin(cfg, mode);
     }
 
     // Every source funnels through here, so the transform covers wallpaper-generated,
-    // builtin, community and custom palettes alike. It runs after the wallpaper cache,
+    // builtin and custom palettes alike. It runs after the wallpaper cache,
     // which keeps storing the untransformed palette — toggling this cannot serve a stale one.
     if (cfg.pureBlackDark) {
       applyPureBlackDark(resolved->generated);
@@ -739,7 +683,7 @@ namespace noctalia::theme {
         "color-scheme-get",
         [this](const std::string&) -> std::string { return formatColorSchemeLine(m_config.config().theme); },
         "color-scheme-get",
-        "Print active color scheme: <source> <name> (source is builtin, wallpaper, community, or custom)"
+        "Print active color scheme: <source> <name> (source is builtin, wallpaper, or custom)"
     );
     ipc.registerHandler(
         "color-scheme-set",
@@ -756,9 +700,9 @@ namespace noctalia::theme {
           return "ok\n";
         },
         "color-scheme-set <source> <name>",
-        "Set palette source and selection in settings.toml (builtin name, wallpaper generator scheme, community id, or "
-        "custom scheme folder name)"
+        "Set palette source and selection in settings.toml (builtin name, wallpaper generator scheme, or custom "
+        "scheme folder name)"
     );
   }
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

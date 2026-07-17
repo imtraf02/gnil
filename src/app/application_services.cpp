@@ -44,7 +44,6 @@
 #include "launcher/dmenu_provider.h"
 #include "launcher/emoji_provider.h"
 #include "launcher/math_provider.h"
-#include "launcher/plugin_launcher_provider.h"
 #include "launcher/session_provider.h"
 #include "launcher/wallpaper_provider.h"
 #include "launcher/window_provider.h"
@@ -59,18 +58,10 @@
 #include "render/backend/render_backend.h"
 #include "render/core/texture_manager.h"
 #include "render/text/font_weight_catalog.h"
-#include "scripting/plugin_ipc.h"
-#include "scripting/plugin_manifest.h"
-#include "scripting/plugin_panel_shell.h"
-#include "scripting/plugin_registry.h"
-#include "scripting/plugin_runtime_context.h"
-#include "scripting/script_runtime.h"
 #include "shell/clipboard/clipboard_panel.h"
 #include "shell/clipboard/clipboard_paste.h"
 #include "shell/control_center/content_panel.h"
-#include "shell/greeter/greeter_appearance_sync.h"
 #include "shell/launcher/launcher_panel.h"
-#include "shell/panel/plugin_panel.h"
 #include "shell/polkit/polkit_panel.h"
 #include "shell/session/session_ipc.h"
 #include "shell/session/session_panel.h"
@@ -113,7 +104,6 @@ namespace {
 
   void signal_handler(int signum) {
     if (signum == SIGTERM || signum == SIGINT) {
-      scripting::ScriptRuntime::setShutdownSignal(signum);
       Application::s_shutdownRequested = true;
     }
   }
@@ -189,7 +179,7 @@ void Application::syncNotificationDaemon() {
         m_notificationPollSource.setDbusService(nullptr);
         m_notificationDaemonInitFailed = true;
         m_notificationManager.addInternal(
-            "Noctalia", i18n::tr("notifications.internal.dbus-disabled"), kdeError.what(), Urgency::Low
+            "GNIL", i18n::tr("notifications.internal.dbus-disabled"), kdeError.what(), Urgency::Low
         );
         return;
       }
@@ -200,7 +190,7 @@ void Application::syncNotificationDaemon() {
     m_notificationPollSource.setDbusService(nullptr);
     m_notificationDaemonInitFailed = true;
     m_notificationManager.addInternal(
-        "Noctalia", i18n::tr("notifications.internal.dbus-disabled"), ownerError.what(), Urgency::Low
+        "GNIL", i18n::tr("notifications.internal.dbus-disabled"), ownerError.what(), Urgency::Low
     );
   }
 }
@@ -272,7 +262,7 @@ void Application::syncPolkitAgent() {
       DeferredCall::callLater([this, error]() {
         if (polkit_session::isNoSessionForPidError(error)) {
           notify::error(
-              "Noctalia", i18n::tr("notifications.internal.polkit-agent"),
+              "GNIL", i18n::tr("notifications.internal.polkit-agent"),
               i18n::tr("notifications.internal.polkit-no-session")
           );
         }
@@ -384,97 +374,29 @@ void Application::initStyleThemeAndWayland() {
   });
   m_configService.addReloadCallback([this]() { syncClipboardService(); });
   m_configService.addReloadCallback([this]() { syncScreenTimeService(); });
-  m_communityPaletteService.setReadyCallback([this]() {
-    // A refreshed catalog may carry a new md5 for the selected palette; re-resolve
-    // so a stale cached palette gets re-downloaded and faded in.
-    m_themeService.onConfigReload();
-    m_settingsWindow.onExternalOptionsChanged();
-  });
-  m_communityPaletteService.sync();
-  m_configService.addReloadCallback(
-      [this]() {
-        if (m_configService.lastChange().theme) {
-          m_communityPaletteService.sync();
-        }
-      },
-      "community-palette-sync"
-  );
   // The English catalog has no service dependencies and must be ready before
   // any UI construction reads a keyed string.
   i18n::Service::instance().init();
 
   // Apply theme before any UI constructs palette-dependent scene nodes.
-  auto syncScriptApiWallpaperDirectory = [this]() {
-    const ThemeMode mode = m_themeService.resolvedMode() == "light" ? ThemeMode::Light : ThemeMode::Dark;
-    m_scriptApi.setWallpaperDirectory(
-        wallpaper::resolveGlobalWallpaperDirectory(m_configService.config().wallpaper, mode)
-    );
-  };
-
-  // Publish the connected outputs to plugin scripts (noctalia.outputs()), refreshed on every
-  // output change so the worker-thread binding reads a race-free copy.
-  m_syncScriptApiOutputs = [this]() {
-    std::vector<scripting::ScriptOutputInfo> infos;
-    wl_output* const focused = m_compositorPlatform.preferredInteractiveOutput();
-    for (const auto& out : m_wayland.outputs()) {
-      if (!out.done || out.connectorName.empty()) {
-        continue;
-      }
-      infos.push_back({
-          .name = out.connectorName,
-          .description = out.description,
-          .width = out.effectiveLogicalWidth(),
-          .height = out.effectiveLogicalHeight(),
-          .x = out.logicalX,
-          .y = out.logicalY,
-          .scale = out.scale,
-          .focused = out.output == focused,
-      });
-    }
-    m_scriptApi.setOutputs(std::move(infos));
-  };
-  m_syncScriptApiOutputs();
-
-  // Keep the scripting hook for third-party external wallpaper providers.
-  // GNIL's own video wallpaper controller no longer goes through this path.
-  m_scriptApi.setWallpaperEnabledHook([this](const std::string& connector, bool enabled) {
-    m_wallpaper.setOutputExternallyManaged(connector, !enabled);
-  });
-
-  // Let a plugin apply a wallpaper image (e.g. wallhaven)
-  m_scriptApi.setWallpaperHook([this](const std::string& connector, const std::string& path) {
-    const std::optional<std::string> target = connector.empty() ? std::nullopt : std::optional<std::string>{connector};
-    if (!m_wallpaper.applyWallpaperImage(target, path)) {
-      kLog.warn("plugin setWallpaper failed for \"{}\"", path);
-    }
-  });
-
-  // Let a plugin toggle one of its own panels.
-  m_scriptApi.setTogglePanelHook([this](const std::string& panelId) { m_panelManager.togglePanel(panelId); });
-
-  m_themeService.setResolvedCallback([this, lastResolvedThemeMode = std::optional<std::string>{},
-                                      syncScriptApiWallpaperDirectory](
-                                         const noctalia::theme::GeneratedPalette& generated, std::string_view mode
+  m_themeService.setResolvedCallback([this, lastResolvedThemeMode = std::optional<std::string>{}](
+                                         const gnil::theme::GeneratedPalette& generated, std::string_view mode
                                      ) mutable {
     const std::string resolvedMode(mode);
     const std::string configuredMode(enumToKey(kThemeModes, m_themeService.configuredMode()));
-    m_scriptApi.setDarkMode(resolvedMode != "light");
-    syncScriptApiWallpaperDirectory();
     m_hookManager.fire(HookKind::ColorsChanged);
     if (lastResolvedThemeMode.has_value() && *lastResolvedThemeMode != resolvedMode) {
       m_hookManager.fire(
           HookKind::ThemeModeChanged,
-          {{"NOCTALIA_THEME_MODE", resolvedMode},
-           {"NOCTALIA_THEME_MODE_PREVIOUS", *lastResolvedThemeMode},
-           {"NOCTALIA_THEME_MODE_CONFIGURED", configuredMode}}
+          {{"GNIL_THEME_MODE", resolvedMode},
+           {"GNIL_THEME_MODE_PREVIOUS", *lastResolvedThemeMode},
+           {"GNIL_THEME_MODE_CONFIGURED", configuredMode}}
       );
     }
     lastResolvedThemeMode = resolvedMode;
   });
   m_themeService.apply();
-  syncScriptApiWallpaperDirectory();
   m_configService.addReloadCallback([this]() { m_themeService.onConfigReload(); }, "theme");
-  m_configService.addReloadCallback(syncScriptApiWallpaperDirectory, "wallpaper");
   {
     static ShellAppIconColorizationSettings lastAppIconColorization =
         shellAppIconColorizationSettings(m_configService.config().shell);
@@ -559,23 +481,17 @@ void Application::initWaylandCallbacks() {
   auto shouldRefreshControlCenter = [this]() { return m_panelManager.isOpenPanel("control-center"); };
 
   m_wayland.setOutputChangeCallback([this]() {
-    if (m_syncScriptApiOutputs) {
-      m_syncScriptApiOutputs();
-    }
     if (m_brightnessService != nullptr) {
       m_brightnessService->onOutputsChanged();
     }
     m_gammaService.onOutputsChanged();
-    m_pluginServiceHost.onOutputChange();
     reconcileOutputSurfaces();
   });
   m_clipboardService.setChangeCallback([this]() {
-    m_scriptApi.setClipboardText(m_clipboardService.clipboardText());
     if (m_panelManager.isOpenPanel("clipboard")) {
       m_panelManager.refresh();
     }
   });
-  m_scriptApi.setClipboardText(m_clipboardService.clipboardText());
   m_compositorPlatform.setWorkspaceAlertService(&m_workspaceAlertService);
   m_compositorPlatform.setWorkspaceChangeCallback([this]() {
     // Clear alerts for the workspace the user just switched to. Limit to the
@@ -684,10 +600,9 @@ void Application::initAuxServicesAndHooks() {
     if (m_panelManager.isOpenPanel("control-center")) {
       m_panelManager.refresh();
     }
-    scheduleGreeterAutoSync();
     const auto fireWallpaperChangedHook = [this](const std::string& path, const std::string& connector) {
       m_hookManager.fire(
-          HookKind::WallpaperChanged, {{"NOCTALIA_WALLPAPER_PATH", path}, {"NOCTALIA_WALLPAPER_CONNECTOR", connector}}
+          HookKind::WallpaperChanged, {{"GNIL_WALLPAPER_PATH", path}, {"GNIL_WALLPAPER_CONNECTOR", connector}}
       );
     };
     if (wallpaperChanges.empty()) {
@@ -724,7 +639,6 @@ void Application::initAuxServicesAndHooks() {
     m_lockScreen.onThemeChanged();
     m_backdrop.onThemeChanged();
     m_settingsWindow.onThemeChanged();
-    scheduleGreeterAutoSync();
   });
 
   if (const auto distro = DistroDetector::detect(); distro.has_value()) {
@@ -1136,14 +1050,14 @@ void Application::initSessionBusServices() {
   } catch (const std::exception& e) {
     kLog.warn("dbus disabled: {}", e.what());
     m_notificationManager.addInternal(
-        "Noctalia", i18n::tr("notifications.internal.session-bus-unavailable"), e.what(), Urgency::Low
+        "GNIL", i18n::tr("notifications.internal.session-bus-unavailable"), e.what(), Urgency::Low
     );
   }
 
   if (m_bus != nullptr) {
     try {
       m_debugService = std::make_unique<DebugService>(*m_bus, m_notificationManager);
-      kLog.info("debug service active on dev.noctalia.Debug");
+      kLog.info("debug service active on io.github.imtraf02.gnil.Debug");
     } catch (const std::exception& e) {
       kLog.warn("debug service disabled: {}", e.what());
       m_debugService.reset();
@@ -1172,7 +1086,7 @@ void Application::initSessionBusServices() {
       kLog.warn("mpris disabled: {}", e.what());
       m_mprisService.reset();
       m_notificationManager.addInternal(
-          "Noctalia", i18n::tr("notifications.internal.mpris-disabled"), e.what(), Urgency::Low
+          "GNIL", i18n::tr("notifications.internal.mpris-disabled"), e.what(), Urgency::Low
       );
     }
 

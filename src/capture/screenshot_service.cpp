@@ -40,7 +40,7 @@
 namespace {
 
   constexpr Logger kLog("screenshot");
-  constexpr const char* kScreenshotPathEnv = "NOCTALIA_SCREENSHOT_PATH";
+  constexpr const char* kScreenshotPathEnv = "GNIL_SCREENSHOT_PATH";
 
   [[nodiscard]] std::string defaultFilenamePattern() { return "screenshot_%Y%m%d_%H%M%S"; }
 
@@ -1398,9 +1398,9 @@ ScreenshotService::makeScreenshotPath(const OutputOptions& options, const std::s
 }
 
 void ScreenshotService::notifySaved(const std::filesystem::path& path) {
-  m_notifications.addInternal("Noctalia", "Screenshot saved", path.string());
+  m_notifications.addInternal("GNIL", "Screenshot saved", path.string());
 }
 
 void ScreenshotService::notifyError(const std::string& message) {
-  m_notifications.addInternal("Noctalia", "Screenshot failed", message, Urgency::Critical);
+  m_notifications.addInternal("GNIL", "Screenshot failed", message, Urgency::Critical);
 }

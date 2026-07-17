@@ -1,6 +1,6 @@
 #pragma once
 
-namespace noctalia::sysmon {
+namespace gnil::sysmon {
 
   enum class Stat { CpuUsage, CpuTemp, GpuTemp, GpuUsage, GpuVram, RamUsed, RamPct, SwapPct, DiskPct, NetRx, NetTx };
 
@@ -39,4 +39,4 @@ namespace noctalia::sysmon {
     return ThresholdProfile{};
   }
 
-} // namespace noctalia::sysmon
+} // namespace gnil::sysmon

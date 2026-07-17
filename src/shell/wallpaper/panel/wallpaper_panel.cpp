@@ -15,7 +15,6 @@
 #include "shell/wallpaper/wallpaper_paths.h"
 #include "shell/wallpaper/wallpaper.h"
 #include "theme/builtin_palettes.h"
-#include "theme/community_palettes.h"
 #include "theme/custom_palettes.h"
 #include "ui/builders.h"
 #include "ui/dialogs/color_picker_dialog.h"
@@ -128,7 +127,6 @@ namespace {
     favorite.themeMode = theme.mode;
     favorite.paletteSource = theme.source;
     favorite.builtinPalette = theme.builtinPalette;
-    favorite.communityPalette = theme.communityPalette;
     favorite.customPalette = theme.customPalette;
     favorite.wallpaperScheme = theme.wallpaperScheme;
     return favorite;
@@ -140,8 +138,6 @@ namespace {
       return theme.builtinPalette;
     case PaletteSource::Wallpaper:
       return theme.wallpaperScheme;
-    case PaletteSource::Community:
-      return theme.communityPalette;
     case PaletteSource::Custom:
       return theme.customPalette;
     }
@@ -908,7 +904,7 @@ void WallpaperPanel::rebuildFavoritePaletteDetailSelect(const WallpaperFavorite*
     const PaletteSource source = favorite->paletteSource.value_or(PaletteSource::Builtin);
     switch (source) {
     case PaletteSource::Builtin:
-      for (const auto& builtin : noctalia::theme::builtinPalettes()) {
+      for (const auto& builtin : gnil::theme::builtinPalettes()) {
         m_favoritePaletteDetailValues.emplace_back(builtin.name);
         labels.emplace_back(builtin.name);
       }
@@ -919,15 +915,8 @@ void WallpaperPanel::rebuildFavoritePaletteDetailSelect(const WallpaperFavorite*
       labels = wallpaperSchemeOptions();
       selectedValue = favorite->wallpaperScheme;
       break;
-    case PaletteSource::Community:
-      for (const auto& community : noctalia::theme::availableCommunityPalettes()) {
-        m_favoritePaletteDetailValues.push_back(community.name);
-        labels.push_back(community.name);
-      }
-      selectedValue = favorite->communityPalette;
-      break;
     case PaletteSource::Custom:
-      for (const auto& custom : noctalia::theme::availableCustomPalettes()) {
+      for (const auto& custom : gnil::theme::availableCustomPalettes()) {
         m_favoritePaletteDetailValues.push_back(custom.name);
         labels.push_back(custom.name);
       }
@@ -1237,9 +1226,6 @@ WallpaperFavorite WallpaperPanel::themeFromControls() const {
         break;
       case PaletteSource::Wallpaper:
         theme.wallpaperScheme = value;
-        break;
-      case PaletteSource::Community:
-        theme.communityPalette = value;
         break;
       case PaletteSource::Custom:
         theme.customPalette = value;

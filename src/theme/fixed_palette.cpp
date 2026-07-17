@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <tuple>
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   namespace {
 
@@ -405,4 +405,4 @@ namespace noctalia::theme {
     return terminal;
   }
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

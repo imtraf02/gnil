@@ -295,8 +295,6 @@ namespace settings {
         return "box";
       case WidgetReferenceKind::Named:
         return "tag";
-      case WidgetReferenceKind::Plugin:
-        return "puzzle";
       case WidgetReferenceKind::Unknown:
         return "help-circle";
       }
@@ -308,7 +306,6 @@ namespace settings {
       case WidgetReferenceKind::BuiltIn:
         return colorSpecFromRole(ColorRole::Primary);
       case WidgetReferenceKind::Named:
-      case WidgetReferenceKind::Plugin:
         return colorSpecFromRole(ColorRole::Secondary);
       case WidgetReferenceKind::Unknown:
         return colorSpecFromRole(ColorRole::Error);
@@ -1493,7 +1490,7 @@ namespace settings {
           break;
         }
         case WidgetControlKind::Int: {
-          // A plugin manifest may declare minValue > maxValue; order the range so
+          // User-provided values may declare minValue > maxValue; order the range so
           // the clamp, stepper, and slider below all get a valid [min, max].
           const double rawMin = spec.schema.minValue.value_or(0.0);
           const double rawMax = spec.schema.maxValue.value_or(100.0);

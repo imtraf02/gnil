@@ -26,7 +26,7 @@ namespace {
     return true;
   }
 
-  bool expectTemp(const noctalia::system::cpu_temp::ProbeResult& result, double expected, const std::string& message) {
+  bool expectTemp(const gnil::system::cpu_temp::ProbeResult& result, double expected, const std::string& message) {
     if (!result.reading.has_value()) {
       fail(message + ": no reading; error=" + result.error);
       return false;
@@ -39,7 +39,7 @@ namespace {
   }
 
   std::filesystem::path makeTempDir() {
-    std::string pattern = (std::filesystem::temp_directory_path() / "noctalia-cpu-temp-XXXXXX").string();
+    std::string pattern = (std::filesystem::temp_directory_path() / "gnil-cpu-temp-XXXXXX").string();
     std::vector<char> writable(pattern.begin(), pattern.end());
     writable.push_back('\0');
     char* result = ::mkdtemp(writable.data());
@@ -81,9 +81,9 @@ namespace {
     writeText(zone / "temp", std::to_string(raw));
   }
 
-  noctalia::system::cpu_temp::ProbeResult
+  gnil::system::cpu_temp::ProbeResult
   readFixture(const std::filesystem::path& root, const std::string& configuredPath = "") {
-    return noctalia::system::cpu_temp::read(root / "hwmon", root / "thermal", configuredPath);
+    return gnil::system::cpu_temp::read(root / "hwmon", root / "thermal", configuredPath);
   }
 
   void checkAmdPrefersTctl() {

@@ -11,20 +11,17 @@
 #include "render/render_context.h"
 #include "render/scene/input_area.h"
 #include "render/scene/node.h"
-#include "shell/greeter/greeter_appearance_sync.h"
 #include "shell/profile/avatar_path.h"
 #include "shell/settings/font_family_catalog.h"
 #include "shell/settings/settings_bar_management.h"
 #include "shell/settings/settings_content.h"
 #include "shell/settings/settings_content_common.h"
-#include "shell/settings/settings_content_plugins.h"
 #include "shell/settings/settings_sidebar.h"
 #include "shell/settings/settings_window.h"
 #include "shell/settings/nexus_view.h"
 #include "shell/tooltip/tooltip_manager.h"
 #include "system/battery_warning_monitor.h"
 #include "system/dependency_service.h"
-#include "theme/community_palettes.h"
 #include "theme/custom_palettes.h"
 #include "ui/builders.h"
 #include "ui/controls/select_dropdown_popup.h"
@@ -55,7 +52,7 @@ namespace {
 
   bool useLightPalettePreview(ThemeMode mode) { return mode == ThemeMode::Light; }
 
-  ColorSwatchPreview palettePreviewFromMetadata(const noctalia::theme::AvailablePalette::PreviewMode& metadata) {
+  ColorSwatchPreview palettePreviewFromMetadata(const gnil::theme::AvailablePalette::PreviewMode& metadata) {
     ColorSwatchPreview preview;
     Color surface;
     if (tryParseHexColor(metadata.surface, surface)) {
@@ -71,7 +68,7 @@ namespace {
     return preview;
   }
 
-  ColorSwatchPreview availablePalettePreview(const noctalia::theme::AvailablePalette& palette, ThemeMode mode) {
+  ColorSwatchPreview availablePalettePreview(const gnil::theme::AvailablePalette& palette, ThemeMode mode) {
     if (useLightPalettePreview(mode)) {
       ColorSwatchPreview preview = palettePreviewFromMetadata(palette.preview.light);
       if (!preview.empty()) {
@@ -130,16 +127,13 @@ namespace {
     if (path.empty()) {
       return true;
     }
-    if (path[0] == "bar" || path[0] == "widget" || path[0] == "plugins" || path[0] == "plugin_settings") {
+    if (path[0] == "bar" || path[0] == "widget") {
       return true;
     }
     if (path.size() >= 2 && path[0] == "theme" && (path[1] == "mode" || path[1] == "source")) {
       return true;
     }
     if (path.size() >= 2 && path[0] == "calendar" && path[1] == "account") {
-      return true;
-    }
-    if (path.size() >= 2 && path[0] == "shell" && path[1] == "greeter_sync") {
       return true;
     }
     return false;
@@ -378,7 +372,7 @@ namespace {
   }
 
   std::optional<toml::table> configSectionTable(const Config& cfg, std::string_view section) {
-    namespace schema = noctalia::config::schema;
+    namespace schema = gnil::config::schema;
 
     if (section == "audio") {
       return schema::writeTable(cfg.audio, schema::audioSchema());
@@ -394,9 +388,6 @@ namespace {
     }
     if (section == "calendar") {
       return schema::writeTable(cfg.calendar, schema::calendarSchema());
-    }
-    if (section == "control_center") {
-      return schema::writeTable(cfg.controlCenter, schema::controlCenterSchema());
     }
     if (section == "dock") {
       return schema::writeTable(cfg.dock, schema::dockSchema());
@@ -433,9 +424,6 @@ namespace {
     }
     if (section == "osd") {
       return schema::writeTable(cfg.osd, schema::osdSchema());
-    }
-    if (section == "plugins") {
-      return schema::writeTable(cfg.plugins, schema::pluginsSchema());
     }
     if (section == "shell") {
       return schema::writeTable(cfg.shell, schema::shellSchema());
@@ -542,7 +530,7 @@ namespace {
   class SettingsProfileWatch {
   public:
     SettingsProfileWatch() {
-      if (noctalia::profiling::enabled()) {
+      if (gnil::profiling::enabled()) {
         m_watch.emplace();
       }
     }
@@ -557,7 +545,7 @@ namespace {
     [[nodiscard]] double elapsedMs() const { return m_watch.has_value() ? m_watch->elapsedMs() : 0.0; }
 
   private:
-    std::optional<noctalia::profiling::StopWatch> m_watch;
+    std::optional<gnil::profiling::StopWatch> m_watch;
   };
 
   void logSettingsProfile(std::string_view label, const SettingsProfileWatch& watch) {
@@ -726,20 +714,8 @@ settings::RegistryEnvironment SettingsWindow::buildRegistryEnvironment() const {
   env.niriOverviewTypeToLaunchSupported = (m_wayland != nullptr && compositors::isNiri());
   env.ddcutilAvailable = (m_dependencies != nullptr && m_dependencies->hasDdcutil());
   env.gammaControlAvailable = (m_wayland != nullptr && m_wayland->hasGammaControl());
-  env.greeterSyncAvailable =
-      m_config != nullptr && greeter::appearanceSyncAvailable(m_config->config().shell.greeterSync);
   const ThemeMode previewMode = m_config != nullptr ? m_config->config().theme.mode : ThemeMode::Dark;
-  for (const auto& paletteInfo : noctalia::theme::availableCommunityPalettes()) {
-    env.communityPalettes.push_back(
-        settings::SelectOption{
-            .value = paletteInfo.name,
-            .label = paletteInfo.name,
-            .description = {},
-            .preview = availablePalettePreview(paletteInfo, previewMode),
-        }
-    );
-  }
-  for (const auto& p : noctalia::theme::availableCustomPalettes()) {
+  for (const auto& p : gnil::theme::availableCustomPalettes()) {
     env.customPalettes.push_back(
         settings::SelectOption{
             .value = p.name,
@@ -969,71 +945,9 @@ void SettingsWindow::rebuildSettingsContent() {
   logSettingsProfile("rebuildContent sections", phaseProfileWatch);
   phaseProfileWatch.reset();
 
-  if (m_selectedSection == "plugins" && m_pluginManager != nullptr) {
-    refreshPluginListIfNeeded();
-    settings::addSettingsPlugins(
-        *m_contentContainer,
-        settings::SettingsPluginsContext{
-            .scale = scale,
-            .selectedSection = m_selectedSection,
-            .plugins = m_pluginList,
-            .sources = cfg.plugins.sources,
-            .pluginsLoading = m_pluginListDirty || m_pluginListRefreshInFlight,
-            .setEnabled =
-                [this](std::string id, bool enable) {
-                  if (enable) {
-                    (void)m_pluginManager->enable(id);
-                  } else {
-                    m_pluginManager->disable(id);
-                  }
-                  markPluginListDirty();
-                  requestSceneRebuild();
-                },
-            .isEnabling = [this](const std::string& id) { return m_pluginManager->isEnabling(id); },
-            .addSource = [this]() { openPluginSourceCreateEditor(); },
-            .setSourceEnabled =
-                [this](PluginSourceConfig source, bool enabled) {
-                  source.enabled = enabled;
-                  m_pluginManager->addSource(source);
-                  markPluginListDirty();
-                  requestSceneRebuild();
-                },
-            .editSource = [this](PluginSourceConfig source) { openPluginSourceCreateEditor(std::move(source)); },
-            .updateSource = [this](std::string source) { m_pluginManager->update(std::move(source)); },
-            .refresh =
-                [this]() {
-                  markPluginListDirty();
-                  requestSceneRebuild();
-                },
-            .config = &cfg,
-            .onConfigure = [this](std::string id) { openPluginSettingsEditor(std::move(id)); },
-            .onRemove =
-                [this](std::string id) {
-                  if (m_pluginManager != nullptr) {
-                    m_pluginManager->remove(id);
-                    m_pendingDeletePluginId.clear();
-                    markPluginListDirty();
-                    requestSceneRebuild();
-                  }
-                },
-            .openStore = [this]() { openPluginStore(); },
-            .pendingDeletePluginId = m_pendingDeletePluginId,
-            .requestDeleteConfirm =
-                [this](std::string id) {
-                  m_pendingDeletePluginId = std::move(id);
-                  requestSceneRebuild();
-                },
-            .cancelDelete =
-                [this]() {
-                  m_pendingDeletePluginId.clear();
-                  requestSceneRebuild();
-                },
-        }
-    );
-  }
-  logSettingsProfile("rebuildContent plugins", phaseProfileWatch);
+
   logSettingsProfile("rebuildContent total", totalProfileWatch);
-  if (noctalia::profiling::enabled()) {
+  if (gnil::profiling::enabled()) {
     kLog.info(
         "profile rebuildContent visibleEntries={} registrySize={} selectedSection=\"{}\" searchActive={}",
         visibleEntries, m_settingsRegistry.size(), m_selectedSection, !m_searchQuery.empty()
@@ -1325,40 +1239,6 @@ void SettingsWindow::refreshSettingsRegistry(const Config& cfg) {
   logSettingsProfile("refreshRegistry registry", phaseProfileWatch);
   phaseProfileWatch.reset();
 
-  if (m_syncGreeterAppearance && env.greeterSyncAvailable) {
-    auto it = std::ranges::find_if(m_settingsRegistry, [](const settings::SettingEntry& e) {
-      return e.section == settings::SettingsSection::Security
-          && e.group == "greeter"
-          && e.path == std::vector<std::string>{"shell", "greeter_sync", "privilege_command"};
-    });
-    settings::SettingEntry btn{
-        .section = settings::SettingsSection::Security,
-        .group = "greeter",
-        .title = i18n::tr("settings.schema.shell.sync-greeter.label"),
-        .subtitle = i18n::tr("settings.schema.shell.sync-greeter.description"),
-        .path = {},
-        .control =
-            settings::ButtonSetting{
-                .label = i18n::tr("settings.schema.shell.sync-greeter.button"),
-                .action = m_syncGreeterAppearance,
-                .glyph = {},
-            },
-        .searchText = "greeter login sync appearance wallpaper colors security",
-    };
-    auto insertedIt = m_settingsRegistry.insert(it, std::move(btn));
-    ++insertedIt;
-    settings::SettingEntry toggle{
-        .section = settings::SettingsSection::Security,
-        .group = "greeter",
-        .title = i18n::tr("settings.schema.shell.greeter-sync-auto.label"),
-        .subtitle = i18n::tr("settings.schema.shell.greeter-sync-auto.description"),
-        .path = {"shell", "greeter_sync", "auto_sync"},
-        .control = settings::ToggleSetting{cfg.shell.greeterSync.autoSync},
-        .searchText = "greeter sync auto automatic",
-    };
-    m_settingsRegistry.insert(insertedIt, std::move(toggle));
-  }
-
   if (m_resetLauncherUsage) {
     auto it = std::ranges::find_if(m_settingsRegistry, [](const settings::SettingEntry& e) {
       return e.section == settings::SettingsSection::Launcher
@@ -1507,13 +1387,13 @@ void SettingsWindow::refreshSettingsRegistry(const Config& cfg) {
                 .action = [this]() { openCalendarAccountEditor(std::nullopt); },
                 .glyph = "plus",
             },
-        .searchText = "calendar add account icloud caldav google",
+        .searchText = "calendar add account icloud caldav",
     };
     it = m_settingsRegistry.insert(it, std::move(addBtn));
     ++it;
 
     for (const CalendarConfig::Account& account : cfg.calendar.accounts) {
-      if (account.type != "google" && account.type != "caldav") {
+      if (account.type != "caldav") {
         continue;
       }
       settings::SettingEntry btn{
@@ -1528,7 +1408,7 @@ void SettingsWindow::refreshSettingsRegistry(const Config& cfg) {
                   .action = [this, id = account.id]() { openCalendarAccountEditor(id); },
                   .glyph = "edit",
               },
-          .searchText = "calendar account edit connect authorize caldav icloud google password " + account.id,
+          .searchText = "calendar account edit caldav icloud password " + account.id,
           .visibleWhen = calendarOn,
       };
       it = m_settingsRegistry.insert(it, std::move(btn));
@@ -1796,7 +1676,7 @@ void SettingsWindow::buildScene(std::uint32_t width, std::uint32_t height) {
   m_surface->setSceneRoot(m_sceneRoot.get());
   logSettingsProfile("buildScene input", phaseProfileWatch);
   logSettingsProfile("buildScene total", totalProfileWatch);
-  if (noctalia::profiling::enabled()) {
+  if (gnil::profiling::enabled()) {
     kLog.info(
         "profile buildScene registrySize={} sections={} selectedSection=\"{}\" size={}x{}", m_settingsRegistry.size(),
         sections.size(), m_selectedSection, width, height

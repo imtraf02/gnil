@@ -167,8 +167,8 @@ bool PipeWireSpectrum::Stream::start() {
   }
 
   auto* props = pw_properties_new(
-      PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Monitor", PW_KEY_MEDIA_NAME, "Noctalia Spectrum",
-      PW_KEY_APP_NAME, "Noctalia Spectrum", PW_KEY_STREAM_MONITOR, "true", PW_KEY_STREAM_CAPTURE_SINK, "true",
+      PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Monitor", PW_KEY_MEDIA_NAME, "GNIL Spectrum",
+      PW_KEY_APP_NAME, "GNIL Spectrum", PW_KEY_STREAM_MONITOR, "true", PW_KEY_STREAM_CAPTURE_SINK, "true",
       PW_KEY_TARGET_OBJECT, m_targetObject.c_str(), PW_KEY_NODE_PASSIVE, "true", nullptr
   );
   if (props == nullptr) {
@@ -176,7 +176,7 @@ bool PipeWireSpectrum::Stream::start() {
     return false;
   }
 
-  m_stream = pw_stream_new(core, "noctalia-spectrum", props);
+  m_stream = pw_stream_new(core, "gnil-spectrum", props);
   if (m_stream == nullptr) {
     pw_properties_free(props);
     kLog.warn("failed to create spectrum stream");

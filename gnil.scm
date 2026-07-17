@@ -5,14 +5,14 @@
 ;;;
 ;;; --8<---------------cut here---------------start------------->8---
 ;;; (channel
-;;;   (name 'noctalia)
-;;;   (url "https://github.com/noctalia-dev/noctalia")
-;;;   (branch "v5"))
+;;;   (name 'gnil)
+;;;   (url "https://github.com/imtraf02/gnil")
+;;;   (branch "main"))
 ;;; --8<---------------cut here---------------end--------------->8---
 ;;;
-;;; It provides this (noctalia) module with the noctalia-git package.
+;;; It provides this (gnil) module with the gnil-git package.
 
-(define-module (noctalia)
+(define-module (gnil)
   ;; Utilities
   #:use-module (guix gexp)
   #:use-module ((guix licenses) #:prefix license:)
@@ -56,15 +56,15 @@
                 "0zqnn7bwqzifchjhclrrcqnp39cpd3nnf6nbd9bav2hwhcx92mwy"))))))
 
 (define source-checkout
-  (local-file "." "noctalia-checkout"
+  (local-file "." "gnil-checkout"
               #:recursive? #t
               #:select?
               (or (git-predicate (current-source-directory))
                   (const #t))))
 
-(define-public noctalia-git
+(define-public gnil-git
   (package
-    (name "noctalia-git")
+    (name "gnil-git")
     (version "latest")
     (source source-checkout)
     (build-system meson-build-system)
@@ -107,17 +107,17 @@
            wayland
            wayland-protocols-1.48
            wireplumber))
-    (home-page "https://noctalia.dev/")
+    (home-page "https://github.com/imtraf02/gnil")
     (synopsis "Wayland shell and bar")
     (description
-     "Noctalia is a lightweight Wayland shell and bar built directly on
+     "GNIL is a lightweight Wayland shell and bar built directly on
 Wayland and OpenGL ES, with no Qt or GTK dependency.")
     (license license:expat)))
 
 ;; Also return the package at the end, so that this file can be used by
 ;; commands that evaluate it.  For example:
 ;;
-;; guix build --file=noctalia.scm
-;; guix shell --file=noctalia.scm
-;; guix package --install-from-file=noctalia.scm
-noctalia-git
+;; guix build --file=gnil.scm
+;; guix shell --file=gnil.scm
+;; guix package --install-from-file=gnil.scm
+gnil-git

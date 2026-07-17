@@ -4,8 +4,6 @@
 #include "render/animation/animation_manager.h"
 #include "render/scene/input_dispatcher.h"
 #include "render/scene/node.h"
-#include "scripting/plugin_file_cache.h"
-#include "scripting/plugin_manager.h"
 #include "shell/settings/config_export_dialog_popup.h"
 #include "shell/settings/search_picker_popup.h"
 #include "shell/settings/settings_control_factory.h"
@@ -86,18 +84,12 @@ public:
   void requestRedraw();
   void requestUpdate();
   void onExternalOptionsChanged();
-  void onPluginsChanged();
   void setOpenDesktopWidgetEditor(std::function<void()> callback) { m_openDesktopWidgetEditor = std::move(callback); }
   void setOpenWallpaperPanel(std::function<void()> callback) { m_openWallpaperPanel = std::move(callback); }
-  void setPluginManager(scripting::PluginManager* manager) { m_pluginManager = manager; }
-  void setSyncGreeterAppearance(std::function<void()> callback) { m_syncGreeterAppearance = std::move(callback); }
   void setResetLauncherUsage(std::function<void()> callback) { m_resetLauncherUsage = std::move(callback); }
   void setResetScreenTime(std::function<void()> callback) { m_resetScreenTime = std::move(callback); }
   void setSaveWallpaperPaletteAsCustom(std::function<void()> callback) {
     m_saveWallpaperPaletteAsCustom = std::move(callback);
-  }
-  void setConnectCalendarAccount(std::function<void(std::string, std::string)> callback) {
-    m_connectCalendarAccount = std::move(callback);
   }
 
   void onSecondTick();
@@ -138,8 +130,6 @@ private:
   void requestSceneRebuild();
   void
   requestContentRebuild(bool refreshRegistry = false, bool refreshFilterRow = false, bool rebuildEditorSheet = false);
-  void markPluginListDirty();
-  void refreshPluginListIfNeeded();
   void maybeOpenPendingWidgetInspector();
   void applyPendingContentScrollTarget(float margin);
   void scrollFocusedAreaIntoView(class InputArea* area);
@@ -164,9 +154,6 @@ private:
   void openCalendarAccountEditor(std::optional<std::string> accountId);
   void openWidgetInspectorEditor(std::vector<std::string> laneListPath, std::string widgetName);
   void openCapsuleGroupEditor(std::vector<std::string> laneListPath, std::string groupId);
-  void openPluginSourceCreateEditor(std::optional<PluginSourceConfig> existing = std::nullopt);
-  void openPluginSettingsEditor(std::string pluginId);
-  void openPluginStore();
   void openBarWidgetEditorSheet(
       std::string title, std::function<void(Flex&)> populate, std::function<void()> removeAction = nullptr
   );
@@ -199,13 +186,6 @@ private:
   CompositorPlatform* m_platform = nullptr;
   IdleManager* m_idleManager = nullptr;
   ConfigService* m_config = nullptr;
-  scripting::PluginManager* m_pluginManager = nullptr;
-  // Cached PluginManager::list() — discovery can spawn git, so refresh it off the UI path.
-  std::vector<scripting::PluginStatus> m_pluginList;
-  bool m_pluginListDirty = true;
-  bool m_pluginListRefreshInFlight = false;
-  std::uint64_t m_pluginListRefreshGeneration = 0;
-  scripting::PluginFileCache m_pluginFileCache;
   RenderContext* m_renderContext = nullptr;
   DependencyService* m_dependencies = nullptr;
   UPowerService* m_upower = nullptr;
@@ -283,7 +263,6 @@ private:
   std::string m_renamingMonitorOverrideMatch;
   std::string m_pendingDeleteMonitorOverrideBarName;
   std::string m_pendingDeleteMonitorOverrideMatch;
-  std::string m_pendingDeletePluginId;
   std::string m_selectedBarName;
   std::string m_selectedMonitorOverride;
   std::string m_selectedSection;
@@ -298,9 +277,7 @@ private:
   bool m_applyingConfigMutation = false;
   std::function<void()> m_openDesktopWidgetEditor;
   std::function<void()> m_openWallpaperPanel;
-  std::function<void()> m_syncGreeterAppearance;
   std::function<void()> m_resetLauncherUsage;
   std::function<void()> m_resetScreenTime;
   std::function<void()> m_saveWallpaperPaletteAsCustom;
-  std::function<void(std::string, std::string)> m_connectCalendarAccount;
 };

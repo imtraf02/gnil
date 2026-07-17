@@ -208,15 +208,6 @@ struct ShellSessionConfig {
   bool operator==(const ShellSessionConfig&) const = default;
 };
 
-struct ShellGreeterSyncConfig {
-  // Shell prefix that replaces the default pkexec/run0 escalator before the apply helper
-  // path and staging directory. Empty = pkexec or run0. Example: "ghostty -e pkexec"
-  std::string privilegeCommand;
-  bool autoSync = false;
-
-  bool operator==(const ShellGreeterSyncConfig&) const = default;
-};
-
 struct IdleBehaviorConfig {
   std::string name;
   bool enabled = true;
@@ -259,7 +250,6 @@ struct IdleConfig {
   bool operator==(const IdleConfig&) const = default;
 };
 
-[[nodiscard]] std::vector<ShortcutConfig> defaultControlCenterShortcuts();
 [[nodiscard]] std::vector<SessionPanelActionConfig> defaultSessionPanelActions();
 [[nodiscard]] std::vector<IdleBehaviorConfig> defaultIdleBehaviors();
 
@@ -423,7 +413,7 @@ struct WallpaperAutomationConfig {
 
 // A video assignment is intentionally output-scoped.  GNIL keeps the player
 // process outside its renderer while retaining the assignment in the normal
-// wallpaper config, so it survives restarts without being a plugin setting.
+// wallpaper config, so it survives restarts.
 struct VideoWallpaperOutput {
   std::string match;
   bool enabled = true;
@@ -929,9 +919,6 @@ struct ShellConfig {
   std::string timeFormat = "{:%H:%M}";
   std::string dateFormat = "%A, %x";
   bool offlineMode = false;
-  /// Resolve and show the connection's external (WAN) IP in the Control Center network tab.
-  bool externalIpEnabled = false;
-  bool telemetryEnabled = false;
   bool setupWizardEnabled = true;
   bool niriOverviewTypeToLaunchEnabled = false;
   bool polkitAgent = false;
@@ -948,7 +935,7 @@ struct ShellConfig {
   /// When false, disables Wayland clipboard integration (history panel, data-control binding, Input paste/copy hooks).
   bool clipboardEnabled = true;
   /// Maximum unpinned clipboard history entries retained (pinned entries are exempt).
-  int clipboardHistoryMaxEntries = static_cast<int>(noctalia::config::kClipboardHistoryDefaultEntries);
+  int clipboardHistoryMaxEntries = static_cast<int>(gnil::config::kClipboardHistoryDefaultEntries);
   /// When true, clearing clipboard history or deleting unpinned entries from the panel asks for confirmation first.
   bool clipboardConfirmClearHistory = true;
   /// Disables per-app tracking and Control Center usage UI.
@@ -966,7 +953,6 @@ struct ShellConfig {
   ScreenshotConfig screenshot;
   PrivacyConfig privacy;
   ShellSessionConfig session;
-  ShellGreeterSyncConfig greeterSync;
 
   bool operator==(const ShellConfig&) const = default;
 };
@@ -1004,7 +990,7 @@ struct CalendarConfig {
   // here; they live in state.toml keyed by id. id must be [a-z0-9_] (used as a state key).
   struct Account {
     std::string id;
-    std::string type; // "google" | "caldav"
+    std::string type; // "caldav"
     std::string displayName;
     std::string color;                  // optional "#rrggbb" override
     std::string provider;               // "icloud" | "custom" (caldav only)
@@ -1040,39 +1026,39 @@ struct SystemConfig {
     float networkPollSeconds = 3.0f;
     float diskPollSeconds = 10.0f;
     double cpuUsageActivityThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::CpuUsage).activityDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::CpuUsage).activityDefault;
     double cpuUsageCriticalThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::CpuUsage).criticalDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::CpuUsage).criticalDefault;
     double cpuTempActivityThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::CpuTemp).activityDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::CpuTemp).activityDefault;
     double cpuTempCriticalThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::CpuTemp).criticalDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::CpuTemp).criticalDefault;
     double gpuTempActivityThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::GpuTemp).activityDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::GpuTemp).activityDefault;
     double gpuTempCriticalThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::GpuTemp).criticalDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::GpuTemp).criticalDefault;
     double gpuUsageActivityThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::GpuUsage).activityDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::GpuUsage).activityDefault;
     double gpuUsageCriticalThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::GpuUsage).criticalDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::GpuUsage).criticalDefault;
     double gpuVramActivityThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::GpuVram).activityDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::GpuVram).activityDefault;
     double gpuVramCriticalThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::GpuVram).criticalDefault;
-    double ramPctActivityThreshold = noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::RamPct).activityDefault;
-    double ramPctCriticalThreshold = noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::RamPct).criticalDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::GpuVram).criticalDefault;
+    double ramPctActivityThreshold = gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::RamPct).activityDefault;
+    double ramPctCriticalThreshold = gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::RamPct).criticalDefault;
     double swapPctActivityThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::SwapPct).activityDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::SwapPct).activityDefault;
     double swapPctCriticalThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::SwapPct).criticalDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::SwapPct).criticalDefault;
     double diskPctActivityThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::DiskPct).activityDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::DiskPct).activityDefault;
     double diskPctCriticalThreshold =
-        noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::DiskPct).criticalDefault;
-    double netRxActivityThreshold = noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::NetRx).activityDefault;
-    double netRxCriticalThreshold = noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::NetRx).criticalDefault;
-    double netTxActivityThreshold = noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::NetTx).activityDefault;
-    double netTxCriticalThreshold = noctalia::sysmon::thresholdProfile(noctalia::sysmon::Stat::NetTx).criticalDefault;
+        gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::DiskPct).criticalDefault;
+    double netRxActivityThreshold = gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::NetRx).activityDefault;
+    double netRxCriticalThreshold = gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::NetRx).criticalDefault;
+    double netTxActivityThreshold = gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::NetTx).activityDefault;
+    double netTxCriticalThreshold = gnil::sysmon::thresholdProfile(gnil::sysmon::Stat::NetTx).criticalDefault;
 
     bool operator==(const MonitorConfig&) const = default;
   };
@@ -1167,12 +1153,9 @@ struct NightLightConfig {
 };
 
 struct LocationConfig {
-  // Single source of truth for "where am I". Resolution priority:
-  //   auto_locate (IP) -> address (geocoded) -> manual latitude/longitude.
-  // When customSchedule is true, explicit sunset/sunrise times override coordinates.
-  // Consumed by the weather service, night light, and theme auto mode.
-  bool autoLocate = false;     // resolve coordinates from IP geolocation
-  std::string address;         // geocoded when auto_locate is off and this is non-empty
+  // Local source of truth for weather, night light, and automatic theme mode.
+  // GNIL never sends the user's IP or address to a geolocation service.
+  std::string address;         // optional display label for manual coordinates
   bool customSchedule = false; // when true, use sunset/sunrise times instead of coordinates
   std::string sunset;          // HH:MM night start, used only when customSchedule is true
   std::string sunrise;         // HH:MM day start, used only when customSchedule is true
@@ -1239,14 +1222,12 @@ std::string_view hookKindKey(HookKind kind);
 enum class PaletteSource : std::uint8_t {
   Builtin = 0,
   Wallpaper = 1,
-  Community = 2,
-  Custom = 3,
+  Custom = 2,
 };
 
 constexpr EnumOption<PaletteSource> kPaletteSources[] = {
     {PaletteSource::Builtin, "builtin", "settings.options.theme.source.built-in"},
     {PaletteSource::Wallpaper, "wallpaper", "settings.options.theme.source.wallpaper"},
-    {PaletteSource::Community, "community", "settings.options.theme.source.community"},
     {PaletteSource::Custom, "custom", "settings.options.theme.source.custom"},
 };
 
@@ -1267,30 +1248,16 @@ struct WallpaperFavorite {
   ThemeMode themeMode = ThemeMode::Auto;
   std::optional<PaletteSource> paletteSource;
   std::string builtinPalette;
-  std::string communityPalette;
   std::string customPalette;
   std::string wallpaperScheme;
 
   bool operator==(const WallpaperFavorite&) const = default;
 };
 
-enum class ControlCenterSidebarMode : std::uint8_t {
-  Full = 0,
-  Compact = 1,
-  None = 2,
-};
-
-constexpr EnumOption<ControlCenterSidebarMode> kControlCenterSidebarModes[] = {
-    {ControlCenterSidebarMode::Full, "full", "settings.options.control-center.sidebar.full"},
-    {ControlCenterSidebarMode::Compact, "compact", "settings.options.control-center.sidebar.compact"},
-    {ControlCenterSidebarMode::None, "none", "settings.options.control-center.sidebar.none"},
-};
-
 struct ThemeConfig {
   PaletteSource source = PaletteSource::Wallpaper;
   // Used only if a wallpaper palette cannot be produced on first startup.
-  std::string builtinPalette = "Noctalia";
-  std::string communityPalette = "Oxocarbon";
+  std::string builtinPalette = "GNIL";
   std::string customPalette;
   std::string wallpaperScheme = "m3-content";
   // Output selector used when dynamic colours are sourced from a live
@@ -1301,69 +1268,6 @@ struct ThemeConfig {
   bool pureBlackDark = false;
   bool operator==(const ThemeConfig&) const = default;
 };
-
-struct ControlCenterConfig {
-  static constexpr std::int32_t kDefaultWidth = 700;
-
-  struct CalendarTabConfig {
-    bool showEventsCard = true;
-    bool operator==(const CalendarTabConfig&) const = default;
-  };
-
-  std::vector<ShortcutConfig> shortcuts;
-  std::vector<std::string> hiddenTabs; // tab keys (see kTabs) the user has hidden; empty = all available shown
-  // The default GNIL dashboard is a top-centre drawer with a small horizontal
-  // tab strip. Technical sections remain addressable by context/shortcuts.
-  ControlCenterSidebarMode sidebarMode = ControlCenterSidebarMode::None;
-  ControlCenterSidebarMode sidebarSectionMode = ControlCenterSidebarMode::None;
-  std::int32_t width = kDefaultWidth; // full-sidebar logical width; compact/none modes scale down from this
-  CalendarTabConfig calendarTab;
-  bool operator==(const ControlCenterConfig&) const = default;
-};
-
-// A plugin source: where plugin code comes from. `Git` is a repo URL the host
-// caches, updates, and exports plugin runtime files from; `Path` is an
-// immutable local directory (e.g. a Nix store path) the host treats read-only
-// (update/auto-update/remove are no-ops).
-enum class PluginSourceKind : std::uint8_t {
-  Git = 0,
-  Path = 1,
-};
-
-constexpr EnumOption<PluginSourceKind> kPluginSourceKinds[] = {
-    {PluginSourceKind::Git, "git", "settings.options.plugins.source.git"},
-    {PluginSourceKind::Path, "path", "settings.options.plugins.source.path"},
-};
-
-struct PluginSourceConfig {
-  PluginSourceKind kind = PluginSourceKind::Git;
-  std::string name;        // stable handle (also the clone subdir for git sources)
-  std::string location;    // git URL or local path
-  bool autoUpdate = false; // git-only, opt-in
-  bool enabled = true;     // disabled sources are not scanned; their clone is kept
-  bool operator==(const PluginSourceConfig&) const = default;
-};
-
-// Distribution config: where plugins come from and which are turned on. User
-// intent → config (declarative-friendly); clones live under the state dir.
-struct PluginsConfig {
-  std::vector<PluginSourceConfig> sources;
-  std::vector<std::string> enabled; // active plugin ids ("author/plugin"); opt-in for every source
-  // Plugin-level setting overrides, keyed by plugin id then setting key. Seeded
-  // into every entry runtime of the plugin (widget/shortcut/service). Open-ended
-  // (validated against the manifest schema), so compared via configEqual rather
-  // than the defaulted operator== (which lacks int/double coercion).
-  std::unordered_map<std::string, std::unordered_map<std::string, WidgetSettingValue>> pluginSettings;
-  bool operator==(const PluginsConfig&) const = default;
-};
-
-// Default sources seeded when [plugins] declares no [[plugins.source]]: the
-// official + community plugin repos (auto-update off).
-[[nodiscard]] std::vector<PluginSourceConfig> defaultPluginSources();
-[[nodiscard]] bool isDefaultPluginSourceName(std::string_view name);
-// Source names are stable user-facing handles and git source storage directory names.
-// Keep them flat so they can never escape the plugin source cache.
-[[nodiscard]] bool isValidPluginSourceName(std::string_view name);
 
 struct AccessibilityConfig {
   float uiScale = 1.0f;
@@ -1413,8 +1317,6 @@ struct Config {
   IdleConfig idle;
   HooksConfig hooks;
   ThemeConfig theme;
-  ControlCenterConfig controlCenter;
-  PluginsConfig plugins;
   AccessibilityConfig accessibility;
   NexusConfig nexus;
   DefaultAppsConfig defaultApps;
@@ -1445,8 +1347,6 @@ struct ConfigChangeSet {
   bool idle = true;
   bool hooks = true;
   bool theme = true;
-  bool controlCenter = true;
-  bool plugins = true;
   bool hotCorners = true;
   bool accessibility = true;
   bool nexus = true;
@@ -1475,8 +1375,6 @@ struct ConfigChangeSet {
         || idle
         || hooks
         || theme
-        || controlCenter
-        || plugins
         || hotCorners
         || accessibility
         || nexus

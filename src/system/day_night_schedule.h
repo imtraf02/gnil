@@ -21,9 +21,8 @@ namespace day_night_schedule {
     std::chrono::milliseconds sinceBoundary = std::chrono::hours(1);
   };
 
-  // resolvedLatitude/resolvedLongitude are the coordinates published by LocationService
-  // (IP geolocation or geocoded address). When absent, manual latitude/longitude from the
-  // config are used. Fixed sunrise/sunset times are used only when
+  // resolvedLatitude/resolvedLongitude are the coordinates published by LocationService.
+  // When absent, latitude/longitude from the config are used. Fixed sunrise/sunset times are used only when
   // LocationConfig::customSchedule is explicitly true. They are not an automatic
   // fallback when coordinates are unavailable.
   [[nodiscard]] std::optional<std::string> normalizedClock(std::string_view value);

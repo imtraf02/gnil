@@ -756,7 +756,7 @@ namespace settings {
             state->push_back(
                 SessionPanelActionConfig{
                     .action = "command",
-                    .command = "notify-send 'Noctalia' 'Custom session entry'",
+                    .command = "notify-send 'GNIL' 'Custom session entry'",
                 }
             );
             commit();
@@ -1211,9 +1211,7 @@ namespace settings {
       }
     }
 
-    // The Plugins section has no registry entries — it renders fully custom
-    // content (addSettingsPlugins), so suppress the "no settings found" state.
-    if (visibleEntries == 0 && ctx.selectedSection != "plugins") {
+    if (visibleEntries == 0) {
       auto emptyState = ui::column(
           {.align = FlexAlign::Center,
            .justify = FlexJustify::Center,

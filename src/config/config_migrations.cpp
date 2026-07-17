@@ -9,7 +9,7 @@
 #include <string>
 #include <utility>
 
-namespace noctalia::config {
+namespace gnil::config {
   namespace {
 
     constexpr int kNegativeBarRadiusMigrationVersion = 1;
@@ -371,10 +371,8 @@ namespace noctalia::config {
         return;
       }
 
-      const bool autoLocate = (*location)["auto_locate"].value_or(false);
-      const bool hasAddress = !(*location)["address"].value_or(std::string_view{}).empty();
       const bool hasCoordinates = (*location)["latitude"].is_number() && (*location)["longitude"].is_number();
-      if (autoLocate || hasAddress || hasCoordinates) {
+      if (hasCoordinates) {
         return;
       }
 
@@ -619,4 +617,4 @@ namespace noctalia::config {
         || nowEpochSeconds - previousEpochSeconds >= kLegacyConfigReminderIntervalSeconds;
   }
 
-} // namespace noctalia::config
+} // namespace gnil::config

@@ -42,7 +42,6 @@
 #include "launcher/dmenu_provider.h"
 #include "launcher/emoji_provider.h"
 #include "launcher/math_provider.h"
-#include "launcher/plugin_launcher_provider.h"
 #include "launcher/session_provider.h"
 #include "launcher/wallpaper_provider.h"
 #include "launcher/window_provider.h"
@@ -56,17 +55,10 @@
 #include "render/backend/render_backend.h"
 #include "render/core/texture_manager.h"
 #include "render/text/font_weight_catalog.h"
-#include "scripting/plugin_ipc.h"
-#include "scripting/plugin_manifest.h"
-#include "scripting/plugin_panel_shell.h"
-#include "scripting/plugin_registry.h"
-#include "scripting/plugin_runtime_context.h"
 #include "shell/clipboard/clipboard_panel.h"
 #include "shell/clipboard/clipboard_paste.h"
 #include "shell/control_center/content_panel.h"
-#include "shell/greeter/greeter_appearance_sync.h"
 #include "shell/launcher/launcher_panel.h"
-#include "shell/panel/plugin_panel.h"
 #include "shell/polkit/polkit_panel.h"
 #include "shell/session/session_ipc.h"
 #include "shell/session/session_panel.h"
@@ -110,6 +102,24 @@ namespace {
   constexpr Logger kLog("app");
 } // namespace
 
+void Application::reloadDmenuProviders() {
+  if (m_launcherPanel == nullptr) {
+    return;
+  }
+
+  m_launcherPanel->clearProvidersWithIdPrefix("dmenu.");
+  for (const auto& entry : m_configService.config().shell.launcher.dmenu.entries) {
+    if (entry.command.empty() && !entry.freeform) {
+      kLog.warn("[{}] missing command, skipping", entry.id);
+      continue;
+    }
+    if (entry.prefix.value_or("").empty() && !entry.global) {
+      kLog.warn("[{}] no prefix and global=false; unreachable until configured", entry.id);
+    }
+    m_launcherPanel->addProvider(std::make_unique<DmenuProvider>(entry, &m_clipboardService));
+  }
+}
+
 void Application::initUi() {
   initUiRenderSurfacesAndSettings();
   initLockScreenAndSession();
@@ -147,18 +157,16 @@ void Application::initUiRenderSurfacesAndSettings() {
       m_wayland, &m_configService, &m_renderContext, &m_dependencyService, m_upowerService.get(), &m_idleManager,
       &m_compositorPlatform, m_accountsService.get()
   );
-  m_settingsWindow.setPluginManager(&m_pluginManager);
   m_settingsWindow.setOpenDesktopWidgetEditor([this]() {
     const bool wasEditing = m_desktopWidgetsController.isEditing();
     m_desktopWidgetsController.toggleEdit();
     if (!wasEditing && m_desktopWidgetsController.isEditing()) {
       notify::info(
-          "Noctalia", i18n::tr("notifications.internal.desktop-widgets-editor"),
+          "GNIL", i18n::tr("notifications.internal.desktop-widgets-editor"),
           i18n::tr("notifications.internal.desktop-widgets-editor-enabled")
       );
     }
   });
-  m_settingsWindow.setSyncGreeterAppearance([this]() { performGreeterSync(); });
   m_settingsWindow.setSaveWallpaperPaletteAsCustom([this]() {
     std::string paletteName;
     std::string error;
@@ -171,117 +179,10 @@ void Application::initUiRenderSurfacesAndSettings() {
     m_settingsWindow.onExternalOptionsChanged();
     m_settingsWindow.markSettingsWriteSuccess(true);
     notify::info(
-        "Noctalia", i18n::tr("notifications.internal.wallpaper-palette-export"),
+        "GNIL", i18n::tr("notifications.internal.wallpaper-palette-export"),
         i18n::tr("notifications.internal.wallpaper-palette-export-success", "name", paletteName)
     );
   });
-}
-
-void Application::performGreeterSync(bool quiet) {
-  const std::uint64_t generation = ++m_greeterSyncGeneration;
-  m_greeterSyncTimeoutTimer.stop();
-
-  const auto complete = [this, generation, quiet](bool success) {
-    if (generation != m_greeterSyncGeneration) {
-      return;
-    }
-    m_greeterSyncTimeoutTimer.stop();
-    if (success) {
-      if (!quiet) {
-        DeferredCall::callLater([this]() {
-          notify::info(
-              "Noctalia", i18n::tr("notifications.internal.greeter-sync"),
-              i18n::tr("notifications.internal.greeter-sync-success")
-          );
-        });
-      }
-      return;
-    }
-    DeferredCall::callLater([this, quiet]() {
-      if (quiet) {
-        notify::error(
-            "Noctalia", i18n::tr("notifications.internal.greeter-sync"), i18n::tr("settings.errors.sync-greeter")
-        );
-      } else {
-        m_settingsWindow.markSettingsWriteError(i18n::tr("settings.errors.sync-greeter"));
-      }
-    });
-  };
-
-  if (m_configService.config().shell.polkitAgent && m_polkitAgent != nullptr) {
-    m_polkitAgent->markNextRequestInternal();
-  }
-  const auto launch = greeter::syncAppearanceToGreeterAsync(
-      m_configService, m_themeService.resolvedMode(), complete, &m_compositorPlatform, m_logindService != nullptr
-  );
-  if (launch == greeter::GreeterSyncLaunch::Failed) {
-    if (quiet) {
-      notify::error(
-          "Noctalia", i18n::tr("notifications.internal.greeter-sync"), i18n::tr("settings.errors.sync-greeter")
-      );
-    } else {
-      m_settingsWindow.markSettingsWriteError(i18n::tr("settings.errors.sync-greeter"));
-    }
-    return;
-  }
-  if (launch == greeter::GreeterSyncLaunch::StagedOnly) {
-    if (quiet) {
-      notify::error(
-          "Noctalia", i18n::tr("notifications.internal.greeter-sync"), i18n::tr("settings.errors.sync-greeter")
-      );
-    } else {
-      notify::info(
-          "Noctalia", i18n::tr("notifications.internal.greeter-sync"),
-          i18n::tr("notifications.internal.greeter-sync-pending-manual")
-      );
-    }
-    return;
-  }
-
-  if (!quiet) {
-    const bool customPrivilege =
-        !StringUtils::trim(m_configService.config().shell.greeterSync.privilegeCommand).empty();
-    const bool polkitAgentActive = m_configService.config().shell.polkitAgent && m_polkitAgent != nullptr;
-    const bool inSessionPolkit = likelySupportsInSessionPolkit();
-    const char* pendingBodyKey = "notifications.internal.greeter-sync-pending";
-    if (!customPrivilege && !polkitAgentActive && !inSessionPolkit) {
-      pendingBodyKey = "notifications.internal.greeter-sync-pending-manual";
-    } else if (!customPrivilege && !polkitAgentActive) {
-      pendingBodyKey = "notifications.internal.greeter-sync-pending-console";
-    }
-    notify::info("Noctalia", i18n::tr("notifications.internal.greeter-sync"), i18n::tr(pendingBodyKey));
-  }
-
-  if (!quiet) {
-    const bool inSessionPolkit = likelySupportsInSessionPolkit();
-    m_greeterSyncTimeoutTimer.start(std::chrono::seconds(90), [this, generation, inSessionPolkit]() {
-      if (generation != m_greeterSyncGeneration) {
-        return;
-      }
-      DeferredCall::callLater([this, inSessionPolkit]() {
-        notify::error(
-            "Noctalia", i18n::tr("notifications.internal.greeter-sync"),
-            i18n::tr(
-                inSessionPolkit ? "notifications.internal.greeter-sync-timeout"
-                                : "notifications.internal.greeter-sync-timeout-manual"
-            )
-        );
-        m_settingsWindow.markSettingsWriteError(
-            i18n::tr(
-                inSessionPolkit ? "settings.errors.sync-greeter-timeout" : "settings.errors.sync-greeter-timeout-manual"
-            )
-        );
-      });
-    });
-  }
-}
-
-void Application::scheduleGreeterAutoSync() {
-  if (!m_configService.config().shell.greeterSync.autoSync) {
-    return;
-  }
-  m_greeterAutoSyncTimer.stop();
-  m_greeterAutoSyncTimer.start(std::chrono::milliseconds(1000), [this]() { performGreeterSync(true); });
 }
 
 void Application::initLockScreenAndSession() {
@@ -478,18 +379,6 @@ void Application::initPanelManagerAndPanels() {
     wl_output* output = m_compositorPlatform.preferredInteractiveOutput(std::chrono::milliseconds(1200));
     m_panelManager.openPanel("wallpaper", PanelOpenRequest{.output = output});
   });
-  m_settingsWindow.setConnectCalendarAccount([this](std::string accountId, std::string activationToken) {
-    const auto& accounts = m_configService.config().calendar.accounts;
-    const auto it = std::ranges::find(accounts, accountId, &CalendarConfig::Account::id);
-    if (it == accounts.end()) {
-      return;
-    }
-    if (it->type == "google") {
-      m_calendarService.connectGoogleAccount(accountId, activationToken);
-    } else if (it->type == "caldav") {
-      m_calendarService.requestRefresh();
-    }
-  });
   auto clipboardPanel = std::make_unique<ClipboardPanel>(
       &m_clipboardService, &m_configService, &m_thumbnailService, &m_asyncTextureCache
   );
@@ -543,7 +432,6 @@ void Application::initPanelManagerAndPanels() {
           .ipc = &m_ipcService,
           .wallpaper = &m_wallpaper,
           .calendar = &m_calendarService,
-          .scriptApi = &m_scriptApi,
           .fileWatcher = &m_fileWatcher,
           .clipboard = &m_clipboardService,
           .accounts = m_accountsService.get(),
@@ -607,20 +495,18 @@ void Application::initPanelManagerAndPanels() {
       m_launcherPanel->clearUsage();
     }
     notify::info(
-        "Noctalia", i18n::tr("notifications.internal.launcher-usage-reset"),
+        "GNIL", i18n::tr("notifications.internal.launcher-usage-reset"),
         i18n::tr("notifications.internal.launcher-usage-reset-success")
     );
   });
   m_settingsWindow.setResetScreenTime([this]() {
     m_screenTimeService.clearAll();
     notify::info(
-        "Noctalia", i18n::tr("notifications.internal.screen-time-reset"),
+        "GNIL", i18n::tr("notifications.internal.screen-time-reset"),
         i18n::tr("notifications.internal.screen-time-reset-success")
     );
   });
-  reloadPluginLauncherProviders();
   reloadDmenuProviders();
-  reloadPluginPanels();
   m_overviewLauncherCapture.initialize(m_wayland, &m_renderContext, m_compositorPlatform, m_panelManager);
   m_overviewLauncherCapture.setEnabled(m_configService.config().shell.niriOverviewTypeToLaunchEnabled);
   m_overviewLauncherCapture.setOpenLauncherCallback(
@@ -816,7 +702,6 @@ void Application::initBarAndLayout() {
       .clipboard = &m_clipboardService,
       .fileWatcher = &m_fileWatcher,
       .screenshots = &m_screenshotService,
-      .scriptApi = &m_scriptApi,
   });
   m_idleInhibitor.setAnchorSurfacesProvider([this]() { return m_bar.caffeineAnchorSurfaces(); });
   m_bar.setOpenWidgetSettingsCallback([this](std::string barName, std::string widgetName) {
@@ -915,19 +800,13 @@ void Application::initWidgetControllersAndCallbacks() {
     m_settingsWindow.requestUpdate();
   };
 
-  const DesktopWidgetScriptDeps desktopWidgetScriptDeps{
-      .scriptApi = &m_scriptApi,
-      .fileWatcher = &m_fileWatcher,
-      .clipboard = &m_clipboardService,
-      .configService = &m_configService,
-  };
   const DesktopWidgetRuntimeServices desktopWidgetRuntime{
       .pipewireSpectrum = m_pipewireSpectrum.get(),
       .weather = &m_weatherService,
       .mpris = m_mprisService.get(),
       .httpClient = &m_httpClient,
       .sysmon = m_systemMonitor.get(),
-      .scriptDeps = desktopWidgetScriptDeps,
+      .config = &m_configService,
   };
   const DesktopWidgetServices desktopWidgetServices{
       .wayland = m_wayland,

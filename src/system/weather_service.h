@@ -107,7 +107,7 @@ public:
   void initialize();
   void addChangeCallback(ChangeCallback callback);
 
-  // Coordinates published by LocationService (IP geolocation or geocoded address) plus a
+  // Coordinates published by LocationService plus a
   // display name and source label. Passing std::nullopt means no location is available.
   void setLocation(std::optional<WeatherCoordinates> coordinates, std::string name, std::string sourceLabel);
 

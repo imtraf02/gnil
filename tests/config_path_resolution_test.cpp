@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-using noctalia::config::schema::isKnownConfigPath;
+using gnil::config::schema::isKnownConfigPath;
 
 namespace {
   int g_failures = 0;
@@ -82,7 +82,6 @@ int main() {
   expectKnown({"calendar", "account", "icloud", "provider"});
   expectKnown({"control_center", "calendar", "show_events_card"});
   expectKnown({"nightlight", "temperature_day"});
-  expectKnown({"location", "auto_locate"});
   expectKnown({"keybinds", "validate"});
   expectKnown({"control_center", "sidebar"});
   expectKnown({"hooks", "wallpaper_changed"});

@@ -28,9 +28,6 @@
 #include "render/core/thumbnail_service.h"
 #include "render/gl_shared_context.h"
 #include "render/render_context.h"
-#include "scripting/plugin_manager.h"
-#include "scripting/plugin_service_host.h"
-#include "scripting/script_api_context.h"
 #include "shell/backdrop/backdrop.h"
 #include "shell/bar/bar.h"
 #include "shell/desktop/desktop_widgets_controller.h"
@@ -64,10 +61,8 @@
 #include "system/lock_keys_poll_source.h"
 #include "system/lock_keys_service.h"
 #include "system/screen_time_service.h"
-#include "system/telemetry_service.h"
 #include "system/weather_poll_source.h"
 #include "system/weather_service.h"
-#include "theme/community_palettes.h"
 #include "theme/theme_service.h"
 #include "time/time_poll_source.h"
 #include "time/time_service.h"
@@ -174,15 +169,8 @@ private:
   // and on every output change so first-run stacking matches hot reload.
   void reconcileOutputSurfaces();
   void initIpc();
-  // (Re)register plugin-backed launcher providers from the enabled plugin set.
-  void reloadPluginLauncherProviders();
   // (Re)register config-driven dmenu launcher providers ([shell.launcher.dmenu.entry.*]).
   void reloadDmenuProviders();
-  // (Re)register plugin-backed panels from the enabled plugin set.
-  void reloadPluginPanels();
-  // Pull every git source flagged auto_update. Run once at startup and on a 6h
-  // repeating timer so long-lived sessions pick up new plugin versions.
-  void runPluginAutoUpdate();
   void startTrayService();
   void syncNotificationDaemon();
   void installNotificationBusNameWatch();
@@ -191,8 +179,6 @@ private:
   [[nodiscard]] bool likelySupportsInSessionPolkit() const noexcept;
   void syncClipboardService();
   void syncScreenTimeService();
-  void performGreeterSync(bool quiet = false);
-  void scheduleGreeterAutoSync();
   bool runShellCommandBlocking(const std::string& command);
   bool runIdleAction(const IdleActionRequest& action);
   void onIconThemeChanged();
@@ -215,12 +201,7 @@ private:
   ConfigService m_configService;
   HttpClient m_httpClient;
   FileWatcher m_fileWatcher;
-  noctalia::theme::CommunityPaletteService m_communityPaletteService{m_httpClient};
-  noctalia::theme::ThemeService m_themeService{m_configService, m_httpClient};
-  scripting::ScriptApiContext m_scriptApi;
-  std::function<void()> m_syncScriptApiOutputs;
-  scripting::PluginManager m_pluginManager{m_configService};
-  scripting::PluginServiceHost m_pluginServiceHost{m_scriptApi, &m_httpClient, &m_clipboardService, &m_fileWatcher};
+  gnil::theme::ThemeService m_themeService{m_configService};
   TimeService m_timeService;
   LockKeysService m_lockKeysService;
   NotificationManager m_notificationManager;
@@ -268,7 +249,6 @@ private:
   std::unique_ptr<PipeWireSpectrum> m_pipewireSpectrum;
   std::unique_ptr<SoundPlayer> m_soundPlayer;
 
-  TelemetryService m_telemetryService;
   ScreenTimeService m_screenTimeService;
 
   GlSharedContext m_glShared;
@@ -284,11 +264,8 @@ private:
   NexusHostCoordinator m_nexusHostCoordinator;
   PanelManager m_panelManager;
   SidebarEdgeTrigger m_sidebarEdgeTrigger{m_panelManager};
-  // Owned by m_panelManager; kept raw so plugin launcher providers can be re-applied.
+  // Owned by m_panelManager; kept raw so config-driven launcher providers can be re-applied.
   LauncherPanel* m_launcherPanel = nullptr;
-  // Ids of plugin-backed panels currently registered with m_panelManager, so a
-  // reload can retire the previous set before registering the new one.
-  std::vector<std::string> m_pluginPanelIds;
   WindowSwitcher m_windowSwitcher;
   OverviewLauncherCapture m_overviewLauncherCapture;
   NotificationToast m_notificationToast;
@@ -344,12 +321,8 @@ private:
   CalendarPollSource m_calendarPollSource{m_calendarService};
   Timer m_trayInitTimer;
   Timer m_polkitInitTimer;
-  Timer m_greeterSyncTimeoutTimer;
-  Timer m_greeterAutoSyncTimer;
   Timer m_clipboardAutoPasteTimer;
-  Timer m_pluginAutoUpdateTimer;
   Timer m_graphicsRecoveryTimer;
-  std::uint64_t m_greeterSyncGeneration = 0;
   int m_graphicsRecoveryAttempts = 0;
   bool m_graphicsRecoveryScheduled = false;
 

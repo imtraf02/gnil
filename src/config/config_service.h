@@ -65,11 +65,11 @@ public:
   [[nodiscard]] bool shouldRunSetupWizard() const;
   [[nodiscard]] std::optional<bool> stateBool(std::string_view owner, std::string_view key) const;
   [[nodiscard]] std::optional<std::string> stateString(std::string_view owner, std::string_view key) const;
-  [[nodiscard]] const noctalia::config::LegacyConfigIssues& legacyConfigIssues() const noexcept {
+  [[nodiscard]] const gnil::config::LegacyConfigIssues& legacyConfigIssues() const noexcept {
     return m_legacyConfigIssues;
   }
 
-  // The optional label is used only for opt-in reload profiling (NOCTALIA_PROFILE);
+  // The optional label is used only for opt-in reload profiling (GNIL_PROFILE);
   // unlabeled subscribers are reported by registration index.
   void addReloadCallback(ReloadCallback callback, std::string_view label = {});
   void setNotificationManager(NotificationManager* manager);
@@ -83,8 +83,6 @@ public:
   [[nodiscard]] std::string getDefaultWallpaperPath() const;
   // Last applied wallpaper, else default. Drives palette generation.
   [[nodiscard]] std::string getPaletteWallpaperPath() const;
-  // Greeter sync fallback when no monitor-specific path is chosen.
-  [[nodiscard]] std::string getGreeterSyncWallpaperPath() const;
   void setWallpaperPath(const std::optional<std::string>& connectorName, const std::string& path);
   void setWallpaperChangeCallback(ChangeCallback callback);
 
@@ -100,16 +98,6 @@ public:
       const std::optional<std::string>& connectorName, const std::string& path, const WallpaperFavorite* applyTheme,
       const std::vector<std::string>& allConnectors
   );
-
-  // Add/remove a plugin id ("author/plugin") from the effective [plugins].enabled
-  // list. Persists the resulting override list to settings.toml and triggers the
-  // reload pipeline. No-op if already in that state.
-  void setPluginEnabled(std::string_view pluginId, bool enabled);
-
-  // Add (replacing any same-named entry) or remove a plugin source in
-  // [[plugins.source]], then trigger the reload pipeline.
-  void addPluginSource(const PluginSourceConfig& source);
-  void removePluginSource(std::string_view name);
 
   // Persist a theme-mode override to settings.toml and trigger the reload pipeline.
   void setThemeMode(ThemeMode mode);
@@ -159,10 +147,10 @@ private:
   static void
   parseConfigTable(const toml::table& tbl, Config& config, bool logSummary, bool logSchemaDiagnostics = true);
   [[nodiscard]] std::optional<Config> configForOverrides(const toml::table& overrides) const;
-  [[nodiscard]] noctalia::config::schema::Diagnostics diagnosticsForOverrides(const toml::table& overrides) const;
+  [[nodiscard]] gnil::config::schema::Diagnostics diagnosticsForOverrides(const toml::table& overrides) const;
   [[nodiscard]] bool validateOverrideMutation(
       const toml::table& candidateOverrides, const toml::table* baselineOverrides = nullptr,
-      const noctalia::config::schema::Diagnostics* candidateDiagnostics = nullptr
+      const gnil::config::schema::Diagnostics* candidateDiagnostics = nullptr
   );
   [[nodiscard]] bool overridePathEffectiveInTable(
       const std::vector<std::string>& path, const toml::table& overrides, const Config* parsedWith = nullptr
@@ -176,7 +164,7 @@ private:
   void fireReloadCallbacks();
   void loadOverridesFromFile();
   void setConfigParseError(std::string parseError);
-  void updateLegacyConfigIssues(noctalia::config::LegacyConfigIssues issues);
+  void updateLegacyConfigIssues(gnil::config::LegacyConfigIssues issues);
   void notifyLegacyConfigIssues();
   bool writeOverridesToFile();
   void extractWallpaperFromOverrides();
@@ -213,7 +201,7 @@ private:
   std::string m_overridesParseError;
   std::string m_pendingError; // parse error from initial load, sent as notification once manager is wired up
   uint32_t m_configErrorNotificationId = 0; // ID of the active config-error notification, 0 if none
-  noctalia::config::LegacyConfigIssues m_legacyConfigIssues;
+  gnil::config::LegacyConfigIssues m_legacyConfigIssues;
   std::string m_loggedLegacyIssueFingerprint;
   bool m_legacyReminderPending = false;
   Timer m_legacyReminderTimer;

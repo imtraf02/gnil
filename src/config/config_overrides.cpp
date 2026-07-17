@@ -6,7 +6,6 @@
 #include "config/widget_config.h"
 #include "core/input/key_chord.h"
 #include "core/log.h"
-#include "scripting/plugin_id.h"
 #include "shell/settings/widget_settings_registry.h"
 #include "theme/builtin_palettes.h"
 #include "theme/custom_palettes.h"
@@ -91,21 +90,6 @@ namespace {
     for (const auto& [key, value] : a) {
       const auto it = b.find(key);
       if (it == b.end() || !widgetSettingEqual(value, it->second)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  // PluginsConfig equality that compares the open-ended pluginSettings map with int/double coercion
-  // (widgetSettingsEqual) instead of the defaulted operator== — same reason as widgets.
-  bool pluginsConfigEqual(const PluginsConfig& a, const PluginsConfig& b) {
-    if (a.sources != b.sources || a.enabled != b.enabled || a.pluginSettings.size() != b.pluginSettings.size()) {
-      return false;
-    }
-    for (const auto& [id, aMap] : a.pluginSettings) {
-      const auto it = b.pluginSettings.find(id);
-      if (it == b.pluginSettings.end() || !widgetSettingsEqual(aMap, it->second)) {
         return false;
       }
     }
@@ -285,11 +269,6 @@ namespace {
     return path.size() == 3 && path[0] == "widget";
   }
 
-  bool isPluginSettingOverridePath(const std::vector<std::string>& path) {
-    // {"plugin_settings", pluginId, key}; pluginId is "author/plugin".
-    return path.size() == 3 && path[0] == "plugin_settings";
-  }
-
   // Override-effectiveness equality. Every config section uses its compiler-generated operator== (exact
   // member-wise compare) so that adding a field cannot silently break override persistence — the only
   // exceptions are the sections whose comparison carries semantics operator== can't express:
@@ -320,9 +299,7 @@ namespace {
         && a.idle == b.idle
         && a.hooks == b.hooks
         && a.theme == b.theme
-        && a.accessibility == b.accessibility
-        && a.controlCenter == b.controlCenter
-        && pluginsConfigEqual(a.plugins, b.plugins);
+        && a.accessibility == b.accessibility;
   }
 
   toml::table* ensureTable(toml::table& parent, std::string_view key) {
@@ -666,154 +643,11 @@ ConfigChangeSet computeConfigChangeSet(const Config& prev, const Config& next) {
       .idle = !(prev.idle == next.idle),
       .hooks = !(prev.hooks == next.hooks),
       .theme = !(prev.theme == next.theme),
-      .controlCenter = !(prev.controlCenter == next.controlCenter),
-      .plugins = !pluginsConfigEqual(prev.plugins, next.plugins),
       .hotCorners = !(prev.hotCorners == next.hotCorners),
       .accessibility = !(prev.accessibility == next.accessibility),
       .nexus = !(prev.nexus == next.nexus),
       .defaultApps = !(prev.defaultApps == next.defaultApps),
   };
-}
-
-void ConfigService::setPluginEnabled(std::string_view pluginId, bool enabled) {
-  if (!scripting::isValidPluginId(pluginId)) {
-    return;
-  }
-  if (m_overridesPath.empty()) {
-    return;
-  }
-
-  const std::string id(pluginId);
-  std::vector<std::string> next = m_config.plugins.enabled;
-  const bool currentlyEnabled = std::ranges::contains(next, id);
-
-  if (enabled) {
-    if (currentlyEnabled) {
-      return; // already enabled
-    }
-    next.push_back(id);
-  } else {
-    if (!currentlyEnabled) {
-      return; // already disabled
-    }
-    std::erase(next, id);
-  }
-
-  toml::array enabledArray;
-  for (const auto& plugin : next) {
-    enabledArray.push_back(plugin);
-  }
-  auto* pluginsTbl = ensureTable(m_overridesTable, "plugins");
-  pluginsTbl->insert_or_assign("enabled", std::move(enabledArray));
-
-  if (!writeOverridesToFile()) {
-    kLog.warn("failed to write {}", m_overridesPath);
-    return;
-  }
-
-  m_ownOverridesWritePending = true;
-  loadAll();
-  fireReloadCallbacks();
-}
-
-void ConfigService::addPluginSource(const PluginSourceConfig& source) {
-  if (m_overridesPath.empty() || !isValidPluginSourceName(source.name)) {
-    return;
-  }
-
-  const auto sourceTable = [](const PluginSourceConfig& src) {
-    toml::table entry;
-    entry.insert_or_assign("name", src.name);
-    entry.insert_or_assign("kind", std::string(enumToKey(kPluginSourceKinds, src.kind)));
-    entry.insert_or_assign("location", src.location);
-    if (src.autoUpdate) {
-      entry.insert_or_assign("auto_update", true);
-    }
-    if (!src.enabled) {
-      entry.insert_or_assign("enabled", false);
-    }
-    return entry;
-  };
-
-  auto* pluginsTbl = ensureTable(m_overridesTable, "plugins");
-  auto* arr = pluginsTbl->get_as<toml::array>("source");
-  bool sourceWritten = false;
-  if (arr == nullptr) {
-    toml::array seededSources;
-    for (const auto& existing : m_config.plugins.sources) {
-      if (!isValidPluginSourceName(existing.name)) {
-        continue;
-      }
-      seededSources.push_back(sourceTable(existing.name == source.name ? source : existing));
-      sourceWritten = sourceWritten || existing.name == source.name;
-    }
-    auto [it, _] = pluginsTbl->insert_or_assign("source", std::move(seededSources));
-    arr = it->second.as_array();
-  }
-
-  if (!sourceWritten) {
-    // A source name is an identity, not a duplicate key. Replace any existing entry
-    // in place — source order is precedence, so toggling enabled must not move the
-    // source to the end. Append only when the name isn't present yet.
-    bool replaced = false;
-    for (auto it = arr->begin(); it != arr->end(); ++it) {
-      const auto* tbl = it->as_table();
-      const auto name = tbl != nullptr ? (*tbl)["name"].value<std::string>() : std::nullopt;
-      if (name && *name == source.name) {
-        arr->replace(it, sourceTable(source));
-        replaced = true;
-        break;
-      }
-    }
-    if (!replaced) {
-      arr->push_back(sourceTable(source));
-    }
-  }
-
-  if (!writeOverridesToFile()) {
-    kLog.warn("failed to write {}", m_overridesPath);
-    return;
-  }
-  m_ownOverridesWritePending = true;
-  loadAll();
-  fireReloadCallbacks();
-}
-
-void ConfigService::removePluginSource(std::string_view name) {
-  if (m_overridesPath.empty()) {
-    return;
-  }
-  auto* pluginsTbl = m_overridesTable.get_as<toml::table>("plugins");
-  if (pluginsTbl == nullptr) {
-    return;
-  }
-  auto* arr = pluginsTbl->get_as<toml::array>("source");
-  if (arr == nullptr) {
-    return;
-  }
-
-  bool removed = false;
-  for (auto it = arr->begin(); it != arr->end();) {
-    const auto* tbl = it->as_table();
-    const auto entryName = tbl != nullptr ? (*tbl)["name"].value<std::string>() : std::nullopt;
-    if (entryName && *entryName == name) {
-      it = arr->erase(it);
-      removed = true;
-    } else {
-      ++it;
-    }
-  }
-  if (!removed) {
-    return;
-  }
-
-  if (!writeOverridesToFile()) {
-    kLog.warn("failed to write {}", m_overridesPath);
-    return;
-  }
-  m_ownOverridesWritePending = true;
-  loadAll();
-  fireReloadCallbacks();
 }
 
 void ConfigService::setThemeMode(ThemeMode mode) {
@@ -848,19 +682,17 @@ bool ConfigService::setThemeColorScheme(PaletteSource source, std::string_view v
 
   switch (source) {
   case PaletteSource::Builtin:
-    if (noctalia::theme::findBuiltinPalette(value) == nullptr) {
+    if (gnil::theme::findBuiltinPalette(value) == nullptr) {
       return false;
     }
     break;
   case PaletteSource::Wallpaper:
-    if (!noctalia::theme::schemeFromString(value)) {
+    if (!gnil::theme::schemeFromString(value)) {
       return false;
     }
     break;
-  case PaletteSource::Community:
-    break;
   case PaletteSource::Custom:
-    if (!std::filesystem::exists(noctalia::theme::customPalettePath(value))) {
+    if (!std::filesystem::exists(gnil::theme::customPalettePath(value))) {
       return false;
     }
     break;
@@ -875,9 +707,6 @@ bool ConfigService::setThemeColorScheme(PaletteSource source, std::string_view v
     break;
   case PaletteSource::Wallpaper:
     themeTbl->insert_or_assign("wallpaper_scheme", value);
-    break;
-  case PaletteSource::Community:
-    themeTbl->insert_or_assign("community_palette", value);
     break;
   case PaletteSource::Custom:
     themeTbl->insert_or_assign("custom_palette", value);
@@ -1006,16 +835,16 @@ std::size_t ConfigService::overridePreserveDepthForPath(const std::vector<std::s
 
 std::optional<Config> ConfigService::configForOverrides(const toml::table& overrides) const {
   Config parsed;
-  noctalia::config::seedBuiltinWidgets(parsed);
+  gnil::config::seedBuiltinWidgets(parsed);
 
   toml::table merged;
 
   toml::table effectiveOverrides = overrides;
-  noctalia::config::schema::Diagnostics migrationDiag;
+  gnil::config::schema::Diagnostics migrationDiag;
   if (!effectiveOverrides.empty()) {
-    const auto storedVersion = noctalia::config::storedConfigVersion(effectiveOverrides, migrationDiag);
+    const auto storedVersion = gnil::config::storedConfigVersion(effectiveOverrides, migrationDiag);
     if (storedVersion.has_value()) {
-      (void)noctalia::config::applyPendingConfigMigrations(effectiveOverrides, *storedVersion, migrationDiag);
+      (void)gnil::config::applyPendingConfigMigrations(effectiveOverrides, *storedVersion, migrationDiag);
     }
   }
   if (migrationDiag.hasErrors()) {
@@ -1023,13 +852,12 @@ std::optional<Config> ConfigService::configForOverrides(const toml::table& overr
     return std::nullopt;
   }
   deepMerge(merged, effectiveOverrides);
-  merged.erase(noctalia::config::kConfigVersionKey);
-  noctalia::config::LegacyConfigIssues issues;
-  noctalia::config::normalizeLegacyConfig(merged, issues);
+  merged.erase(gnil::config::kConfigVersionKey);
+  gnil::config::LegacyConfigIssues issues;
+  gnil::config::normalizeLegacyConfig(merged, issues);
   if (overrides.empty()) {
     parsed.idle.behaviors = defaultIdleBehaviors();
     parsed.bars.push_back(BarConfig{});
-    parsed.controlCenter.shortcuts = defaultControlCenterShortcuts();
     parsed.shell.session.actions = defaultSessionPanelActions();
     return parsed;
   }
@@ -1043,26 +871,26 @@ std::optional<Config> ConfigService::configForOverrides(const toml::table& overr
   return parsed;
 }
 
-noctalia::config::schema::Diagnostics ConfigService::diagnosticsForOverrides(const toml::table& overrides) const {
+gnil::config::schema::Diagnostics ConfigService::diagnosticsForOverrides(const toml::table& overrides) const {
   toml::table merged;
-  noctalia::config::schema::Diagnostics diagnostics;
+  gnil::config::schema::Diagnostics diagnostics;
 
   toml::table effectiveOverrides = overrides;
   if (!effectiveOverrides.empty()) {
-    const auto storedVersion = noctalia::config::storedConfigVersion(effectiveOverrides, diagnostics);
+    const auto storedVersion = gnil::config::storedConfigVersion(effectiveOverrides, diagnostics);
     if (storedVersion.has_value()) {
-      (void)noctalia::config::applyPendingConfigMigrations(effectiveOverrides, *storedVersion, diagnostics);
+      (void)gnil::config::applyPendingConfigMigrations(effectiveOverrides, *storedVersion, diagnostics);
     }
   }
   deepMerge(merged, effectiveOverrides);
-  merged.erase(noctalia::config::kConfigVersionKey);
-  noctalia::config::LegacyConfigIssues issues;
-  noctalia::config::normalizeLegacyConfig(merged, issues);
+  merged.erase(gnil::config::kConfigVersionKey);
+  gnil::config::LegacyConfigIssues issues;
+  gnil::config::normalizeLegacyConfig(merged, issues);
   for (const auto& issue : issues) {
     diagnostics.warn(issue.path, issue.message, "config.legacy");
   }
 
-  auto semantic = noctalia::config::validateMergedConfig(merged);
+  auto semantic = gnil::config::validateMergedConfig(merged);
   diagnostics.entries.insert(
       diagnostics.entries.end(), std::make_move_iterator(semantic.entries.begin()),
       std::make_move_iterator(semantic.entries.end())
@@ -1072,7 +900,7 @@ noctalia::config::schema::Diagnostics ConfigService::diagnosticsForOverrides(con
 
 bool ConfigService::validateOverrideMutation(
     const toml::table& candidateOverrides, const toml::table* baselineOverrides,
-    const noctalia::config::schema::Diagnostics* candidateDiagnostics
+    const gnil::config::schema::Diagnostics* candidateDiagnostics
 ) {
   m_lastMutationError.clear();
   if (!m_overridesParseError.empty()) {
@@ -1083,11 +911,11 @@ bool ConfigService::validateOverrideMutation(
   try {
     const auto baseline = diagnosticsForOverrides(baselineOverrides != nullptr ? *baselineOverrides : m_overridesTable);
     const auto computedCandidate = candidateDiagnostics == nullptr ? diagnosticsForOverrides(candidateOverrides)
-                                                                   : noctalia::config::schema::Diagnostics{};
+                                                                   : gnil::config::schema::Diagnostics{};
     const auto& candidate = candidateDiagnostics != nullptr ? *candidateDiagnostics : computedCandidate;
     const auto fatal = std::ranges::find_if(candidate.entries, [](const auto& entry) {
-      return entry.severity == noctalia::config::schema::Diagnostics::Severity::Error
-          && entry.recoveryScope == noctalia::config::schema::Diagnostics::RecoveryScope::Document;
+      return entry.severity == gnil::config::schema::Diagnostics::Severity::Error
+          && entry.recoveryScope == gnil::config::schema::Diagnostics::RecoveryScope::Document;
     });
     if (fatal != candidate.entries.end()) {
       m_lastMutationError = fatal->path + ": " + fatal->message;
@@ -1131,30 +959,6 @@ bool ConfigService::overridePathEffectiveInTable(
 
   if (isWidgetSettingOverridePath(path)) {
     return settings::widgetSettingOverrideIsEffective(path[1], path[2], *parsedWith, *withoutOverride);
-  }
-
-  if (isPluginSettingOverridePath(path)) {
-    const auto pluginSettingValue = [](const Config& cfg, const std::string& pluginId,
-                                       const std::string& key) -> std::optional<WidgetSettingValue> {
-      const auto it = cfg.plugins.pluginSettings.find(pluginId);
-      if (it == cfg.plugins.pluginSettings.end()) {
-        return std::nullopt;
-      }
-      const auto kIt = it->second.find(key);
-      if (kIt == it->second.end()) {
-        return std::nullopt;
-      }
-      return kIt->second;
-    };
-    const auto withVal = pluginSettingValue(*parsedWith, path[1], path[2]);
-    const auto withoutVal = pluginSettingValue(*withoutOverride, path[1], path[2]);
-    if (!withVal.has_value() && !withoutVal.has_value()) {
-      return false;
-    }
-    if (!withVal.has_value() || !withoutVal.has_value()) {
-      return true;
-    }
-    return !widgetSettingEqual(*withVal, *withoutVal);
   }
 
   return !configEqual(*parsedWith, *withoutOverride);
@@ -1442,7 +1246,7 @@ bool ConfigService::validateOverride(
   const auto candidateDiagnostics = diagnosticsForOverrides(candidate);
   const std::string settingPath = overrideCacheKey(path);
   const auto fieldError = std::ranges::find_if(candidateDiagnostics.entries, [&](const auto& entry) {
-    return entry.severity == noctalia::config::schema::Diagnostics::Severity::Error && entry.path == settingPath;
+    return entry.severity == gnil::config::schema::Diagnostics::Severity::Error && entry.path == settingPath;
   });
   if (fieldError != candidateDiagnostics.entries.end()) {
     m_lastMutationError = fieldError->path + ": " + fieldError->message;
@@ -1675,26 +1479,6 @@ std::string ConfigService::getPaletteWallpaperPath() const {
   return m_defaultWallpaperPath;
 }
 
-std::string ConfigService::getGreeterSyncWallpaperPath() const {
-  const std::string palettePath = getPaletteWallpaperPath();
-  if (!palettePath.empty()) {
-    return palettePath;
-  }
-
-  std::vector<std::string> connectors;
-  connectors.reserve(m_monitorWallpaperPaths.size());
-  for (const auto& [connector, path] : m_monitorWallpaperPaths) {
-    if (!path.empty()) {
-      connectors.push_back(connector);
-    }
-  }
-  std::ranges::sort(connectors);
-  for (const std::string& connector : connectors) {
-    return m_monitorWallpaperPaths.at(connector);
-  }
-  return {};
-}
-
 void ConfigService::setWallpaperChangeCallback(ChangeCallback callback) {
   m_wallpaperChangeCallback = std::move(callback);
 }
@@ -1813,9 +1597,6 @@ void ConfigService::extractWallpaperFromTable(const toml::table& table) {
       if (auto v = (*favTbl)["builtin_palette"].value<std::string>()) {
         favorite.builtinPalette = *v;
       }
-      if (auto v = (*favTbl)["community_palette"].value<std::string>()) {
-        favorite.communityPalette = *v;
-      }
       if (auto v = (*favTbl)["custom_palette"].value<std::string>()) {
         favorite.customPalette = *v;
       }
@@ -1851,11 +1632,6 @@ void ConfigService::syncWallpaperFavoritesToOverridesTable() {
       case PaletteSource::Wallpaper:
         if (!favorite.wallpaperScheme.empty()) {
           entry.insert("wallpaper_scheme", favorite.wallpaperScheme);
-        }
-        break;
-      case PaletteSource::Community:
-        if (!favorite.communityPalette.empty()) {
-          entry.insert("community_palette", favorite.communityPalette);
         }
         break;
       case PaletteSource::Custom:
@@ -1995,12 +1771,6 @@ void ConfigService::setWallpaperFavoritePaletteSource(std::string_view path, std
           changed = true;
         }
         break;
-      case PaletteSource::Community:
-        if (favorite.communityPalette.empty()) {
-          favorite.communityPalette = m_config.theme.communityPalette;
-          changed = true;
-        }
-        break;
       case PaletteSource::Custom:
         if (favorite.customPalette.empty()) {
           favorite.customPalette = m_config.theme.customPalette;
@@ -2045,12 +1815,6 @@ void ConfigService::setWallpaperFavoritePaletteSelection(std::string_view path, 
     case PaletteSource::Wallpaper:
       if (favorite.wallpaperScheme != selection) {
         favorite.wallpaperScheme = selection;
-        changed = true;
-      }
-      break;
-    case PaletteSource::Community:
-      if (favorite.communityPalette != selection) {
-        favorite.communityPalette = selection;
         changed = true;
       }
       break;
@@ -2108,12 +1872,6 @@ void ConfigService::applyWallpaperSelection(
       case PaletteSource::Wallpaper:
         if (!applyTheme->wallpaperScheme.empty() && m_config.theme.wallpaperScheme != applyTheme->wallpaperScheme) {
           themeTbl->insert_or_assign("wallpaper_scheme", applyTheme->wallpaperScheme);
-          changed = true;
-        }
-        break;
-      case PaletteSource::Community:
-        if (!applyTheme->communityPalette.empty() && m_config.theme.communityPalette != applyTheme->communityPalette) {
-          themeTbl->insert_or_assign("community_palette", applyTheme->communityPalette);
           changed = true;
         }
         break;

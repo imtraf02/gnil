@@ -34,9 +34,6 @@ public:
   ~LauncherPanel() override;
 
   void addProvider(std::unique_ptr<LauncherProvider> provider);
-  // Drop every dynamically-registered (plugin-backed) provider, so the enabled
-  // plugin set can be re-applied without disturbing the built-in providers.
-  void clearDynamicProviders();
   // Drop providers whose stable id starts with `prefix` (e.g. config-driven "dmenu.").
   void clearProvidersWithIdPrefix(std::string_view prefix);
   // Restrict the next open to a single provider (stdin/dmenu session). When set,
@@ -84,7 +81,7 @@ private:
   void setQuery(std::string query);
   // Re-gather the current query, preserving the selected result by identity.
   void reapplyCurrentQuery();
-  // A plugin provider delivered fresh async results — re-gather if the panel is open.
+  // A provider delivered fresh async results — re-gather if the panel is open.
   void onProviderResultsChanged();
   void refreshResults();
   [[nodiscard]] bool routeCommandQuery(std::string_view text);

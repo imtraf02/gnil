@@ -21,14 +21,14 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_DIR = SCRIPT_DIR.parent
-NOCTALIA_BIN = REPO_DIR / "build-debug" / "noctalia"
+GNIL_BIN = REPO_DIR / "build-debug" / "gnil"
 PYTHON_PROCESSOR = (
-    Path.home() / "Development/misc/noctalia/noctalia-shell/Scripts/python/src/theming/template-processor.py"
+    Path.home() / "Development/misc/gnil/gnil-shell/Scripts/python/src/theming/template-processor.py"
 )
-PYTHON_THEMING_DIR = Path.home() / "Development/misc/noctalia/noctalia-shell/Scripts/python/src/theming"
-TEMPLATE_ROOT = Path.home() / "Development/misc/noctalia/noctalia-shell/Assets/Templates"
+PYTHON_THEMING_DIR = Path.home() / "Development/misc/gnil/gnil-shell/Scripts/python/src/theming"
+TEMPLATE_ROOT = Path.home() / "Development/misc/gnil/gnil-shell/Assets/Templates"
 PREDEFINED_SCHEME_JSON = (
-    Path.home() / "Development/misc/noctalia/noctalia-shell/Assets/ColorScheme/Noctalia-default/Noctalia-default.json"
+    Path.home() / "Development/misc/gnil/gnil-shell/Assets/ColorScheme/Gnil-default/Gnil-default.json"
 )
 
 sys.path.insert(0, str(PYTHON_THEMING_DIR))
@@ -52,7 +52,7 @@ def render_cpp(theme_json: Path, scheme: str, template_in: Path, output: Path, d
     try:
         subprocess.run(
             [
-                str(NOCTALIA_BIN),
+                str(GNIL_BIN),
                 "theme",
                 "--theme-json",
                 str(theme_json),
@@ -91,8 +91,8 @@ def main() -> int:
     if not args.templates_root.exists():
         print(f"error: templates root not found: {args.templates_root}", file=sys.stderr)
         return 1
-    if not NOCTALIA_BIN.exists():
-        print(f"error: noctalia binary not found: {NOCTALIA_BIN}", file=sys.stderr)
+    if not GNIL_BIN.exists():
+        print(f"error: gnil binary not found: {GNIL_BIN}", file=sys.stderr)
         return 1
     if not args.predefined_scheme_json.exists():
         print(f"error: predefined scheme json not found: {args.predefined_scheme_json}", file=sys.stderr)

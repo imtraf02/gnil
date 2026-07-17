@@ -55,20 +55,16 @@ public:
 
   [[nodiscard]] virtual std::vector<LauncherCategory> categories() const { return {}; }
 
-  // True for providers registered dynamically (plugin-backed). The panel can drop
-  // and re-add just these when the enabled plugin set changes.
-  [[nodiscard]] virtual bool isDynamic() const { return false; }
-
-  // Async providers (plugin-backed) deliver results after query() returns; the
+  // Async providers deliver results after query() returns; the
   // panel installs this callback so the provider can ask for the current query to
   // be re-gathered when fresh results land. Synchronous providers ignore it.
   virtual void setResultsChangedCallback(std::function<void()> /*callback*/) {}
 
-  // Plugin-backed providers can request that the open launcher input be replaced,
+  // Providers can request that the open launcher input be replaced,
   // e.g. to implement autocomplete.
   virtual void setQueryRequestedCallback(std::function<void(std::string)> /*callback*/) {}
 
-  // Async (plugin-backed) providers defer the launcher close until their activation
+  // Async providers defer the launcher close until their activation
   // handler resolves: if it rewrote the query the panel stays open, otherwise the
   // provider invokes this to close it (and record usage). The argument is the
   // activated result id. Synchronous providers close directly via activate().

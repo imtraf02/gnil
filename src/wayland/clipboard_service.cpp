@@ -23,8 +23,8 @@
 
 namespace {
 
-  constexpr std::size_t kMinHistoryMaxEntries = static_cast<std::size_t>(noctalia::config::kClipboardHistoryMinEntries);
-  constexpr std::size_t kMaxHistoryMaxEntries = static_cast<std::size_t>(noctalia::config::kClipboardHistoryMaxEntries);
+  constexpr std::size_t kMinHistoryMaxEntries = static_cast<std::size_t>(gnil::config::kClipboardHistoryMinEntries);
+  constexpr std::size_t kMaxHistoryMaxEntries = static_cast<std::size_t>(gnil::config::kClipboardHistoryMaxEntries);
   constexpr std::size_t kMaxHistoryBytes = 64u * 1024u * 1024u;
   constexpr std::size_t kMaxEntryBytes = 10u * 1024u * 1024u;
   constexpr std::size_t kPreviewBytes = 200;
@@ -1344,7 +1344,7 @@ std::string ClipboardService::stateDirectory() {
   if (!dir.empty()) {
     return dir + "/clipboard";
   }
-  return "/tmp/noctalia-clipboard";
+  return "/tmp/gnil-clipboard";
 }
 
 std::string ClipboardService::manifestPath() { return stateDirectory() + "/index.json"; }

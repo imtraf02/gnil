@@ -1574,7 +1574,7 @@ void BrightnessService::registerIpc(IpcService& ipc, std::function<void()> onBat
   ipc.registerHandler(
       "brightness-set",
       [this, applyToTargets](const std::string& args) -> std::string {
-        const auto parts = noctalia::ipc::splitWords(args);
+        const auto parts = gnil::ipc::splitWords(args);
         if (parts.empty() || parts.size() > 2) {
           return "error: brightness-set requires <value> or <target> <value>\n";
         }
@@ -1586,7 +1586,7 @@ void BrightnessService::registerIpc(IpcService& ipc, std::function<void()> onBat
           valueToken = parts[1];
         }
 
-        const auto amount = noctalia::ipc::parseNormalizedOrPercent(valueToken);
+        const auto amount = gnil::ipc::parseNormalizedOrPercent(valueToken);
         if (!amount.has_value()) {
           return "error: invalid brightness value (use percent like 65 or 65%, or normalized like 0.65)\n";
         }
@@ -1605,7 +1605,7 @@ void BrightnessService::registerIpc(IpcService& ipc, std::function<void()> onBat
         ipc.registerHandler(
             command,
             [this, applyToTargets, command, direction](const std::string& args) -> std::string {
-              const auto parts = noctalia::ipc::splitWords(args);
+              const auto parts = gnil::ipc::splitWords(args);
               if (parts.size() > 2) {
                 return "error: " + command + " accepts at most [target] [step]\n";
               }
@@ -1613,7 +1613,7 @@ void BrightnessService::registerIpc(IpcService& ipc, std::function<void()> onBat
               std::string target = "current";
               std::optional<float> step = kDefaultBrightnessStep;
               if (parts.size() == 1) {
-                const auto maybeStep = noctalia::ipc::parseNormalizedOrPercent(parts[0]);
+                const auto maybeStep = gnil::ipc::parseNormalizedOrPercent(parts[0]);
                 if (maybeStep.has_value()) {
                   step = maybeStep;
                 } else {
@@ -1621,7 +1621,7 @@ void BrightnessService::registerIpc(IpcService& ipc, std::function<void()> onBat
                 }
               } else if (parts.size() == 2) {
                 target = parts[0];
-                step = noctalia::ipc::parseNormalizedOrPercent(parts[1]);
+                step = gnil::ipc::parseNormalizedOrPercent(parts[1]);
               }
 
               if (!step.has_value()) {

@@ -52,7 +52,7 @@ namespace {
       {NexusPage::WallpaperStyle, "wallpaper", "Wallpaper browser", "Search, sort, favourite and apply wallpapers"},
       {NexusPage::WallpaperStyle, "output", "Output", "Choose which monitor the wallpaper applies to"},
       {NexusPage::WallpaperStyle, "wallpapers-per-row", "Wallpaper columns", "Thumbnail columns in the wallpaper browser"},
-      {NexusPage::WallpaperStyle, "scheme", "Color scheme", "Builtin, community and custom palettes"},
+      {NexusPage::WallpaperStyle, "scheme", "Color scheme", "Builtin, wallpaper and custom palettes"},
       {NexusPage::WallpaperStyle, "variant", "Material variant", "Nine Material 3 generation styles"},
       {NexusPage::WallpaperStyle, "typography", "Typography", "Font family and interface text sizing"},
       {NexusPage::WallpaperStyle, "appearance", "Interface appearance", "Scale, contrast, corners, borders and motion"},
@@ -85,7 +85,7 @@ namespace {
       {NexusPage::Services, "clipboard", "Clipboard", "History, limits and confirmation behavior"},
       {NexusPage::Services, "clear-clipboard", "Clear clipboard history", "Remove saved clipboard entries"},
       {NexusPage::Services, "offline", "Offline mode", "Disable network-backed shell services"},
-      {NexusPage::Services, "network-privacy", "Network privacy", "External IP lookup and telemetry"},
+      {NexusPage::Services, "network-privacy", "Network privacy", "External network lookups"},
       {NexusPage::LanguageRegion, "language", "Language", "GNIL currently uses English UI"},
       {NexusPage::LanguageRegion, "time", "Time format", "Clock and date formatting"},
       {NexusPage::LanguageRegion, "location", "Region", "Location-backed schedules and weather"},
@@ -120,7 +120,6 @@ namespace {
     case SettingsSection::Osd:
       return NexusPage::Panels;
     case SettingsSection::Launcher:
-    case SettingsSection::Plugins:
       return NexusPage::Apps;
     case SettingsSection::Location:
       return NexusPage::LanguageRegion;
@@ -877,8 +876,8 @@ void NexusView::addControlRow(std::string title, std::string description, bool a
     row->addChild(
         ui::button({
             .text = std::string(
-                noctalia::theme::schemeToString(
-                    noctalia::theme::schemeFromString(current).value_or(noctalia::theme::Scheme::Content)
+                gnil::theme::schemeToString(
+                    gnil::theme::schemeFromString(current).value_or(gnil::theme::Scheme::Content)
                 )
             ),
             .enabled = true,
@@ -1656,7 +1655,7 @@ void NexusView::addDefaultAppPicker() {
 }
 
 void NexusView::addAboutInfo() {
-  addControlRow("GNIL", noctalia::build_info::displayVersion(), true, "shell");
+  addControlRow("GNIL", gnil::build_info::displayVersion(), true, "shell");
   addControlRow("Distribution", distroLabel(), true, "system.distro");
   addControlRow("Kernel", kernelLabel(), true, "system.kernel");
   addControlRow("Compositor", compositorLabel(), true, "system.compositor");

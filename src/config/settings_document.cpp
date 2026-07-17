@@ -469,7 +469,7 @@ height = 720.0
 
     toml::table runtime;
     runtime.insert_or_assign(
-        noctalia::config::kConfigVersionKey, static_cast<std::int64_t>(noctalia::config::currentConfigVersion())
+        gnil::config::kConfigVersionKey, static_cast<std::int64_t>(gnil::config::currentConfigVersion())
     );
     copyCommonToRuntime(merged, runtime);
 

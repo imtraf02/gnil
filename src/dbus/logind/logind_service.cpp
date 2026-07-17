@@ -147,7 +147,7 @@ bool LogindService::acquireIdleInhibit() {
     sdbus::UnixFd fd;
     m_managerProxy->callMethod("Inhibit")
         .onInterface(kLogindManagerInterface)
-        .withArguments(std::string("idle"), std::string("noctalia"), std::string("Caffeine"), std::string("block"))
+        .withArguments(std::string("idle"), std::string("gnil"), std::string("Caffeine"), std::string("block"))
         .storeResultsTo(fd);
     m_idleInhibitFd = fd.release();
     if (m_idleInhibitFd < 0) {

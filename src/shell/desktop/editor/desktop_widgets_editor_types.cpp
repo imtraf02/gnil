@@ -3,7 +3,7 @@
 DesktopWidgetsEditorProfile DesktopWidgetsEditorProfile::desktop() {
   return DesktopWidgetsEditorProfile{
       .logSection = "desktop",
-      .layerNamespace = "noctalia-desktop-widgets-editor",
+      .layerNamespace = "gnil-desktop-widgets-editor",
       .widgetIdPrefix = "desktop-widget-",
       .showLockscreenLoginPreview = false,
   };

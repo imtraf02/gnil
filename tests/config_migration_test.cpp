@@ -14,7 +14,7 @@ namespace {
   int g_failures = 0;
   int g_syntheticMigrationApplications = 0;
 
-  void countSyntheticMigration(toml::table&, noctalia::config::schema::Diagnostics&) {
+  void countSyntheticMigration(toml::table&, gnil::config::schema::Diagnostics&) {
     ++g_syntheticMigrationApplications;
   }
 
@@ -55,8 +55,8 @@ panel_overlap = 2
 radius = -7
 )");
 
-    noctalia::config::LegacyConfigIssues issues;
-    noctalia::config::normalizeLegacyConfig(root, issues);
+    gnil::config::LegacyConfigIssues issues;
+    gnil::config::normalizeLegacyConfig(root, issues);
 
     expect(!root["bar"]["main"]["radius"], "legacy base radius was not removed");
     expect(!root["bar"]["main"]["radius_top_left"], "legacy per-corner radius was not removed");
@@ -70,8 +70,8 @@ radius = -7
     expect(!root["dock"], "removed dock configuration survived normalization");
     expect(!issues.empty(), "removed chrome keys did not report legacy issues");
 
-    noctalia::config::LegacyConfigIssues secondPassIssues;
-    noctalia::config::normalizeLegacyConfig(root, secondPassIssues);
+    gnil::config::LegacyConfigIssues secondPassIssues;
+    gnil::config::normalizeLegacyConfig(root, secondPassIssues);
     expect(secondPassIssues.empty(), "normalization was not idempotent");
   }
 
@@ -81,31 +81,33 @@ radius = -7
 sunset = "20:30"
 sunrise = "07:30"
 )");
-    noctalia::config::LegacyConfigIssues issues;
-    noctalia::config::normalizeLegacyConfig(legacy, issues);
+    gnil::config::LegacyConfigIssues issues;
+    gnil::config::normalizeLegacyConfig(legacy, issues);
     expect(
         legacy["location"]["custom_schedule"].value<bool>() == true,
         "a times-only location did not opt into custom scheduling"
     );
     expect(issues.size() == 1, "times-only location did not report a legacy issue");
 
-    noctalia::config::LegacyConfigIssues secondPassIssues;
-    noctalia::config::normalizeLegacyConfig(legacy, secondPassIssues);
+    gnil::config::LegacyConfigIssues secondPassIssues;
+    gnil::config::normalizeLegacyConfig(legacy, secondPassIssues);
     expect(secondPassIssues.empty(), "custom scheduling normalization was not idempotent");
 
-    // Coordinates won under the old rules, so these configs must keep using them.
-    for (const std::string_view source :
-         {"auto_locate = true", "address = \"Toronto, ON\"", "latitude = 52.52\nlongitude = 13.405"}) {
-      toml::table coords =
-          toml::parse(std::format("[location]\nsunset = \"20:30\"\nsunrise = \"07:30\"\n{}\n", source));
-      noctalia::config::LegacyConfigIssues coordIssues;
-      noctalia::config::normalizeLegacyConfig(coords, coordIssues);
-      expect(
-          !coords["location"]["custom_schedule"].value<bool>().has_value(),
-          "a location with coordinates was switched to custom scheduling"
-      );
-      expect(coordIssues.empty(), "a location with coordinates reported a legacy issue");
-    }
+    // Explicit coordinates keep using the astronomical schedule.
+    toml::table coords = toml::parse(R"(
+[location]
+sunset = "20:30"
+sunrise = "07:30"
+latitude = 52.52
+longitude = 13.405
+)");
+    gnil::config::LegacyConfigIssues coordIssues;
+    gnil::config::normalizeLegacyConfig(coords, coordIssues);
+    expect(
+        !coords["location"]["custom_schedule"].value<bool>().has_value(),
+        "a location with coordinates was switched to custom scheduling"
+    );
+    expect(coordIssues.empty(), "a location with coordinates reported a legacy issue");
 
     toml::table explicitOff = toml::parse(R"(
 [location]
@@ -113,8 +115,8 @@ custom_schedule = false
 sunset = "20:30"
 sunrise = "07:30"
 )");
-    noctalia::config::LegacyConfigIssues offIssues;
-    noctalia::config::normalizeLegacyConfig(explicitOff, offIssues);
+    gnil::config::LegacyConfigIssues offIssues;
+    gnil::config::normalizeLegacyConfig(explicitOff, offIssues);
     expect(
         explicitOff["location"]["custom_schedule"].value<bool>() == false,
         "an explicit custom_schedule = false was overwritten"
@@ -127,8 +129,8 @@ sunrise = "07:30"
 enable_builtin_templates = true
 builtin_ids = ["foot"]
 )");
-    noctalia::config::LegacyConfigIssues issues;
-    noctalia::config::normalizeLegacyConfig(legacy, issues);
+    gnil::config::LegacyConfigIssues issues;
+    gnil::config::normalizeLegacyConfig(legacy, issues);
     expect(!legacy["theme"]["templates"], "removed theme templates survived normalization");
     expect(
         std::ranges::any_of(issues, [](const auto& issue) { return issue.path == "theme.templates"; }),
@@ -156,10 +158,10 @@ end = ["control-center", "battery"]
 [hot_corners.top_left]
 action = "control_center"
 )" );
-    noctalia::config::schema::Diagnostics diag;
-    const int applied = noctalia::config::applyPendingConfigMigrations(legacy, 6, diag);
+    gnil::config::schema::Diagnostics diag;
+    const int applied = gnil::config::applyPendingConfigMigrations(legacy, 6, diag);
     expect(
-        applied == noctalia::config::currentConfigVersion(),
+        applied == gnil::config::currentConfigVersion(),
         "standalone panel migration did not advance through current migrations"
     );
     expect(!legacy["control_center"], "removed control-center table survived migration");
@@ -196,11 +198,11 @@ action = "control_center"
 [bar.main]
 radius = -10
 )");
-    noctalia::config::schema::Diagnostics diag;
-    const auto stored = noctalia::config::storedConfigVersion(legacy, diag);
+    gnil::config::schema::Diagnostics diag;
+    const auto stored = gnil::config::storedConfigVersion(legacy, diag);
     expect(stored == 0, "missing config_version was not treated as legacy version 0");
-    const int applied = noctalia::config::applyPendingConfigMigrations(legacy, stored.value_or(0), diag);
-    expect(applied == noctalia::config::currentConfigVersion(), "pending migration did not reach current version");
+    const int applied = gnil::config::applyPendingConfigMigrations(legacy, stored.value_or(0), diag);
+    expect(applied == gnil::config::currentConfigVersion(), "pending migration did not reach current version");
     expect(!legacy["bar"]["main"]["radius"], "sidecar did not remove obsolete radius");
 
     toml::table current = toml::parse(R"(
@@ -208,10 +210,10 @@ config_version = 1
 [bar.main]
 radius = -10
 )");
-    noctalia::config::schema::Diagnostics currentDiag;
-    const auto currentStored = noctalia::config::storedConfigVersion(current, currentDiag);
+    gnil::config::schema::Diagnostics currentDiag;
+    const auto currentStored = gnil::config::storedConfigVersion(current, currentDiag);
     expect(currentStored == 1, "current config_version was not read");
-    (void)noctalia::config::applyPendingConfigMigrations(current, currentStored.value_or(0), currentDiag);
+    (void)gnil::config::applyPendingConfigMigrations(current, currentStored.value_or(0), currentDiag);
     expect(!current["bar"]["main"]["radius"], "pending unified chrome migration did not remove radius");
 
     toml::table fixedHeight = toml::parse(R"(
@@ -220,11 +222,11 @@ config_version = 7
 width = 520
 height = 640
 )");
-    noctalia::config::schema::Diagnostics fixedHeightDiag;
+    gnil::config::schema::Diagnostics fixedHeightDiag;
     const int fixedHeightApplied =
-        noctalia::config::applyPendingConfigMigrations(fixedHeight, 7, fixedHeightDiag);
+        gnil::config::applyPendingConfigMigrations(fixedHeight, 7, fixedHeightDiag);
     expect(
-        fixedHeightApplied == noctalia::config::currentConfigVersion(),
+        fixedHeightApplied == gnil::config::currentConfigVersion(),
         "dynamic-height migration did not reach current version"
     );
     expect(
@@ -242,33 +244,33 @@ config_version = 8
 direction = "up_left"
 alpha = 0.7
 )");
-    noctalia::config::schema::Diagnostics shadowDiag;
-    const int shadowApplied = noctalia::config::applyPendingConfigMigrations(shadowed, 8, shadowDiag);
+    gnil::config::schema::Diagnostics shadowDiag;
+    const int shadowApplied = gnil::config::applyPendingConfigMigrations(shadowed, 8, shadowDiag);
     expect(
-        shadowApplied == noctalia::config::currentConfigVersion(),
+        shadowApplied == gnil::config::currentConfigVersion(),
         "shadowless-surface migration did not reach current version"
     );
     expect(!shadowed["shell"]["shadow"], "shadowless-surface migration kept shell.shadow");
 
     toml::table invalid = toml::parse("config_version = \"one\"");
-    noctalia::config::schema::Diagnostics invalidDiag;
+    gnil::config::schema::Diagnostics invalidDiag;
     expect(
-        !noctalia::config::storedConfigVersion(invalid, invalidDiag).has_value(), "invalid config_version was accepted"
+        !gnil::config::storedConfigVersion(invalid, invalidDiag).has_value(), "invalid config_version was accepted"
     );
     expect(invalidDiag.hasErrors(), "invalid config_version did not produce an error");
     expect(invalidDiag.hasFatalErrors(), "invalid config_version was not document-fatal");
 
     toml::table future = toml::parse("config_version = 999");
-    noctalia::config::schema::Diagnostics futureDiag;
+    gnil::config::schema::Diagnostics futureDiag;
     expect(
-        !noctalia::config::storedConfigVersion(future, futureDiag).has_value(), "future config_version was accepted"
+        !gnil::config::storedConfigVersion(future, futureDiag).has_value(), "future config_version was accepted"
     );
     expect(futureDiag.hasErrors(), "future config_version did not produce an error");
     expect(futureDiag.hasFatalErrors(), "future config_version was not document-fatal");
 
-    noctalia::config::schema::Diagnostics baseline;
+    gnil::config::schema::Diagnostics baseline;
     baseline.componentError("widget.clock.timezone", "widget.clock", "unknown timezone", "clock.timezone.unknown");
-    noctalia::config::schema::Diagnostics candidate = baseline;
+    gnil::config::schema::Diagnostics candidate = baseline;
     candidate.error("accessibility.ui_scale", "expected a number", "config.type.number");
     const auto introduced = candidate.introducedErrorsComparedTo(baseline);
     expect(introduced.entries.size() == 1, "diagnostic comparison did not isolate the new error");
@@ -289,9 +291,9 @@ enabled = true
 [lockscreen_widgets]
 enabled = true
 )");
-    noctalia::config::schema::Diagnostics diag;
-    const int applied = noctalia::config::applyPendingConfigMigrations(legacy, 3, diag);
-    expect(applied == noctalia::config::currentConfigVersion(), "pending migrations did not reach current version");
+    gnil::config::schema::Diagnostics diag;
+    const int applied = gnil::config::applyPendingConfigMigrations(legacy, 3, diag);
+    expect(applied == gnil::config::currentConfigVersion(), "pending migrations did not reach current version");
     expect(
         legacy["theme"]["wallpaper_scheme"].value<std::string_view>() == "custom-vibrant",
         "theme vibrant scheme was not renamed"
@@ -305,66 +307,66 @@ enabled = true
   }
 
   void checkReminderFingerprint() {
-    const noctalia::config::LegacyConfigIssues first = {{1, "bar.main", "message"}};
-    const noctalia::config::LegacyConfigIssues reordered = {
+    const gnil::config::LegacyConfigIssues first = {{1, "bar.main", "message"}};
+    const gnil::config::LegacyConfigIssues reordered = {
         {1, "bar.second", "message"},
         {1, "bar.main", "different display message"},
     };
-    const noctalia::config::LegacyConfigIssues sameReordered = {
+    const gnil::config::LegacyConfigIssues sameReordered = {
         {1, "bar.main", "message"},
         {1, "bar.second", "message"},
     };
 
-    const std::string firstFingerprint = noctalia::config::legacyConfigIssueFingerprint(first);
-    const std::string expandedFingerprint = noctalia::config::legacyConfigIssueFingerprint(reordered);
+    const std::string firstFingerprint = gnil::config::legacyConfigIssueFingerprint(first);
+    const std::string expandedFingerprint = gnil::config::legacyConfigIssueFingerprint(reordered);
     expect(
-        expandedFingerprint == noctalia::config::legacyConfigIssueFingerprint(sameReordered),
+        expandedFingerprint == gnil::config::legacyConfigIssueFingerprint(sameReordered),
         "fingerprint depends on issue ordering or display message"
     );
     expect(
-        noctalia::config::legacyConfigFingerprintHasNewIssues(expandedFingerprint, firstFingerprint),
+        gnil::config::legacyConfigFingerprintHasNewIssues(expandedFingerprint, firstFingerprint),
         "new issue was not detected"
     );
     expect(
-        !noctalia::config::legacyConfigFingerprintHasNewIssues(firstFingerprint, expandedFingerprint),
+        !gnil::config::legacyConfigFingerprintHasNewIssues(firstFingerprint, expandedFingerprint),
         "removing an issue was treated as introducing one"
     );
 
     constexpr std::int64_t kStart = 1'000'000;
     expect(
-        !noctalia::config::legacyConfigReminderIntervalElapsed(
-            kStart + noctalia::config::kLegacyConfigReminderIntervalSeconds - 1, kStart
+        !gnil::config::legacyConfigReminderIntervalElapsed(
+            kStart + gnil::config::kLegacyConfigReminderIntervalSeconds - 1, kStart
         ),
         "reminder became due before three days"
     );
     expect(
-        noctalia::config::legacyConfigReminderIntervalElapsed(
-            kStart + noctalia::config::kLegacyConfigReminderIntervalSeconds, kStart
+        gnil::config::legacyConfigReminderIntervalElapsed(
+            kStart + gnil::config::kLegacyConfigReminderIntervalSeconds, kStart
         ),
         "reminder was not due at three days"
     );
     expect(
-        noctalia::config::legacyConfigReminderIntervalElapsed(kStart - 1, kStart),
+        gnil::config::legacyConfigReminderIntervalElapsed(kStart - 1, kStart),
         "backward clock change did not make the reminder due"
     );
   }
 
   void checkRegistryOrdering() {
     int expectedVersion = 1;
-    for (const auto& migration : noctalia::config::configMigrations()) {
+    for (const auto& migration : gnil::config::configMigrations()) {
       expect(migration.toVersion == expectedVersion, "migration registry has a gap or is out of order");
       expect(!migration.summary.empty(), "migration registry entry has no summary");
       expect(migration.apply != nullptr, "migration registry entry has no apply function");
       ++expectedVersion;
     }
     expect(
-        expectedVersion - 1 == noctalia::config::currentConfigVersion(),
+        expectedVersion - 1 == gnil::config::currentConfigVersion(),
         "current config version does not match the registry"
     );
   }
 
   void checkLargeCurrentRegistrySkipsBodies() {
-    std::vector<noctalia::config::ConfigMigration> migrations;
+    std::vector<gnil::config::ConfigMigration> migrations;
     migrations.reserve(100);
     for (int version = 1; version <= 100; ++version) {
       migrations.push_back({
@@ -375,13 +377,13 @@ enabled = true
     }
 
     toml::table root;
-    noctalia::config::schema::Diagnostics diag;
+    gnil::config::schema::Diagnostics diag;
     g_syntheticMigrationApplications = 0;
-    const int current = noctalia::config::applyPendingConfigMigrations(root, 100, diag, migrations);
+    const int current = gnil::config::applyPendingConfigMigrations(root, 100, diag, migrations);
     expect(current == 100, "synthetic current version changed");
     expect(g_syntheticMigrationApplications == 0, "current sidecar executed historical migration bodies");
 
-    const int upgraded = noctalia::config::applyPendingConfigMigrations(root, 99, diag, migrations);
+    const int upgraded = gnil::config::applyPendingConfigMigrations(root, 99, diag, migrations);
     expect(upgraded == 100, "synthetic upgrade did not reach the current version");
     expect(g_syntheticMigrationApplications == 1, "synthetic upgrade did not execute exactly one pending body");
   }

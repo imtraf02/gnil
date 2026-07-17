@@ -582,7 +582,7 @@ void BluetoothService::setPowered(bool enabled) {
     const bool wasSoftBlocked = m_state.rfkillSoftBlocked;
     applyRfkillState(m_state);
     if (wasSoftBlocked && !m_state.rfkillSoftBlocked) {
-      emitState(BluetoothStateChangeOrigin::Noctalia);
+      emitState(BluetoothStateChangeOrigin::Gnil);
     }
   }
   if (enabled != m_state.powered) {
@@ -804,7 +804,7 @@ BluetoothStateChangeOrigin BluetoothService::consumePoweredChangeOrigin(bool pow
   }
   const bool matchesLocalRequest = *m_pendingLocalPowered == powered;
   m_pendingLocalPowered.reset();
-  return matchesLocalRequest ? BluetoothStateChangeOrigin::Noctalia : BluetoothStateChangeOrigin::External;
+  return matchesLocalRequest ? BluetoothStateChangeOrigin::Gnil : BluetoothStateChangeOrigin::External;
 }
 
 void BluetoothService::scheduleAutoReconnect() {

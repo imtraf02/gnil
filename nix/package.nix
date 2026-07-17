@@ -27,7 +27,6 @@
   librsvg,
   libqalculate,
   libxml2,
-  md4c,
   stb,
   fetchFromGitHub,
   nlohmann_json,
@@ -103,7 +102,6 @@ stdenv.mkDerivation {
     librsvg
     libqalculate
     libxml2
-    md4c
     stb'
     nlohmann_json
     tomlplusplus

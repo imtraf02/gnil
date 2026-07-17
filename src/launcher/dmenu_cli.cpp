@@ -12,7 +12,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-namespace noctalia::launcher {
+namespace gnil::launcher {
 
   namespace {
 
@@ -34,7 +34,7 @@ namespace noctalia::launcher {
     void printUsage() {
       std::println(
           stderr,
-          "Usage: noctalia dmenu [-p prompt]\n"
+          "Usage: gnil dmenu [-p prompt]\n"
           "Reads newline-separated items from stdin, presents them in the launcher,\n"
           "and prints the selection to stdout."
       );
@@ -101,7 +101,7 @@ namespace noctalia::launcher {
     std::memcpy(addr.sun_path, path.c_str(), path.size() + 1);
 
     if (::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) < 0) {
-      std::println(stderr, "error: noctalia is not running");
+      std::println(stderr, "error: gnil is not running");
       ::close(fd);
       return 1;
     }
@@ -137,4 +137,4 @@ namespace noctalia::launcher {
     return 0;
   }
 
-} // namespace noctalia::launcher
+} // namespace gnil::launcher

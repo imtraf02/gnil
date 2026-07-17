@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace noctalia::config::schema {
+namespace gnil::config::schema {
 
   // Populate `out` from `tbl` by running every field's reader. Absent keys leave
   // the struct default. Replaces a hand-written parseConfigTable section.
@@ -116,7 +116,7 @@ namespace noctalia::config::schema {
     };
   }
 
-  // Array-of-tables read into a vector<Elem> (e.g. control_center.shortcuts).
+  // Array-of-tables read into a vector<Elem>.
   // On read the vector is cleared then filled with
   // elements that pass `keep`; on write only `keep` elements are emitted. The
   // array key is always written (possibly empty), matching the legacy emitters.
@@ -190,4 +190,4 @@ namespace noctalia::config::schema {
     };
   }
 
-} // namespace noctalia::config::schema
+} // namespace gnil::config::schema

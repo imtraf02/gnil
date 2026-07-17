@@ -123,17 +123,17 @@ namespace {
   }
 
   bool syncAppliesEnvOverrides() {
-    ::setenv("NOCTALIA_PROCESS_UNSET_TEST", "parent", 1);
+    ::setenv("GNIL_PROCESS_UNSET_TEST", "parent", 1);
 
     process::RunOptions options;
-    options.env.push_back({"NOCTALIA_PROCESS_SET_TEST", "child"});
-    options.env.push_back({"NOCTALIA_PROCESS_UNSET_TEST", std::nullopt});
+    options.env.push_back({"GNIL_PROCESS_SET_TEST", "child"});
+    options.env.push_back({"GNIL_PROCESS_UNSET_TEST", std::nullopt});
 
     const auto result = process::runSync(
-        {"/bin/sh", "-lc", R"(printf '%s/%s' "$NOCTALIA_PROCESS_SET_TEST" "${NOCTALIA_PROCESS_UNSET_TEST-unset}")"},
+        {"/bin/sh", "-lc", R"(printf '%s/%s' "$GNIL_PROCESS_SET_TEST" "${GNIL_PROCESS_UNSET_TEST-unset}")"},
         options
     );
-    ::unsetenv("NOCTALIA_PROCESS_UNSET_TEST");
+    ::unsetenv("GNIL_PROCESS_UNSET_TEST");
 
     bool ok = expect(result.exitCode == 0, "sync env override command failed");
     ok = expect(result.out == "child/unset", "sync env overrides were not visible in child") && ok;
@@ -149,18 +149,18 @@ namespace {
 
   bool detachedAsyncInheritsLaunchEnvironment() {
     const std::filesystem::path outPath =
-        std::filesystem::temp_directory_path() / ("noctalia_process_env_test_" + std::to_string(::getpid()));
+        std::filesystem::temp_directory_path() / ("gnil_process_env_test_" + std::to_string(::getpid()));
     std::error_code ec;
     std::filesystem::remove(outPath, ec);
 
-    ::setenv("NOCTALIA_WALLPAPER_PATH", "/tmp/noctalia test/wallpaper.png", 1);
-    ::setenv("NOCTALIA_WALLPAPER_CONNECTOR", "DP-1", 1);
+    ::setenv("GNIL_WALLPAPER_PATH", "/tmp/gnil test/wallpaper.png", 1);
+    ::setenv("GNIL_WALLPAPER_CONNECTOR", "DP-1", 1);
 
-    const std::string command = R"(printf '%s\n%s' "$NOCTALIA_WALLPAPER_PATH" "$NOCTALIA_WALLPAPER_CONNECTOR" > )"
+    const std::string command = R"(printf '%s\n%s' "$GNIL_WALLPAPER_PATH" "$GNIL_WALLPAPER_CONNECTOR" > )"
         + shellQuote(outPath.string());
     const bool launched = process::runAsync(command);
-    ::unsetenv("NOCTALIA_WALLPAPER_PATH");
-    ::unsetenv("NOCTALIA_WALLPAPER_CONNECTOR");
+    ::unsetenv("GNIL_WALLPAPER_PATH");
+    ::unsetenv("GNIL_WALLPAPER_CONNECTOR");
 
     if (!expect(launched, "detached async env command did not launch")) {
       return false;
@@ -170,14 +170,14 @@ namespace {
     for (int i = 0; i < 50; ++i) {
       std::ifstream in(outPath);
       contents.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-      if (contents == "/tmp/noctalia test/wallpaper.png\nDP-1") {
+      if (contents == "/tmp/gnil test/wallpaper.png\nDP-1") {
         break;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 
     std::filesystem::remove(outPath, ec);
-    return expect(contents == "/tmp/noctalia test/wallpaper.png\nDP-1", "detached async env was not visible in child");
+    return expect(contents == "/tmp/gnil test/wallpaper.png\nDP-1", "detached async env was not visible in child");
   }
 
   bool commandExistsRejectsDirectories() {

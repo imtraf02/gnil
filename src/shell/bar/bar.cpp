@@ -16,7 +16,6 @@
 #include "shell/bar/bar_corner_shape.h"
 #include "shell/bar/bar_reserved_zone.h"
 #include "shell/bar/widget.h"
-#include "shell/bar/widgets/plugin_widget.h"
 #include "shell/chrome/chrome_output_host.h"
 #include "shell/panel/panel_manager.h"
 #include "shell/surface/shadow.h"
@@ -981,22 +980,18 @@ bool Bar::initialize(const BarServices& services) {
   m_clipboard = services.clipboard;
   m_fileWatcher = services.fileWatcher;
   m_screenshots = services.screenshots;
-  m_scriptApi = services.scriptApi;
-
   m_widgetFactory = std::make_unique<WidgetFactory>(services);
 
   m_lastBars = m_config->config().bars;
   m_lastWidgets = m_config->config().widgets;
   m_lastShadow = m_config->config().shell.shadow;
   m_lastChrome = m_config->config().shell.chrome;
-  m_lastPlugins = m_config->config().plugins;
   m_config->addReloadCallback(
       [this]() {
         const auto& cfg = m_config->config();
         if (cfg.bars == m_lastBars
             && cfg.widgets == m_lastWidgets
-            && cfg.shell.shadow == m_lastShadow
-            && cfg.plugins == m_lastPlugins) {
+            && cfg.shell.shadow == m_lastShadow) {
           if (cfg.shell.chrome != m_lastChrome) {
             m_lastChrome = cfg.shell.chrome;
             refreshChromeLayout();
@@ -1037,7 +1032,6 @@ BarServices Bar::services() const {
       .clipboard = m_clipboard,
       .fileWatcher = m_fileWatcher,
       .screenshots = m_screenshots,
-      .scriptApi = m_scriptApi,
   };
 }
 
@@ -1050,7 +1044,7 @@ void Bar::onSecondTick() {
 }
 
 void Bar::reload() {
-  noctalia::profiling::ScopedTimer t(kLog, "bar: reload (all instances)");
+  gnil::profiling::ScopedTimer t(kLog, "bar: reload (all instances)");
   kLog.info("reloading config");
   const auto previousBars = m_lastBars;
   const auto previousShadow = m_lastShadow;
@@ -1059,7 +1053,6 @@ void Bar::reload() {
   m_lastWidgets = m_config->config().widgets;
   m_lastShadow = m_config->config().shell.shadow;
   m_lastChrome = m_config->config().shell.chrome;
-  m_lastPlugins = m_config->config().plugins;
   m_widgetFactory = std::make_unique<WidgetFactory>(services());
 
   if (recreateForOrder) {
@@ -2177,12 +2170,6 @@ void Bar::attachWidgetsToSections(BarInstance& instance) {
           surface->requestFrameTick();
         }
       });
-      if (auto* plugin = dynamic_cast<PluginWidget*>(widget.get()); plugin != nullptr) {
-        plugin->setUpdateDeferralCallback([]() {
-          auto* panel = PanelManager::current();
-          return panel != nullptr && panel->isPanelTransitionActive();
-        });
-      }
       widget->setPanelToggleCallback([this, inst = &instance, trigger = widget.get()](
                                          std::string_view panelId, std::string_view context,
                                          std::optional<float> anchorSurfaceX, std::optional<float> anchorSurfaceY
@@ -2455,7 +2442,7 @@ void Bar::animateWidgetHoverHighlight(BarInstance& instance, Widget& widget, boo
 }
 
 void Bar::rebuildInstanceContents(BarInstance& instance, const BarConfig& newConfig) {
-  noctalia::profiling::ScopedTimer t(kLog, std::format("bar: rebuild contents [{}]", newConfig.name));
+  gnil::profiling::ScopedTimer t(kLog, std::format("bar: rebuild contents [{}]", newConfig.name));
 
   // Drop any pointer hover/capture state pointing into the widgets we're about
   // to destroy. Hover will be re-acquired on the next pointer motion.
@@ -3242,7 +3229,7 @@ namespace {
       std::string_view command, std::string_view args, std::optional<std::string>& barName,
       std::optional<std::string>& monitorSelector
   ) {
-    const auto parts = noctalia::ipc::splitWords(args);
+    const auto parts = gnil::ipc::splitWords(args);
     if (parts.size() > 2) {
       return "error: usage: " + std::string(command) + " [bar-name] [monitor-selector]\n";
     }
@@ -3360,7 +3347,7 @@ std::string Bar::setBarAutoHideIpc(std::string_view args) {
     return "error: config service not initialized\n";
   }
 
-  const auto parts = noctalia::ipc::splitWords(args);
+  const auto parts = gnil::ipc::splitWords(args);
   if (parts.empty() || parts.size() > 3) {
     return "error: usage: bar-auto-hide-set <on|off|true|false|1|0> [bar-name] [monitor-selector]\n";
   }
@@ -3470,7 +3457,7 @@ std::string Bar::setBarAutoHideIpc(std::string_view args) {
 }
 
 std::string Bar::setBarLayerIpc(std::string_view args) {
-  const auto parts = noctalia::ipc::splitWords(args);
+  const auto parts = gnil::ipc::splitWords(args);
   if (parts.empty() || parts.size() > 3) {
     return "error: usage: bar-layer-set <top|overlay> [bar-name] [monitor-selector]\n";
   }

@@ -23,7 +23,7 @@
 #include <unistd.h>
 #include <vector>
 
-namespace noctalia::config {
+namespace gnil::config {
   namespace {
 
     constexpr const char* kHelpText =
@@ -441,7 +441,7 @@ namespace noctalia::config {
       }
 
       // Validation reports through diagnostics below; silence incidental INFO logs
-      // (e.g. the plugin registry scan) so only validation results reach the user.
+      // so only validation results reach the user.
       setLogLevel(LogLevel::Warn);
       schema::Diagnostics diagnostics;
 
@@ -579,4 +579,4 @@ namespace noctalia::config {
     return 1;
   }
 
-} // namespace noctalia::config
+} // namespace gnil::config

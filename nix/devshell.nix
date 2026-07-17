@@ -56,7 +56,6 @@ pkgs.mkShell {
     librsvg
     libqalculate
     libxml2
-    md4c
     stb'
     nlohmann_json
     tomlplusplus

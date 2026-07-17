@@ -4,7 +4,7 @@
 
 #include <array>
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   std::expected<LoadedImage, std::string>
   buildLiveWallpaperMosaic(const std::vector<std::string>& framePaths, Scheme scheme) {
@@ -42,4 +42,4 @@ namespace noctalia::theme {
     return mosaic;
   }
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

@@ -10,7 +10,7 @@
 #include <system_error>
 #include <utility>
 
-namespace noctalia::config {
+namespace gnil::config {
 
   namespace {
 
@@ -183,4 +183,4 @@ namespace noctalia::config {
     return out;
   }
 
-} // namespace noctalia::config
+} // namespace gnil::config

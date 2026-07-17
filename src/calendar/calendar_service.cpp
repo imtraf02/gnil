@@ -4,9 +4,6 @@
 #include "calendar/caldav_discovery.h"
 #include "config/config_service.h"
 #include "core/log.h"
-#include "i18n/i18n.h"
-#include "net/url_open.h"
-#include "notification/notification_manager.h"
 
 #include <algorithm>
 #include <charconv>
@@ -21,7 +18,6 @@ namespace {
   constexpr Logger kLog("calendar");
   constexpr const char* kCredentialOwner = "calendar_credentials";
   constexpr const char* kICloudCalDavServerUrl = "https://caldav.icloud.com/";
-  constexpr auto kConnectPollInterval = std::chrono::seconds{2};
   // Wide enough for month navigation in the control-center calendar (~1 year each way).
   constexpr auto kWindowBefore = std::chrono::hours{24 * 365};
   constexpr auto kWindowAfter = std::chrono::hours{24 * 365};
@@ -48,8 +44,7 @@ namespace {
 CalendarService::CalendarService(
     ConfigService& configService, HttpClient& httpClient, NotificationManager* notifications
 )
-    : m_configService(configService), m_httpClient(httpClient), m_notifications(notifications), m_oauth(httpClient),
-      m_google(httpClient) {}
+    : m_configService(configService), m_httpClient(httpClient), m_notifications(notifications) {}
 
 void CalendarService::initialize() {
   m_activeConfig = m_configService.config().calendar;
@@ -72,18 +67,6 @@ void CalendarService::notifyChanged() {
       callback();
     }
   }
-}
-
-void CalendarService::notifyGoogleConnectFailure(const std::string& body) const {
-  if (m_notifications == nullptr) {
-    kLog.warn("google connect failure notification dropped: notification manager unavailable");
-    return;
-  }
-  m_notifications->addInternal(
-      i18n::tr("notifications.internal.calendar"),
-      i18n::tr("notifications.internal.calendar-google-connect-failed-title"), body, Urgency::Critical,
-      kDefaultNotificationTimeout * 2, std::string("noctalia-glyph:calendar-x")
-  );
 }
 
 void CalendarService::onConfigReload() {
@@ -113,9 +96,6 @@ int CalendarService::pollTimeoutMs() const {
     timeout = timeout < 0 ? clamped : std::min(timeout, clamped);
   };
 
-  if (m_connect.state == ConnectState::Pending && !m_connect.inFlight) {
-    consider(m_connect.nextPollAt);
-  }
   if (m_activeConfig.enabled && !m_refreshing) {
     consider(m_nextRefreshAt);
   }
@@ -124,17 +104,6 @@ int CalendarService::pollTimeoutMs() const {
 
 void CalendarService::tick() {
   const auto now = std::chrono::steady_clock::now();
-
-  if (m_connect.state == ConnectState::Pending && !m_connect.inFlight && now >= m_connect.nextPollAt) {
-    if (now >= m_connect.deadline) {
-      kLog.warn("google connect timed out for account {}", m_connect.accountId);
-      notifyGoogleConnectFailure(i18n::tr("notifications.internal.calendar-google-connect-timeout"));
-      m_connect.state = ConnectState::Failed;
-      notifyChanged();
-    } else {
-      pollConnect();
-    }
-  }
 
   if (m_activeConfig.enabled && !m_refreshing && now >= m_nextRefreshAt) {
     startRefresh();
@@ -164,8 +133,6 @@ void CalendarService::startRefresh() {
   for (const CalendarConfig::Account& account : m_activeConfig.accounts) {
     if (account.type == "caldav") {
       fetchCalDav(account);
-    } else if (account.type == "google") {
-      fetchGoogle(account);
     } else {
       kLog.warn("unknown calendar account type '{}' for id {}", account.type, account.id);
       accountDone(account.id, false, {});
@@ -286,181 +253,8 @@ void CalendarService::fetchCalDav(const CalendarConfig::Account& account) {
   );
 }
 
-void CalendarService::refreshGoogleToken(const std::string& accountId, std::function<void(bool, std::string)> cb) {
-  const std::string refreshToken = credential(accountId, "refresh_token");
-  if (refreshToken.empty()) {
-    cb(false, {});
-    return;
-  }
-  m_oauth.refresh(
-      refreshToken,
-      [this, accountId, refreshToken, cb = std::move(cb)](bool ok, bool invalidGrant, calendar::OAuthTokens tokens) {
-        if (!ok) {
-          if (invalidGrant) {
-            kLog.warn("google account {} refresh token rejected; reconnect required", accountId);
-            setCredential(accountId, "refresh_token", "");
-            setCredential(accountId, "access_token", "");
-          }
-          cb(false, {});
-          return;
-        }
-        if (tokens.refreshToken.empty()) {
-          tokens.refreshToken = refreshToken;
-        }
-        storeGoogleTokens(accountId, tokens);
-        cb(true, tokens.accessToken);
-      }
-  );
-}
-
-void CalendarService::googleFetchWithToken(
-    const std::string& accountId, const std::string& accessToken, bool allowRefreshRetry
-) {
-  const auto now = std::chrono::system_clock::now();
-  m_google.fetchEvents(
-      accessToken, now - kWindowBefore, now + kWindowAfter,
-      [this, accountId, allowRefreshRetry](bool ok, bool unauthorized, std::vector<CalendarEvent> events) {
-        if (unauthorized && allowRefreshRetry) {
-          refreshGoogleToken(accountId, [this, accountId](bool refreshed, std::string newToken) {
-            if (!refreshed) {
-              accountDone(accountId, false, {});
-            } else {
-              googleFetchWithToken(accountId, newToken, false);
-            }
-          });
-          return;
-        }
-        accountDone(accountId, ok && !unauthorized, std::move(events));
-      }
-  );
-}
-
-void CalendarService::fetchGoogle(const CalendarConfig::Account& account) {
-  const std::string id = account.id;
-  if (credential(id, "refresh_token").empty()) {
-    kLog.info("google account {} is not connected yet; skipping", id);
-    accountDone(id, false, {});
-    return;
-  }
-
-  const std::string accessToken = credential(id, "access_token");
-  const std::string expiryRaw = credential(id, "access_expiry");
-  std::int64_t expiryUnix = 0;
-  std::from_chars(expiryRaw.data(), expiryRaw.data() + expiryRaw.size(), expiryUnix);
-  const auto expiry = fromUnix(expiryUnix);
-  const bool valid = !accessToken.empty() && expiry > std::chrono::system_clock::now() + std::chrono::seconds{60};
-
-  if (valid) {
-    googleFetchWithToken(id, accessToken, true);
-  } else {
-    refreshGoogleToken(id, [this, id](bool ok, std::string token) {
-      if (!ok) {
-        accountDone(id, false, {});
-      } else {
-        googleFetchWithToken(id, token, false);
-      }
-    });
-  }
-}
-
-void CalendarService::connectGoogleAccount(const std::string& accountId, const std::string& activationToken) {
-  const auto it = std::ranges::find_if(m_activeConfig.accounts, [&](const CalendarConfig::Account& a) {
-    return a.id == accountId && a.type == "google";
-  });
-  if (it == m_activeConfig.accounts.end()) {
-    kLog.warn("connectGoogleAccount: no google account with id {}", accountId);
-    notifyGoogleConnectFailure(
-        i18n::tr("notifications.internal.calendar-google-connect-missing-account", "account", accountId)
-    );
-    return;
-  }
-
-  m_connect.state = ConnectState::Pending;
-  m_connect.accountId = accountId;
-  m_connect.inFlight = true;
-  m_connect.pollToken.clear();
-  notifyChanged();
-
-  m_oauth.start([this, accountId, activationToken](bool ok, calendar::GoogleOAuthBroker::StartResult result) {
-    m_connect.inFlight = false;
-    if (!ok) {
-      kLog.warn("google oauth start failed for account {}", accountId);
-      if (result.httpStatus == 429) {
-        notifyGoogleConnectFailure(i18n::tr("notifications.internal.calendar-google-connect-rate-limited"));
-      } else if (result.httpStatus > 0) {
-        notifyGoogleConnectFailure(
-            i18n::tr("notifications.internal.calendar-google-connect-start-http", "status", result.httpStatus)
-        );
-      } else {
-        notifyGoogleConnectFailure(i18n::tr("notifications.internal.calendar-google-connect-start-failed"));
-      }
-      m_connect.state = ConnectState::Failed;
-      notifyChanged();
-      return;
-    }
-    m_connect.pollToken = result.pollToken;
-    const int expiresIn = result.expiresIn > 0 ? result.expiresIn : 600;
-    m_connect.deadline = std::chrono::steady_clock::now() + std::chrono::seconds{expiresIn};
-    m_connect.nextPollAt = std::chrono::steady_clock::now() + kConnectPollInterval;
-    if (!net::openInBrowser(result.authUrl, activationToken)) {
-      kLog.warn("failed to open browser for google consent; url logged at debug");
-      kLog.debug("google consent url: {}", result.authUrl);
-      notifyGoogleConnectFailure(i18n::tr("notifications.internal.calendar-google-connect-browser-failed"));
-    }
-    notifyChanged();
-  });
-}
-
-void CalendarService::pollConnect() {
-  m_connect.inFlight = true;
-  const std::string accountId = m_connect.accountId;
-  m_oauth.poll(
-      m_connect.pollToken,
-      [this, accountId](calendar::GoogleOAuthBroker::PollStatus status, calendar::OAuthTokens tokens) {
-        m_connect.inFlight = false;
-        if (m_connect.accountId != accountId) {
-          return; // a newer flow superseded this one
-        }
-        using PollStatus = calendar::GoogleOAuthBroker::PollStatus;
-        switch (status) {
-        case PollStatus::Pending:
-          m_connect.nextPollAt = std::chrono::steady_clock::now() + kConnectPollInterval;
-          break;
-        case PollStatus::Complete:
-          storeGoogleTokens(accountId, tokens);
-          m_connect.state = ConnectState::Success;
-          m_nextRefreshAt = std::chrono::steady_clock::now();
-          notifyChanged();
-          break;
-        case PollStatus::Expired:
-          notifyGoogleConnectFailure(i18n::tr("notifications.internal.calendar-google-connect-expired"));
-          m_connect.state = ConnectState::Failed;
-          notifyChanged();
-          break;
-        case PollStatus::Error:
-          notifyGoogleConnectFailure(i18n::tr("notifications.internal.calendar-google-connect-result-failed"));
-          m_connect.state = ConnectState::Failed;
-          notifyChanged();
-          break;
-        }
-      }
-  );
-}
-
 std::string CalendarService::credential(const std::string& accountId, const char* field) const {
   return m_configService.stateString(kCredentialOwner, accountId + "_" + field).value_or(std::string{});
-}
-
-void CalendarService::setCredential(const std::string& accountId, const char* field, const std::string& value) {
-  m_configService.setStateString(kCredentialOwner, accountId + "_" + field, value);
-}
-
-void CalendarService::storeGoogleTokens(const std::string& accountId, const calendar::OAuthTokens& tokens) {
-  if (!tokens.refreshToken.empty()) {
-    setCredential(accountId, "refresh_token", tokens.refreshToken);
-  }
-  setCredential(accountId, "access_token", tokens.accessToken);
-  setCredential(accountId, "access_expiry", std::to_string(toUnix(tokens.expiry)));
 }
 
 std::filesystem::path CalendarService::cacheFilePath() {
@@ -473,7 +267,7 @@ std::filesystem::path CalendarService::cacheFilePath() {
   } else {
     base = "/tmp";
   }
-  return base / "noctalia" / "calendar" / "events.json";
+  return base / "gnil" / "calendar" / "events.json";
 }
 
 void CalendarService::loadCache() {

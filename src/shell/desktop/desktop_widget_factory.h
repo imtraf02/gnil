@@ -28,5 +28,5 @@ private:
   MprisService* m_mpris = nullptr;
   HttpClient* m_httpClient = nullptr;
   SystemMonitorService* m_sysmon = nullptr;
-  DesktopWidgetScriptDeps m_scriptDeps;
+  ConfigService* m_config = nullptr;
 };

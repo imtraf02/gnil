@@ -1,6 +1,6 @@
 #include "theme/scheme.h"
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   std::optional<Scheme> schemeFromString(std::string_view s) {
     if (s == "m3-tonal-spot")
@@ -68,4 +68,4 @@ namespace noctalia::theme {
     return "m3-tonal-spot";
   }
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

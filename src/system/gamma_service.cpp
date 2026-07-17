@@ -32,10 +32,10 @@ namespace {
   constexpr int kTargetStepKelvin = 50;
   constexpr auto kMinTickInterval = std::chrono::seconds(2);
 
-  // NOCTALIA_GAMMA_PROFILE=1 times each upload against an empty roundtrip, isolating what set_gamma
+  // GNIL_GAMMA_PROFILE=1 times each upload against an empty roundtrip, isolating what set_gamma
   // costs the compositor. It adds two blocking roundtrips per upload, so it is diagnostics only.
   bool gammaProfiling() {
-    static const bool enabled = std::getenv("NOCTALIA_GAMMA_PROFILE") != nullptr;
+    static const bool enabled = std::getenv("GNIL_GAMMA_PROFILE") != nullptr;
     return enabled;
   }
 
@@ -155,8 +155,6 @@ bool GammaService::effectiveForce() const {
   }
   return m_config.force;
 }
-
-bool GammaService::networkLocationConfigured() const { return m_location.autoLocate || !m_location.address.empty(); }
 
 void GammaService::scheduleManualTimer() {
   const auto boundaryDelay =
@@ -467,7 +465,7 @@ GammaService::GammaTarget GammaService::computeTarget() const {
 
     const auto coords = day_night_schedule::resolveCoordinates(m_location, m_resolvedLatitude, m_resolvedLongitude);
     if (!coords.latitude.has_value() || !coords.longitude.has_value()) {
-      if (m_locationResolving || networkLocationConfigured()) {
+      if (m_locationResolving) {
         kLog.debug("night light schedule waiting for location resolution");
       } else if (m_location.latitude.has_value() != m_location.longitude.has_value()) {
         kLog.warn("need both latitude and longitude for manual location");
@@ -475,8 +473,7 @@ GammaService::GammaTarget GammaService::computeTarget() const {
         kLog.warn("sunrise/sunset times are set but the custom schedule is off; enable it in Location settings");
       } else if (!m_location.customSchedule) {
         kLog.warn(
-            "no schedule: enable auto-locate, set an address, set latitude/longitude, or enable the custom schedule in "
-            "location settings"
+            "no schedule: set latitude/longitude or enable the custom schedule in location settings"
         );
       }
       return {};

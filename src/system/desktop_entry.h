@@ -45,7 +45,7 @@ std::vector<DesktopEntry> scanDesktopEntries();
 const std::vector<DesktopEntry>& desktopEntries();
 
 // Shared snapshot of the current entry list, safe to call from non-main
-// threads (e.g. plugin script workers). Does not trigger a refresh —
+// threads. Does not trigger a refresh —
 // freshness is owned by the main thread's reload path.
 std::shared_ptr<const std::vector<DesktopEntry>> desktopEntriesSnapshot();
 

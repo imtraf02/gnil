@@ -755,9 +755,10 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
   m_panelFillHeight = fillHeight;
   m_panelDynamicVisualSize = m_activePanel->usesDynamicVisualSize();
   m_intrinsicVisualHeightResolved = false;
-  const bool pluginPanel = m_activePanelId.contains(':');
-  const std::string panelPosition =
-      pluginPanel ? m_activePanel->panelScreenPosition() : resolvePanelPosition(m_config, m_activePanelId);
+  const std::string declaredPanelPosition = m_activePanel->panelScreenPosition();
+  const std::string panelPosition = declaredPanelPosition == "auto"
+      ? resolvePanelPosition(m_config, m_activePanelId)
+      : declaredPanelPosition;
   m_panelScreenPosition = panelPosition;
   const AttachedRevealDirection detachedDirection = detachedRevealDirection(panelPosition, barConfig.position);
   const bool useTriggerAnchor = requestUsesTriggerAnchor(request, m_activePanel, m_activePanelId, m_config);
@@ -1641,8 +1642,11 @@ bool PanelManager::switchAttachedPanel(const std::string& panelId, PanelOpenRequ
       },
       m_sceneRoot.get()
   );
-  m_panelGeometryDirty = true;
-  m_surface->requestLayout();
+  // The output-sized attached surface and both content trees have already
+  // been measured and laid out above. Requesting a layer layout here queues a
+  // second intrinsic-height pass, which used to visibly kick a short panel
+  // after a tall one. The shared chrome animation only needs repaint ticks.
+  m_surface->requestRedraw();
   m_surface->requestFrameTick();
   if (m_panelOpenedCallback) {
     m_panelOpenedCallback();
@@ -1917,7 +1921,7 @@ void PanelManager::togglePanel(const std::string& panelId, PanelOpenRequest requ
 }
 
 void PanelManager::togglePanel(const std::string& panelId) {
-  // Keep shortcut/plugin/IPC toggles on the same state machine as bar and
+  // Keep shortcut and IPC toggles on the same state machine as bar and
   // tray triggers. In particular, a repeated event during the exit must not
   // resurrect the already-unfocused layer surface.
   togglePanel(panelId, PanelOpenRequest{});
@@ -2875,7 +2879,7 @@ void PanelManager::onConfigReloaded() {
   bool changed = false;
   if (m_activePanel->inheritsBarBackgroundOpacity()) {
     // Chrome is deliberately opaque even when an old bar configuration still
-    // contains background_opacity from the Noctalia era.
+    // contains background_opacity from an earlier configuration.
     constexpr float newOpacity = 1.0f;
     if (std::abs(newOpacity - m_attachedBackgroundOpacity) >= 0.001f) {
       m_attachedBackgroundOpacity = newOpacity;

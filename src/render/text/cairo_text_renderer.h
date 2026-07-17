@@ -203,7 +203,7 @@ private:
   void evictIfNeeded();
   void clearCaches();
   // Re-read fontconfig when a font has been registered (by any surface) since the
-  // last measure/draw, so newly loaded plugin fonts become resolvable here.
+  // last measure/draw, so newly loaded fonts become resolvable here.
   void maybeSyncFontConfig();
 
   float m_contentScale = 1.0f;

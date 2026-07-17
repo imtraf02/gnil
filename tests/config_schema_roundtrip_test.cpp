@@ -17,14 +17,13 @@
 #include "config/schema/engine.h"
 #include "core/input/key_chord.h"
 #include "core/toml.h"
-#include "scripting/plugin_id.h"
 
 #include <print>
 #include <set>
 #include <sstream>
 #include <string>
 
-using namespace noctalia::config::schema;
+using namespace gnil::config::schema;
 
 namespace {
 
@@ -42,62 +41,6 @@ namespace {
         table, toml::toml_formatter::default_flags & ~toml::format_flags::allow_literal_strings
     };
     return out.str();
-  }
-
-  void checkPluginSourceNameValidation() {
-    const std::string valid[] = {"official", "my-repo", "team.plugins", "repo_2", "A1"};
-    for (const auto& name : valid) {
-      if (!isValidPluginSourceName(name)) {
-        fail("plugins: rejected valid source name " + name);
-      }
-    }
-
-    const std::string invalid[] = {"", ".", "..", "../repo", "repo/name", "repo name", "-repo", "_repo"};
-    for (const auto& name : invalid) {
-      if (isValidPluginSourceName(name)) {
-        fail("plugins: accepted invalid source name " + name);
-      }
-    }
-
-    const toml::table root = toml::parse(R"(
-enabled = ["me/hello", "../bad", "missing-slash", "me/foo/bar"]
-
-[[source]]
-name = "good-repo"
-kind = "git"
-location = "https://example.invalid/good"
-
-[[source]]
-name = "../bad"
-kind = "git"
-location = "https://example.invalid/bad"
-)");
-
-    PluginsConfig plugins;
-    Diagnostics diag;
-    readInto(root, plugins, pluginsSchema(), "plugins", diag);
-    if (plugins.sources.size() != 1 || plugins.sources[0].name != "good-repo") {
-      fail("plugins: schema did not keep only valid source names");
-    }
-    if (plugins.enabled.size() != 1 || plugins.enabled[0] != "me/hello") {
-      fail("plugins: schema did not keep only valid enabled plugin ids");
-    }
-    bool sawWarning = false;
-    bool sawEnabledWarning = false;
-    for (const auto& entry : diag.entries) {
-      if (entry.severity == Diagnostics::Severity::Warning && entry.path == "plugins.source.name") {
-        sawWarning = true;
-      }
-      if (entry.severity == Diagnostics::Severity::Warning && entry.path == "plugins.enabled") {
-        sawEnabledWarning = true;
-      }
-    }
-    if (!sawWarning) {
-      fail("plugins: schema did not warn for invalid source name");
-    }
-    if (!sawEnabledWarning) {
-      fail("plugins: schema did not warn for invalid enabled plugin id");
-    }
   }
 
   void checkIdleActionResolution() {
@@ -138,29 +81,6 @@ location = "https://example.invalid/bad"
     }
     if (resolvedCustom.resumeCommand != custom.resumeCommand) {
       fail("idle: custom command did not retain its configured resume command");
-    }
-  }
-
-  void checkPluginIdValidation() {
-    const std::string valid[] = {"noctalia/screen_recorder", "me/hello", "Team/repo_2", "a/b.c-d"};
-    for (const auto& id : valid) {
-      if (!scripting::isValidPluginId(id)) {
-        fail("plugins: rejected valid plugin id " + id);
-      }
-      if (!scripting::pluginSubdirFromId(id).has_value()) {
-        fail("plugins: did not derive subdir for valid plugin id " + id);
-      }
-    }
-
-    const std::string invalid[] = {"",           "hello",  "me/",       "/hello", "me/foo/bar", "me/../hello",
-                                   "me/foo bar", "../foo", "me/.hidden"};
-    for (const auto& id : invalid) {
-      if (scripting::isValidPluginId(id)) {
-        fail("plugins: accepted invalid plugin id " + id);
-      }
-      if (scripting::pluginSubdirFromId(id).has_value()) {
-        fail("plugins: derived subdir for invalid plugin id " + id);
-      }
     }
   }
 
@@ -217,6 +137,7 @@ location = "https://example.invalid/bad"
     ovr.match = "DP-1";
     ovr.enabled = true;
     ovr.autoHide = false;
+    ovr.showOnHover = false;
     ovr.smartAutoHide = false;
     ovr.showOnWorkspaceSwitch = true;
     ovr.layer = "top";
@@ -287,7 +208,6 @@ location = "https://example.invalid/bad"
     c.system.monitor.networkPollSeconds = 7.0f;
     c.system.monitor.diskPollSeconds = 12.0f;
     c.nightlight = NightLightConfig{true, true, 6000, 3500}; // gap satisfied
-    c.location.autoLocate = true;
     c.location.address = "Berlin";
     c.location.customSchedule = true;
     c.location.sunset = "20:30";
@@ -329,10 +249,6 @@ location = "https://example.invalid/bad"
     };
     c.battery.warningThreshold = 15;
     c.battery.deviceThresholds = {{"BAT0", 10}, {"hidpp:1", 25}};
-    c.controlCenter.sidebarMode = ControlCenterSidebarMode::Full;
-    c.controlCenter.sidebarSectionMode = ControlCenterSidebarMode::None;
-    c.controlCenter.calendarTab.showEventsCard = false;
-    c.controlCenter.shortcuts = {{"wifi"}, {"bluetooth"}};
     c.calendar.enabled = true;
     c.calendar.refreshMinutes = 30;
     c.calendar.showEventsCard = false;
@@ -443,16 +359,6 @@ location = "https://example.invalid/bad"
     c.hotCorners.topLeft = {.action = "launcher", .command = ""};
     c.hotCorners.bottomRight = {.action = "command", .command = "notify-send corner"};
 
-    // pluginSettings is not part of pluginsSchema ([plugin_settings] is its own root
-    // key), so the section round-trip covers sources + enabled only.
-    c.plugins.sources = {
-        {.kind = PluginSourceKind::Git,
-         .name = "official",
-         .location = "https://github.com/noctalia-dev/official-plugins",
-         .autoUpdate = true},
-    };
-    c.plugins.enabled = {"noctalia/notes"};
-
     c.bars = {makeProbeBar()};
     return c;
   }
@@ -513,7 +419,7 @@ int main() {
 
 [default]
 auto_hide = true
-auto_hide_collapsed_thickness = 10
+auto_hide_collapsed_thickness = 6
 capsule = true
 capsule_border = "#111213"
 capsule_fill = "#ABCDEF"
@@ -533,6 +439,7 @@ icon_color = "#0C0B0A"
 layer = "overlay"
 padding = 12
 scale = 2.0
+show_on_hover = false
 show_on_workspace_switch = true
 smart_auto_hide = false
 start = [ "launcher" ]
@@ -548,7 +455,7 @@ widget_spacing = 8
 
     [default.monitor.DP-1]
     auto_hide = false
-    auto_hide_collapsed_thickness = 10
+    auto_hide_collapsed_thickness = 6
     capsule = false
     capsule_border = "#C1C2C3"
     capsule_fill = "#B1B2B3"
@@ -569,6 +476,7 @@ widget_spacing = 8
     match = "DP-1"
     padding = 11
     scale = 1.5
+    show_on_hover = false
     show_on_workspace_switch = true
     smart_auto_hide = false
     start = [ "tray" ]
@@ -683,8 +591,6 @@ widget_spacing = 8
     }
   }
 
-  checkPluginIdValidation();
-  checkPluginSourceNameValidation();
   checkClamps();
 
   if (g_failures == 0) {

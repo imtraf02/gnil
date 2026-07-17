@@ -24,13 +24,9 @@ class UPowerService;
 class WeatherService;
 class GammaService;
 
-namespace noctalia::theme {
+namespace gnil::theme {
   class ThemeService;
 }
-namespace scripting {
-  class ScriptApiContext;
-}
-
 struct BarServices {
   CompositorPlatform& platform;
   ConfigService& config;
@@ -49,12 +45,11 @@ struct BarServices {
   WeatherService* weather = nullptr;
   RenderContext* renderContext = nullptr;
   GammaService* nightLight = nullptr;
-  noctalia::theme::ThemeService* theme = nullptr;
+  gnil::theme::ThemeService* theme = nullptr;
   BluetoothService* bluetooth = nullptr;
   BrightnessService* brightness = nullptr;
   LockKeysService* lockKeys = nullptr;
   ClipboardService* clipboard = nullptr;
   FileWatcher* fileWatcher = nullptr;
   ScreenshotService* screenshots = nullptr;
-  scripting::ScriptApiContext* scriptApi = nullptr;
 };

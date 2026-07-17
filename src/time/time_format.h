@@ -37,7 +37,7 @@ std::string formatTimeAgo(std::chrono::system_clock::time_point tp);
 [[nodiscard]] std::string formatTimezoneTime(const char* fmt, std::string_view tzName);
 
 // Formats a Unix timestamp in local time. Accepts the same date-format syntax as formatLocalTime(),
-// and handles strftime "%s" as Unix epoch seconds in Noctalia-owned code.
+// and handles strftime "%s" as Unix epoch seconds in GNIL-owned code.
 [[nodiscard]] std::string formatLocalUnixTime(std::int64_t unixSeconds, std::string_view fmt);
 
 // Formats an ISO 8601 time string (e.g. "2026-05-09T06:23") using the given format.

@@ -11,20 +11,12 @@
 #include <utility>
 #include <vector>
 
-namespace scripting {
-  struct ManifestField;
-  struct PluginEntry;
-  class PluginRegistry;
-  class PluginTranslationCatalog;
-} // namespace scripting
-
 namespace settings {
 
   enum class WidgetReferenceKind : std::uint8_t {
     BuiltIn,
     Named,
     Unknown,
-    Plugin, // a plugin [[widget]] entry from the plugin registry
   };
 
   struct WidgetTypeSpec {
@@ -42,7 +34,7 @@ namespace settings {
   };
 
   struct WidgetPickerEntry {
-    std::string value; // for Plugin entries this is the entry id "author/plugin:entry"
+    std::string value;
     std::string label;
     std::string description;
     std::string icon;
@@ -91,7 +83,7 @@ namespace settings {
   // type, default, range, allowed enum values) lives in `schema` — the single
   // source the config layer validates against; everything else here is UI only.
   struct WidgetSettingSpec {
-    noctalia::config::schema::WidgetSettingField schema; // validity: key/type/default/range/enumValues
+    gnil::config::schema::WidgetSettingField schema; // validity: key/type/default/range/enumValues
     WidgetControlKind control = WidgetControlKind::String;
     std::string labelKey;
     std::string descriptionKey;
@@ -116,12 +108,10 @@ namespace settings {
   };
 
   // The schema (validation) value type behind a UI control kind.
-  [[nodiscard]] noctalia::config::schema::WidgetSettingType schemaTypeForControl(WidgetControlKind control);
+  [[nodiscard]] gnil::config::schema::WidgetSettingType schemaTypeForControl(WidgetControlKind control);
 
   [[nodiscard]] const std::vector<WidgetTypeSpec>& widgetTypeSpecs();
   [[nodiscard]] bool isBuiltInWidgetType(std::string_view type);
-  // Whether `type` names a plugin [[widget]] entry ("author/plugin:entry").
-  [[nodiscard]] bool isPluginWidgetType(std::string_view type);
   [[nodiscard]] bool widgetTypeRequiresNamedConfig(std::string_view type);
   [[nodiscard]] std::string widgetTypeForReference(const Config& cfg, std::string_view name);
   [[nodiscard]] std::string titleFromWidgetKey(std::string_view key);
@@ -134,27 +124,16 @@ namespace settings {
       std::string_view type, std::string_view shellFontFamily, bool supportsTaskbarWorkspaceGrouping = true,
       bool populateFontCatalogs = true
   );
-  // Config-aware variant: for a plugin [[widget]] type, returns the manifest-driven
-  // settings. Falls back to the type-only specs otherwise.
+  // Config-aware variant used by named built-in widget instances.
   [[nodiscard]] std::vector<WidgetSettingSpec> widgetSettingSpecs(
       std::string_view type, const WidgetConfig* config, std::string_view shellFontFamily,
       bool supportsTaskbarWorkspaceGrouping = true, bool populateFontCatalogs = true
   );
-  // Build settings specs from a plugin entry's declared setting schema.
-  [[nodiscard]] std::vector<WidgetSettingSpec> manifestSettingSpecs(
-      const std::vector<scripting::ManifestField>& fields,
-      const scripting::PluginTranslationCatalog* translations = nullptr
-  );
-  [[nodiscard]] std::vector<WidgetSettingSpec> pluginPanelShellSettingSpecs(const scripting::PluginEntry& entry);
-
-  // Schema projection (the validity half of the specs), consumed by the config
-  // layer (e.g. `config validate`). For plugin widgets the type alone resolves the
-  // manifest, so the config arg is no longer required for them.
-  [[nodiscard]] noctalia::config::schema::WidgetSettingSchema widgetSettingSchema(std::string_view type);
-  [[nodiscard]] noctalia::config::schema::WidgetSettingSchema widgetSettingSchema(
-      std::string_view type, const WidgetConfig* config, scripting::PluginRegistry* pluginRegistry = nullptr
-  );
-  [[nodiscard]] std::optional<noctalia::config::schema::WidgetSettingField>
+  // Schema projection (the validity half of the specs), consumed by the config layer.
+  [[nodiscard]] gnil::config::schema::WidgetSettingSchema widgetSettingSchema(std::string_view type);
+  [[nodiscard]] gnil::config::schema::WidgetSettingSchema
+  widgetSettingSchema(std::string_view type, const WidgetConfig* config);
+  [[nodiscard]] std::optional<gnil::config::schema::WidgetSettingField>
   findWidgetSettingField(std::string_view widgetType, std::string_view settingKey);
 
   [[nodiscard]] std::optional<WidgetSettingSpec>

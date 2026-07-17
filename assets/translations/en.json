@@ -693,13 +693,13 @@
       "dbus-disabled": "DBus notifications disabled",
       "desktop-widgets-editor": "Widget editor",
       "desktop-widgets-editor-enabled": "Desktop widget editor is on. Switch to an empty workspace to see the editor overlay.",
-      "greeter-sync": "Noctalia Greeter",
+      "greeter-sync": "Gnil Greeter",
       "greeter-sync-pending": "Waiting for administrator approval to write to the greeter.",
-      "greeter-sync-pending-console": "Waiting for administrator approval. Approve the polkit prompt in Noctalia, on a TTY or console, or run pkexec manually.",
-      "greeter-sync-pending-manual": "Files are staged. Run in a terminal: pkexec noctalia-greeter-apply-appearance \"$XDG_RUNTIME_DIR/noctalia-greeter-sync\". Or set shell.greeter_sync.privilege_command (for example ghostty -e pkexec) and sync again.",
+      "greeter-sync-pending-console": "Waiting for administrator approval. Approve the polkit prompt in Gnil, on a TTY or console, or run pkexec manually.",
+      "greeter-sync-pending-manual": "Files are staged. Run in a terminal: pkexec gnil-greeter-apply-appearance \"$XDG_RUNTIME_DIR/gnil-greeter-sync\". Or set shell.greeter_sync.privilege_command (for example ghostty -e pkexec) and sync again.",
       "greeter-sync-success": "Appearance synced. Changes apply on the next login screen.",
       "greeter-sync-timeout": "Greeter sync is still waiting for administrator approval. Check a TTY or console for a polkit prompt, enable the polkit agent in Security settings, or run pkexec manually.",
-      "greeter-sync-timeout-manual": "Greeter sync still needs administrator approval. Run in a terminal: pkexec noctalia-greeter-apply-appearance \"$XDG_RUNTIME_DIR/noctalia-greeter-sync\"",
+      "greeter-sync-timeout-manual": "Greeter sync still needs administrator approval. Run in a terminal: pkexec gnil-greeter-apply-appearance \"$XDG_RUNTIME_DIR/gnil-greeter-sync\"",
       "keybind-app": "GNIL",
       "keybind-invalid-modifier": "This shortcut accepts a single key without modifiers.",
       "keybind-invalid-printable": "Printable keys (letters, numbers, symbols) require a modifier such as Ctrl or Alt.",
@@ -1031,9 +1031,9 @@
       },
       "reset-page": "Failed to reset some settings.",
       "support-report": "Failed to save support report.",
-      "sync-greeter": "Could not sync appearance to Noctalia Greeter.",
+      "sync-greeter": "Could not sync appearance to Gnil Greeter.",
       "sync-greeter-timeout": "Greeter sync is still waiting for administrator approval. Check a TTY or console for a polkit prompt, enable the polkit agent in Security settings, or run pkexec manually.",
-      "sync-greeter-timeout-manual": "Greeter sync still needs administrator approval. Run in a terminal: pkexec noctalia-greeter-apply-appearance \"$XDG_RUNTIME_DIR/noctalia-greeter-sync\"",
+      "sync-greeter-timeout-manual": "Greeter sync still needs administrator approval. Run in a terminal: pkexec gnil-greeter-apply-appearance \"$XDG_RUNTIME_DIR/gnil-greeter-sync\"",
       "widget": {
         "rename": "Could not rename named widget."
       },
@@ -1407,8 +1407,8 @@
         },
         "kind-label": "Kind",
         "location-label": "Location",
-        "location-placeholder-git": "https://github.com/me/noctalia-plugins",
-        "location-placeholder-path": "~/dev/noctalia-plugins",
+        "location-placeholder-git": "https://github.com/me/gnil-plugins",
+        "location-placeholder-path": "~/dev/gnil-plugins",
         "name-label": "Source ID",
         "name-placeholder": "my-plugins",
         "precedence-hint": "Lower sources override higher ones when they offer the same plugin.",
@@ -1419,7 +1419,7 @@
         "update-on-startup": "Update on startup"
       },
       "store": {
-        "add": "Add to Noctalia",
+        "add": "Add to Gnil",
         "categories": "Categories",
         "category-all": "All",
         "empty": "No plugins found",
@@ -1473,7 +1473,7 @@
           "label": "Corner Roundness"
         },
         "custom-palette": {
-          "description": "Choose a palette from ~/.config/noctalia/palettes/",
+          "description": "Choose a palette from ~/.config/gnil/palettes/",
           "label": "Custom Palette",
           "search-placeholder": "Search custom palettes…"
         },
@@ -1936,7 +1936,7 @@
             "label": "On Shutdown"
           },
           "started": {
-            "description": "Command to run after Noctalia starts",
+            "description": "Command to run after Gnil starts",
             "label": "On Started"
           },
           "theme-mode-changed": {
@@ -1944,7 +1944,7 @@
             "label": "On Theme Mode Changed"
           },
           "wallpaper-changed": {
-            "description": "Command to run when the wallpaper changes; provides NOCTALIA_WALLPAPER_PATH and NOCTALIA_WALLPAPER_CONNECTOR",
+            "description": "Command to run when the wallpaper changes; provides GNIL_WALLPAPER_PATH and GNIL_WALLPAPER_CONNECTOR",
             "label": "On Wallpaper Changed"
           },
           "wifi-disabled": {
@@ -2335,7 +2335,7 @@
           "placeholder": "City, Country"
         },
         "location-auto-locate": {
-          "description": "Detect your location automatically from your IP address via noctalia.dev",
+          "description": "This legacy setting is no longer available; configure a local location instead",
           "label": "Auto-Locate (IP)"
         },
         "longitude": {
@@ -2537,7 +2537,7 @@
           "label": "Date Format"
         },
         "external-ip": {
-          "description": "Resolve the connection's public WAN IP (via api.noctalia.dev) and show it in the Control Center network tab",
+          "description": "This legacy setting is no longer available",
           "label": "Show WAN IP"
         },
         "greeter-sync-auto": {
@@ -2549,7 +2549,7 @@
           "label": "Greeter Sync Privilege Command"
         },
         "launch-apps-as-systemd-services": {
-          "description": "Launches applications in separate systemd services so they don't share Noctalia's cgroup",
+          "description": "Launches applications in separate systemd services so they don't share Gnil's cgroup",
           "label": "Launch Apps as systemd Services"
         },
         "launch-apps-custom-command": {
@@ -2726,8 +2726,8 @@
         },
         "sync-greeter": {
           "button": "Sync Now",
-          "description": "Copy the current wallpaper and colors to Noctalia Greeter (requires administrator approval)",
-          "label": "Noctalia Greeter"
+          "description": "Copy the current wallpaper and colors to Gnil Greeter (requires administrator approval)",
+          "label": "Gnil Greeter"
         },
         "telemetry": {
           "description": "Sends a small anonymous startup ping with version, OS, compositor, monitor resolutions, RAM, and UI scale",

@@ -49,7 +49,7 @@ public:
   void registerIpc(IpcService& ipc);
   // Apply and persist a wallpaper image. nullopt connector targets all connected
   // outputs plus the default. Returns false if the path does not exist or the
-  // connector is unknown. Shared by the wallpaper-set IPC handler and plugin scripts.
+  // connector is unknown. Shared by the wallpaper-set IPC handler.
   bool applyWallpaperImage(const std::optional<std::string>& connector, const std::string& path);
   // Start a persisted video wallpaper on one output, or on every connected
   // output when connector is omitted. Playback is delegated to the packaged
@@ -77,7 +77,7 @@ public:
   // previews while their UI is closed.
   [[nodiscard]] Signal<>& changed() noexcept { return m_changed; }
   [[nodiscard]] Signal<>& livePaletteChanged() noexcept { return m_livePaletteChanged; }
-  [[nodiscard]] std::optional<noctalia::theme::LiveWallpaperPaletteSource>
+  [[nodiscard]] std::optional<gnil::theme::LiveWallpaperPaletteSource>
   livePaletteSource(std::string_view outputSelector);
 
 private:
@@ -157,7 +157,7 @@ private:
   std::unordered_map<std::string, VideoProcess> m_videoProcesses;
   struct LivePaletteAsyncGuard;
   std::shared_ptr<LivePaletteAsyncGuard> m_livePaletteAsyncGuard;
-  std::optional<noctalia::theme::LiveWallpaperPaletteSource> m_livePaletteSource;
+  std::optional<gnil::theme::LiveWallpaperPaletteSource> m_livePaletteSource;
   std::string m_livePaletteDesiredIdentity;
   std::uint64_t m_livePaletteGeneration = 0;
   bool m_previewActive = false;

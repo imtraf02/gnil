@@ -5,7 +5,7 @@
 
 #include <string_view>
 
-namespace noctalia::config {
+namespace gnil::config {
 
   // Validates an already merged and normalized effective config table. This is the
   // shared, side-effect-free semantic validation pass used by live reload and the CLI.
@@ -24,4 +24,4 @@ namespace noctalia::config {
   // settings.toml override layer is read.
   [[nodiscard]] schema::Diagnostics validateConfigFile(std::string_view path);
 
-} // namespace noctalia::config
+} // namespace gnil::config

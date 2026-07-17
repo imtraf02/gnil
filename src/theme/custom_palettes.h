@@ -1,15 +1,28 @@
 #pragma once
 
-#include "theme/community_palettes.h"
 
 #include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   struct GeneratedPalette;
+  struct AvailablePalette {
+    struct PreviewMode {
+      std::string surface;
+      std::vector<std::string> accents;
+    };
+    struct Preview {
+      PreviewMode dark;
+      PreviewMode light;
+    };
+
+    std::string name;
+    std::string md5;
+    Preview preview;
+  };
 
   [[nodiscard]] std::filesystem::path customPaletteDir();
   [[nodiscard]] std::filesystem::path customPalettePath(std::string_view name);
@@ -21,4 +34,4 @@ namespace noctalia::theme {
       std::string_view name, const GeneratedPalette& palette, std::string* errorOut = nullptr
   );
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

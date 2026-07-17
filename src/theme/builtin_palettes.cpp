@@ -5,7 +5,7 @@
 #include <array>
 #include <string_view>
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   namespace {
 
@@ -667,7 +667,7 @@ namespace noctalia::theme {
                         },
                 },
                 {
-                    .name = "Noctalia",
+                    .name = "GNIL",
                     .dark =
                         FixedPaletteMode{
                             .palette =
@@ -1114,7 +1114,7 @@ namespace noctalia::theme {
     // and dark defaults.  Both resolve to the matching mode of GNIL's bundled
     // base palette, so a fresh install never emits an unknown-palette warning.
     if (name == "Ling Light" || name == "Ling Dark") {
-      name = "Noctalia";
+      name = "GNIL";
     }
     for (const auto& palette : kPalettes) {
       if (palette.name == name) {
@@ -1131,4 +1131,4 @@ namespace noctalia::theme {
     return generated;
   }
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

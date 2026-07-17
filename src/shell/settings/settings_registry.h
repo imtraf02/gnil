@@ -42,7 +42,6 @@ namespace settings {
     Hooks,
     Niri,
     Bar,
-    Plugins,
   };
 
   struct SettingsSectionDescriptor {
@@ -273,13 +272,11 @@ namespace settings {
     bool screencopySupported = false;               // lockscreen blurred desktop + screenshot features
     bool ddcutilAvailable = false;                  // disable ddcutil toggle when ddcutil is not on PATH
     bool gammaControlAvailable = false;             // hide night-light entries when gamma control is unavailable
-    bool greeterSyncAvailable = false;              // hide greeter appearance sync when greeter is not installed
     std::vector<SelectOption> availableOutputs;     // monitor selectors available on this machine
     bool batteryAvailable = false;
     bool systemBatteryAvailable = false;
     std::vector<SelectOption> batteryDeviceOptions;
     std::unordered_map<std::string, int> batteryWarningThresholds;
-    std::vector<SelectOption> communityPalettes;
     std::vector<SelectOption> customPalettes;
     std::vector<SelectOption> fontFamilies;
     std::string shellAvatarPath;

@@ -56,7 +56,6 @@ namespace settings {
         {SettingsSection::Hooks, "hooks", "link"},
         {SettingsSection::Niri, "niri", "niri"},
         {SettingsSection::Bar, "bar", "crop-3-2", false},
-        {SettingsSection::Plugins, "plugins", "puzzle", true, true},
     }};
 
     const SettingsSectionDescriptor& descriptorFor(SettingsSection section) {
@@ -72,7 +71,7 @@ namespace settings {
     // one source. `integerValue` (write as int64) stays explicit: it is a UI/write
     // choice, not implied by the range's numeric type (e.g. transition_duration).
     template <typename V, typename T>
-    SliderSetting sliderFor(V value, const noctalia::config::schema::Range<T>& range, bool integerValue) {
+    SliderSetting sliderFor(V value, const gnil::config::schema::Range<T>& range, bool integerValue) {
       return SliderSetting{
           static_cast<double>(value), static_cast<double>(range.min.value()), static_cast<double>(range.max.value()),
           static_cast<double>(range.step.value()), integerValue
@@ -161,14 +160,14 @@ namespace settings {
       };
     }
 
-    ColorSwatchPreview builtinPalettePreview(const noctalia::theme::BuiltinPalette& palette, ThemeMode mode) {
+    ColorSwatchPreview builtinPalettePreview(const gnil::theme::BuiltinPalette& palette, ThemeMode mode) {
       return palettePreviewFromPalette(mode == ThemeMode::Light ? palette.light.palette : palette.dark.palette);
     }
 
     SelectSetting builtinPaletteSelect(std::string_view selected, ThemeMode mode) {
       std::vector<SelectOption> opts;
-      opts.reserve(noctalia::theme::builtinPalettes().size());
-      for (const auto& palette : noctalia::theme::builtinPalettes()) {
+      opts.reserve(gnil::theme::builtinPalettes().size());
+      for (const auto& palette : gnil::theme::builtinPalettes()) {
         opts.push_back(
             SelectOption{
                 .value = std::string(palette.name),
@@ -642,23 +641,6 @@ namespace settings {
           tr("settings.schema.appearance.wallpaper-generation-scheme.description"), {"theme", "wallpaper_scheme"},
           wallpaperSchemeSelect(cfg.theme.wallpaperScheme), "wallpaper palette generator scheme material you m3 colors"
       ));
-    } else if (cfg.theme.source == PaletteSource::Community) {
-      SettingControl communityPaletteControl =
-          TextSetting{.value = cfg.theme.communityPalette, .placeholder = "Oxocarbon", .browseFileExtensions = {}};
-      if (!env.communityPalettes.empty()) {
-        communityPaletteControl = SearchPickerSetting{
-            .options = env.communityPalettes,
-            .selectedValue = cfg.theme.communityPalette,
-            .placeholder = tr("settings.schema.appearance.community-palette.search-placeholder"),
-            .emptyText = tr("ui.controls.search-picker.empty"),
-            .preferredHeight = 240.0f,
-        };
-      }
-      entries.push_back(makeEntry(
-          SettingsSection::Appearance, "theme", tr("settings.schema.appearance.community-palette.label"),
-          tr("settings.schema.appearance.community-palette.description"), {"theme", "community_palette"},
-          std::move(communityPaletteControl), "community palette colors"
-      ));
     } else if (cfg.theme.source == PaletteSource::Custom) {
       SettingControl customPaletteControl =
           TextSetting{.value = cfg.theme.customPalette, .placeholder = "", .browseFileExtensions = {}};
@@ -685,7 +667,7 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Appearance, "interface", tr("settings.schema.appearance.corner-roundness.label"),
         tr("settings.schema.appearance.corner-roundness.description"), {"shell", "corner_radius_scale"},
-        sliderFor(cfg.shell.cornerRadiusScale, noctalia::config::schema::kCornerRadiusScaleRange, false),
+        sliderFor(cfg.shell.cornerRadiusScale, gnil::config::schema::kCornerRadiusScaleRange, false),
         "rounded corners radius"
     ));
     entries.push_back(makeEntry(
@@ -733,7 +715,7 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Appearance, "accessibility", tr("settings.schema.appearance.ui-scale.label"),
         tr("settings.schema.appearance.ui-scale.description"), {"accessibility", "ui_scale"},
-        sliderFor(cfg.accessibility.uiScale, noctalia::config::schema::kScaleRange, false), "size scale text panels"
+        sliderFor(cfg.accessibility.uiScale, gnil::config::schema::kScaleRange, false), "size scale text panels"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Appearance, "accessibility", tr("settings.schema.accessibility.high-contrast.label"),
@@ -748,7 +730,7 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Appearance, "motion", tr("settings.schema.appearance.animation-speed.label"),
         tr("settings.schema.appearance.animation-speed.description"), {"shell", "animation", "speed"},
-        sliderFor(cfg.shell.animation.speed, noctalia::config::schema::kAnimationSpeedRange, false), "motion"
+        sliderFor(cfg.shell.animation.speed, gnil::config::schema::kAnimationSpeedRange, false), "motion"
     ));
     // Wallpaper
     entries.push_back(makeEntry(
@@ -901,14 +883,14 @@ namespace settings {
         SettingsSection::Wallpaper, "transition", tr("settings.schema.wallpaper.transition-duration.label"),
         tr("settings.schema.wallpaper.transition-duration.description"), {"wallpaper", "transition_duration"},
         sliderFor(
-            cfg.wallpaper.transitionDurationMs, noctalia::config::schema::kWallpaperTransitionDurationRange, true
+            cfg.wallpaper.transitionDurationMs, gnil::config::schema::kWallpaperTransitionDurationRange, true
         ),
         "fade animation"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Wallpaper, "transition", tr("settings.schema.wallpaper.edge-smoothness.label"),
         tr("settings.schema.wallpaper.edge-smoothness.description"), {"wallpaper", "edge_smoothness"},
-        sliderFor(cfg.wallpaper.edgeSmoothness, noctalia::config::schema::kUnitRange, false), "transition feathering",
+        sliderFor(cfg.wallpaper.edgeSmoothness, gnil::config::schema::kUnitRange, false), "transition feathering",
         true
     ));
     entries.push_back(makeEntry(
@@ -927,9 +909,9 @@ namespace settings {
         {"wallpaper", "automation", "interval_seconds"},
         StepperSetting{
             .value = cfg.wallpaper.automation.intervalSeconds,
-            .minValue = static_cast<int>(noctalia::config::schema::kWallpaperAutomationIntervalRange.min.value()),
-            .maxValue = static_cast<int>(noctalia::config::schema::kWallpaperAutomationIntervalRange.max.value()),
-            .step = static_cast<int>(noctalia::config::schema::kWallpaperAutomationIntervalRange.step.value()),
+            .minValue = static_cast<int>(gnil::config::schema::kWallpaperAutomationIntervalRange.min.value()),
+            .maxValue = static_cast<int>(gnil::config::schema::kWallpaperAutomationIntervalRange.max.value()),
+            .step = static_cast<int>(gnil::config::schema::kWallpaperAutomationIntervalRange.step.value()),
             .valueSuffix = "s",
         },
         "rotate slideshow"
@@ -946,7 +928,7 @@ namespace settings {
     ));
 
     // Native video wallpaper deliberately lives next to the image wallpaper
-    // controls rather than under Plugins.  "all" is the friendly default;
+    // controls. "all" is the friendly default;
     // advanced users may still add [wallpaper.video.<connector>] entries for
     // a single output through config or the video-wallpaper-set IPC command.
     const auto allVideo = [&cfg]() {
@@ -1084,57 +1066,57 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Dock, "layout", tr("settings.schema.dock.icon-size.label"),
         tr("settings.schema.dock.icon-size.description"), {"dock", "icon_size"},
-        sliderFor(cfg.dock.iconSize, noctalia::config::schema::kDockIconSizeRange, true), "apps"
+        sliderFor(cfg.dock.iconSize, gnil::config::schema::kDockIconSizeRange, true), "apps"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "layout", tr("settings.schema.shared.main-axis-padding.label"),
         tr("settings.schema.dock.main-axis-padding.description"), {"dock", "main_axis_padding"},
-        sliderFor(cfg.dock.mainAxisPadding, noctalia::config::schema::kDockPaddingRange, true), "inset"
+        sliderFor(cfg.dock.mainAxisPadding, gnil::config::schema::kDockPaddingRange, true), "inset"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "layout", tr("settings.schema.shared.cross-axis-padding.label"),
         tr("settings.schema.dock.cross-axis-padding.description"), {"dock", "cross_axis_padding"},
-        sliderFor(cfg.dock.crossAxisPadding, noctalia::config::schema::kDockPaddingRange, true), "inset"
+        sliderFor(cfg.dock.crossAxisPadding, gnil::config::schema::kDockPaddingRange, true), "inset"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "layout", tr("settings.schema.dock.item-spacing.label"),
         tr("settings.schema.dock.item-spacing.description"), {"dock", "item_spacing"},
-        sliderFor(cfg.dock.itemSpacing, noctalia::config::schema::kDockItemSpacingRange, true), "gap"
+        sliderFor(cfg.dock.itemSpacing, gnil::config::schema::kDockItemSpacingRange, true), "gap"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "layout", tr("settings.schema.shared.ends-margin.label"),
         tr("settings.schema.dock.ends-margin.description"), {"dock", "margin_ends"},
-        sliderFor(cfg.dock.marginEnds, noctalia::config::schema::kDockMarginEndsRange, true), "gap inset"
+        sliderFor(cfg.dock.marginEnds, gnil::config::schema::kDockMarginEndsRange, true), "gap inset"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "layout", tr("settings.schema.shared.edge-margin.label"),
         tr("settings.schema.dock.edge-margin.description"), {"dock", "margin_edge"},
-        sliderFor(cfg.dock.marginEdge, noctalia::config::schema::kDockMarginEdgeRange, true), "gap inset"
+        sliderFor(cfg.dock.marginEdge, gnil::config::schema::kDockMarginEdgeRange, true), "gap inset"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "shape", tr("settings.schema.shared.corner-radius.label"),
         tr("settings.schema.dock.corner-radius.description"), {"dock", "radius"},
-        sliderFor(cfg.dock.radius, noctalia::config::schema::kDockRadiusRange, true), "rounded"
+        sliderFor(cfg.dock.radius, gnil::config::schema::kDockRadiusRange, true), "rounded"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "shape", tr("settings.schema.shared.corner-top-left.label"),
         tr("settings.schema.dock.corner-top-left.description"), {"dock", "radius_top_left"},
-        sliderFor(cfg.dock.radiusTopLeft, noctalia::config::schema::kDockRadiusRange, true), "rounded corner", true
+        sliderFor(cfg.dock.radiusTopLeft, gnil::config::schema::kDockRadiusRange, true), "rounded corner", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "shape", tr("settings.schema.shared.corner-top-right.label"),
         tr("settings.schema.dock.corner-top-right.description"), {"dock", "radius_top_right"},
-        sliderFor(cfg.dock.radiusTopRight, noctalia::config::schema::kDockRadiusRange, true), "rounded corner", true
+        sliderFor(cfg.dock.radiusTopRight, gnil::config::schema::kDockRadiusRange, true), "rounded corner", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "shape", tr("settings.schema.shared.corner-bottom-left.label"),
         tr("settings.schema.dock.corner-bottom-left.description"), {"dock", "radius_bottom_left"},
-        sliderFor(cfg.dock.radiusBottomLeft, noctalia::config::schema::kDockRadiusRange, true), "rounded corner", true
+        sliderFor(cfg.dock.radiusBottomLeft, gnil::config::schema::kDockRadiusRange, true), "rounded corner", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "shape", tr("settings.schema.shared.corner-bottom-right.label"),
         tr("settings.schema.dock.corner-bottom-right.description"), {"dock", "radius_bottom_right"},
-        sliderFor(cfg.dock.radiusBottomRight, noctalia::config::schema::kDockRadiusRange, true), "rounded corner", true
+        sliderFor(cfg.dock.radiusBottomRight, gnil::config::schema::kDockRadiusRange, true), "rounded corner", true
     ));
     {
       auto e = makeEntry(
@@ -1148,7 +1130,7 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Dock, "effects", tr("settings.schema.shared.background-opacity.label"),
         tr("settings.schema.dock.background-opacity.description"), {"dock", "background_opacity"},
-        sliderFor(cfg.dock.backgroundOpacity, noctalia::config::schema::kUnitRange, false), "alpha"
+        sliderFor(cfg.dock.backgroundOpacity, gnil::config::schema::kUnitRange, false), "alpha"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "effects", tr("settings.schema.shared.shadow.label"),
@@ -1162,28 +1144,28 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Dock, "focus-styling", tr("settings.schema.dock.magnification-scale.label"),
         tr("settings.schema.dock.magnification-scale.description"), {"dock", "magnification_scale"},
-        sliderFor(cfg.dock.magnificationScale, noctalia::config::schema::kDockMagnificationScaleRange, false),
+        sliderFor(cfg.dock.magnificationScale, gnil::config::schema::kDockMagnificationScaleRange, false),
         "magnify zoom"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "focus-styling", tr("settings.schema.dock.active-icon-scale.label"),
         tr("settings.schema.dock.active-icon-scale.description"), {"dock", "active_scale"},
-        sliderFor(cfg.dock.activeScale, noctalia::config::schema::kDockActiveScaleRange, false), "focused", true
+        sliderFor(cfg.dock.activeScale, gnil::config::schema::kDockActiveScaleRange, false), "focused", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "focus-styling", tr("settings.schema.dock.inactive-icon-scale.label"),
         tr("settings.schema.dock.inactive-icon-scale.description"), {"dock", "inactive_scale"},
-        sliderFor(cfg.dock.inactiveScale, noctalia::config::schema::kDockInactiveScaleRange, false), "unfocused", true
+        sliderFor(cfg.dock.inactiveScale, gnil::config::schema::kDockInactiveScaleRange, false), "unfocused", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "focus-styling", tr("settings.schema.dock.active-icon-opacity.label"),
         tr("settings.schema.dock.active-icon-opacity.description"), {"dock", "active_opacity"},
-        sliderFor(cfg.dock.activeOpacity, noctalia::config::schema::kUnitRange, false), "focused alpha", true
+        sliderFor(cfg.dock.activeOpacity, gnil::config::schema::kUnitRange, false), "focused alpha", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "focus-styling", tr("settings.schema.dock.inactive-icon-opacity.label"),
         tr("settings.schema.dock.inactive-icon-opacity.description"), {"dock", "inactive_opacity"},
-        sliderFor(cfg.dock.inactiveOpacity, noctalia::config::schema::kUnitRange, false), "unfocused alpha", true
+        sliderFor(cfg.dock.inactiveOpacity, gnil::config::schema::kUnitRange, false), "unfocused alpha", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Dock, "pinned-apps", tr("settings.schema.dock.pinned-apps.label"),
@@ -1195,13 +1177,13 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Panels, "frame", "Frame thickness",
         "Set the frame width on the three free edges; the bar replaces it on its own edge.", {"shell", "chrome", "frame_thickness"},
-        sliderFor(cfg.shell.chrome.frameThickness, noctalia::config::schema::kChromeFrameThicknessRange, false),
+        sliderFor(cfg.shell.chrome.frameThickness, gnil::config::schema::kChromeFrameThicknessRange, false),
         "frame border thickness rail"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Panels, "frame", "Frame rounding",
         "Round the shared frame, bar joins and attached panel chrome together.", {"shell", "chrome", "rounding"},
-        sliderFor(cfg.shell.chrome.rounding, noctalia::config::schema::kChromeRoundingRange, false),
+        sliderFor(cfg.shell.chrome.rounding, gnil::config::schema::kChromeRoundingRange, false),
         "frame radius rounding corners bar"
     ));
     entries.push_back(makeEntry(
@@ -1309,16 +1291,6 @@ namespace settings {
         ToggleSetting{cfg.shell.offlineMode}, "network http fetch download"
     ));
     entries.push_back(makeEntry(
-        SettingsSection::Security, "network", tr("settings.schema.shell.external-ip.label"),
-        tr("settings.schema.shell.external-ip.description"), {"shell", "external_ip_enabled"},
-        ToggleSetting{cfg.shell.externalIpEnabled}, "wan external ip public address network resolve"
-    ));
-    entries.push_back(makeEntry(
-        SettingsSection::Security, "network", tr("settings.schema.shell.telemetry.label"),
-        tr("settings.schema.shell.telemetry.description"), {"shell", "telemetry_enabled"},
-        ToggleSetting{cfg.shell.telemetryEnabled}, "analytics ping privacy"
-    ));
-    entries.push_back(makeEntry(
         SettingsSection::Security, "authentication", tr("settings.schema.shell.polkit-agent.label"),
         tr("settings.schema.shell.polkit-agent.description"), {"shell", "polkit_agent"},
         ToggleSetting{cfg.shell.polkitAgent}, "auth password"
@@ -1387,7 +1359,7 @@ namespace settings {
       auto e = makeEntry(
           SettingsSection::Security, "lock-screen", tr("settings.schema.lockscreen.blur-intensity.label"),
           tr("settings.schema.lockscreen.blur-intensity.description"), {"lockscreen", "blur_intensity"},
-          sliderFor(cfg.lockscreen.blurIntensity, noctalia::config::schema::kUnitRange, false), "lock screen blur"
+          sliderFor(cfg.lockscreen.blurIntensity, gnil::config::schema::kUnitRange, false), "lock screen blur"
       );
       e.visibleWhen = lockscreenOn;
       entries.push_back(std::move(e));
@@ -1396,7 +1368,7 @@ namespace settings {
       auto e = makeEntry(
           SettingsSection::Security, "lock-screen", tr("settings.schema.lockscreen.tint-intensity.label"),
           tr("settings.schema.lockscreen.tint-intensity.description"), {"lockscreen", "tint_intensity"},
-          sliderFor(cfg.lockscreen.tintIntensity, noctalia::config::schema::kUnitRange, false), "lock screen tint"
+          sliderFor(cfg.lockscreen.tintIntensity, gnil::config::schema::kUnitRange, false), "lock screen tint"
       );
       e.visibleWhen = lockscreenOn;
       entries.push_back(std::move(e));
@@ -1430,19 +1402,6 @@ namespace settings {
         TextSetting{.value = cfg.shell.privacy.screenFilterRegex, .placeholder = "", .browseFileExtensions = {}},
         "privacy screen share screenshare app process regex filter ignore"
     ));
-    if (env.greeterSyncAvailable) {
-      entries.push_back(makeEntry(
-          SettingsSection::Security, "greeter", tr("settings.schema.shell.greeter-sync-privilege-command.label"),
-          tr("settings.schema.shell.greeter-sync-privilege-command.description"),
-          {"shell", "greeter_sync", "privilege_command"},
-          TextSetting{
-              .value = cfg.shell.greeterSync.privilegeCommand,
-              .placeholder = "pkexec",
-              .browseFileExtensions = {},
-          },
-          "greeter sync pkexec run0 ghostty terminal sudo"
-      ));
-    }
     // Shell
     entries.push_back(makeEntry(
         SettingsSection::Shell, "general", tr("settings.schema.shell.avatar-path.label"),
@@ -1508,9 +1467,9 @@ namespace settings {
           {"shell", "clipboard_history_max_entries"},
           StepperSetting{
               .value = cfg.shell.clipboardHistoryMaxEntries,
-              .minValue = static_cast<int>(noctalia::config::schema::kClipboardHistoryMaxEntriesRange.min.value()),
-              .maxValue = static_cast<int>(noctalia::config::schema::kClipboardHistoryMaxEntriesRange.max.value()),
-              .step = static_cast<int>(noctalia::config::schema::kClipboardHistoryMaxEntriesRange.step.value())
+              .minValue = static_cast<int>(gnil::config::schema::kClipboardHistoryMaxEntriesRange.min.value()),
+              .maxValue = static_cast<int>(gnil::config::schema::kClipboardHistoryMaxEntriesRange.max.value()),
+              .step = static_cast<int>(gnil::config::schema::kClipboardHistoryMaxEntriesRange.step.value())
           },
           "clipboard history limit entries"
       );
@@ -1667,7 +1626,7 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Osd, "osd", tr("settings.schema.shell.osd-scale.label"),
         tr("settings.schema.shell.osd-scale.description"), {"osd", "scale"},
-        sliderFor(cfg.osd.scale, noctalia::config::schema::kScaleRange, false),
+        sliderFor(cfg.osd.scale, gnil::config::schema::kScaleRange, false),
         "hud overlay volume brightness size scale multiplier"
     ));
     entries.push_back(makeEntry(
@@ -1685,7 +1644,7 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Osd, "osd", tr("settings.schema.shell.osd-background-opacity.label"),
         tr("settings.schema.shell.osd-background-opacity.description"), {"osd", "background_opacity"},
-        sliderFor(cfg.osd.backgroundOpacity, noctalia::config::schema::kUnitRange, false), "hud overlay popup opacity"
+        sliderFor(cfg.osd.backgroundOpacity, gnil::config::schema::kUnitRange, false), "hud overlay popup opacity"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Osd, "osd", tr("settings.schema.shell.osd-monitors.label"),
@@ -1846,12 +1805,12 @@ namespace settings {
         entries.push_back(makeEntry(
             SettingsSection::Niri, "backdrop", tr("settings.schema.backdrop.blur-intensity.label"),
             tr("settings.schema.backdrop.blur-intensity.description"), {"backdrop", "blur_intensity"},
-            sliderFor(cfg.backdrop.blurIntensity, noctalia::config::schema::kUnitRange, false), "wallpaper"
+            sliderFor(cfg.backdrop.blurIntensity, gnil::config::schema::kUnitRange, false), "wallpaper"
         ));
         entries.push_back(makeEntry(
             SettingsSection::Niri, "backdrop", tr("settings.schema.backdrop.tint-intensity.label"),
             tr("settings.schema.backdrop.tint-intensity.description"), {"backdrop", "tint_intensity"},
-            sliderFor(cfg.backdrop.tintIntensity, noctalia::config::schema::kUnitRange, false), "wallpaper"
+            sliderFor(cfg.backdrop.tintIntensity, gnil::config::schema::kUnitRange, false), "wallpaper"
         ));
       }
     }
@@ -1862,7 +1821,7 @@ namespace settings {
         entries.push_back(makeEntry(
             SettingsSection::System, "battery", tr("settings.schema.system.battery-warning-threshold.label"),
             tr("settings.schema.system.battery-warning-threshold.description"), {"battery", "warning_threshold"},
-            sliderFor(cfg.battery.warningThreshold, noctalia::config::schema::kBatteryWarningThresholdRange, true),
+            sliderFor(cfg.battery.warningThreshold, gnil::config::schema::kBatteryWarningThresholdRange, true),
             "battery low warning threshold notification"
         ));
       }
@@ -1938,7 +1897,7 @@ namespace settings {
 
       // One dual-thumb range row per metric: low thumb = activity threshold, high thumb = critical.
       auto addThresholdPair = [&](std::string_view baseKey, std::string_view statLabelKey, double activityValue,
-                                  double criticalValue, noctalia::sysmon::ThresholdProfile profile, bool integerValue,
+                                  double criticalValue, gnil::sysmon::ThresholdProfile profile, bool integerValue,
                                   std::string valueSuffix) {
         const std::vector<std::string> activityPath = {
             "system", "monitor", std::string(baseKey) + "_activity_threshold"
@@ -1968,56 +1927,51 @@ namespace settings {
         entries.push_back(std::move(entry));
       };
 
-      using noctalia::sysmon::Stat;
+      using gnil::sysmon::Stat;
       addThresholdPair(
           "cpu_usage", "settings.schema.services.system-monitor.stats.cpu-usage", mon.cpuUsageActivityThreshold,
-          mon.cpuUsageCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::CpuUsage), true, "%"
+          mon.cpuUsageCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::CpuUsage), true, "%"
       );
       addThresholdPair(
           "cpu_temp", "settings.schema.services.system-monitor.stats.cpu-temp", mon.cpuTempActivityThreshold,
-          mon.cpuTempCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::CpuTemp), true, "°C"
+          mon.cpuTempCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::CpuTemp), true, "°C"
       );
       addThresholdPair(
           "gpu_usage", "settings.schema.services.system-monitor.stats.gpu-usage", mon.gpuUsageActivityThreshold,
-          mon.gpuUsageCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::GpuUsage), true, "%"
+          mon.gpuUsageCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::GpuUsage), true, "%"
       );
       addThresholdPair(
           "gpu_temp", "settings.schema.services.system-monitor.stats.gpu-temp", mon.gpuTempActivityThreshold,
-          mon.gpuTempCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::GpuTemp), true, "°C"
+          mon.gpuTempCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::GpuTemp), true, "°C"
       );
       addThresholdPair(
           "gpu_vram", "settings.schema.services.system-monitor.stats.gpu-vram", mon.gpuVramActivityThreshold,
-          mon.gpuVramCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::GpuVram), true, "%"
+          mon.gpuVramCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::GpuVram), true, "%"
       );
       addThresholdPair(
           "ram_pct", "settings.schema.services.system-monitor.stats.ram-usage", mon.ramPctActivityThreshold,
-          mon.ramPctCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::RamPct), true, "%"
+          mon.ramPctCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::RamPct), true, "%"
       );
       addThresholdPair(
           "swap_pct", "settings.schema.services.system-monitor.stats.swap-usage", mon.swapPctActivityThreshold,
-          mon.swapPctCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::SwapPct), true, "%"
+          mon.swapPctCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::SwapPct), true, "%"
       );
       addThresholdPair(
           "disk_pct", "settings.schema.services.system-monitor.stats.disk-usage", mon.diskPctActivityThreshold,
-          mon.diskPctCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::DiskPct), true, "%"
+          mon.diskPctCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::DiskPct), true, "%"
       );
       addThresholdPair(
           "net_rx", "settings.schema.services.system-monitor.stats.network-rx", mon.netRxActivityThreshold,
-          mon.netRxCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::NetRx), false, "MB/s"
+          mon.netRxCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::NetRx), false, "MB/s"
       );
       addThresholdPair(
           "net_tx", "settings.schema.services.system-monitor.stats.network-tx", mon.netTxActivityThreshold,
-          mon.netTxCriticalThreshold, noctalia::sysmon::thresholdProfile(Stat::NetTx), false, "MB/s"
+          mon.netTxCriticalThreshold, gnil::sysmon::thresholdProfile(Stat::NetTx), false, "MB/s"
       );
     }
 
-    // Location — single source of "where am I"; shared by weather, night light, and theme auto mode.
-    entries.push_back(makeEntry(
-        SettingsSection::Location, "location", tr("settings.schema.services.location-auto-locate.label"),
-        tr("settings.schema.services.location-auto-locate.description"), {"location", "auto_locate"},
-        ToggleSetting{cfg.location.autoLocate}, "location ip geolocate gps coordinate"
-    ));
-    const SettingVisibility autoLocateOff = [](const Config& c) { return !c.location.autoLocate; };
+    // Location stays local: an optional label plus explicit coordinates shared
+    // by weather, night light, and automatic theme mode.
     {
       auto e = makeEntry(
           SettingsSection::Location, "location", tr("settings.schema.services.location-address.label"),
@@ -2027,16 +1981,10 @@ namespace settings {
               .placeholder = tr("settings.schema.services.location-address.placeholder"),
               .browseFileExtensions = {}
           },
-          "location address city geocode"
+          "location label city coordinate"
       );
-      e.visibleWhen = autoLocateOff;
       entries.push_back(std::move(e));
     }
-    // Manual coordinates: shown only when no network location is configured (auto-locate off
-    // and no address). The address gate is build-time; the auto-locate gate is evaluated live.
-    const SettingVisibility manualLocationHidden = [](const Config&) { return false; };
-    const SettingVisibility& manualLocationControlsVisible =
-        cfg.location.address.empty() ? autoLocateOff : manualLocationHidden;
     {
       auto e = makeEntry(
           SettingsSection::Location, "location", tr("settings.schema.services.latitude.label"),
@@ -2044,7 +1992,6 @@ namespace settings {
           OptionalNumberSetting{cfg.location.latitude, -90.0, 90.0, "52.5200"}, "coordinate location sunrise sunset",
           true
       );
-      e.visibleWhen = manualLocationControlsVisible;
       entries.push_back(std::move(e));
     }
     {
@@ -2054,7 +2001,6 @@ namespace settings {
           OptionalNumberSetting{cfg.location.longitude, -180.0, 180.0, "13.4050"}, "coordinate location sunrise sunset",
           true
       );
-      e.visibleWhen = manualLocationControlsVisible;
       entries.push_back(std::move(e));
     }
 
@@ -2130,7 +2076,7 @@ namespace settings {
       auto e = makeEntry(
           SettingsSection::Location, "weather", tr("settings.schema.services.weather-refresh-interval.label"),
           tr("settings.schema.services.weather-refresh-interval.description"), {"weather", "refresh_minutes"},
-          sliderFor(cfg.weather.refreshMinutes, noctalia::config::schema::kRefreshMinutesRange, true), "forecast"
+          sliderFor(cfg.weather.refreshMinutes, gnil::config::schema::kRefreshMinutesRange, true), "forecast"
       );
       e.visibleWhen = weatherOn;
       entries.push_back(std::move(e));
@@ -2237,13 +2183,13 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Services, "calendar", tr("settings.schema.services.calendar.label"),
         tr("settings.schema.services.calendar.description"), {"calendar", "enabled"},
-        ToggleSetting{cfg.calendar.enabled}, "calendar events caldav google"
+        ToggleSetting{cfg.calendar.enabled}, "calendar events caldav"
     ));
     {
       auto e = makeEntry(
           SettingsSection::Services, "calendar", tr("settings.schema.services.calendar-refresh-interval.label"),
           tr("settings.schema.services.calendar-refresh-interval.description"), {"calendar", "refresh_minutes"},
-          sliderFor(cfg.calendar.refreshMinutes, noctalia::config::schema::kRefreshMinutesRange, true), "calendar sync"
+          sliderFor(cfg.calendar.refreshMinutes, gnil::config::schema::kRefreshMinutesRange, true), "calendar sync"
       );
       e.visibleWhen = calendarOn;
       entries.push_back(std::move(e));
@@ -2262,7 +2208,7 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Services, "audio", tr("settings.schema.services.sound-volume.label"),
         tr("settings.schema.services.sound-volume.description"), {"audio", "sound_volume"},
-        sliderFor(cfg.audio.soundVolume, noctalia::config::schema::kUnitRange, false), "sound"
+        sliderFor(cfg.audio.soundVolume, gnil::config::schema::kUnitRange, false), "sound"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Services, "audio", tr("settings.schema.services.volume-change-sound.label"),
@@ -2296,7 +2242,7 @@ namespace settings {
     entries.push_back(makeEntry(
         SettingsSection::Services, "brightness", tr("settings.schema.services.minimum-brightness.label"),
         tr("settings.schema.services.minimum-brightness.description"), {"brightness", "minimum_brightness"},
-        sliderFor(cfg.brightness.minimumBrightness, noctalia::config::schema::kUnitRange, false), "floor clamp"
+        sliderFor(cfg.brightness.minimumBrightness, gnil::config::schema::kUnitRange, false), "floor clamp"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Services, "brightness", tr("settings.schema.services.sync-monitor-brightness.label"),
@@ -2321,9 +2267,9 @@ namespace settings {
           tr("settings.schema.power.session-grid-columns.description"), {"shell", "session", "grid_columns"},
           StepperSetting{
               .value = static_cast<int>(cfg.shell.session.gridColumns),
-              .minValue = static_cast<int>(noctalia::config::schema::kSessionGridColumnsRange.min.value()),
-              .maxValue = static_cast<int>(noctalia::config::schema::kSessionGridColumnsRange.max.value()),
-              .step = static_cast<int>(noctalia::config::schema::kSessionGridColumnsRange.step.value()),
+              .minValue = static_cast<int>(gnil::config::schema::kSessionGridColumnsRange.min.value()),
+              .maxValue = static_cast<int>(gnil::config::schema::kSessionGridColumnsRange.max.value()),
+              .step = static_cast<int>(gnil::config::schema::kSessionGridColumnsRange.step.value()),
           },
           "session panel grid columns per row"
       );
@@ -3040,7 +2986,7 @@ namespace settings {
         verified = true;
         const Logger log("settings");
         const auto verify = [&](const std::vector<std::string>& path, std::string_view what) {
-          if (!path.empty() && !noctalia::config::schema::isKnownConfigPath(path)) {
+          if (!path.empty() && !gnil::config::schema::isKnownConfigPath(path)) {
             std::string dotted;
             for (const auto& seg : path) {
               dotted += (dotted.empty() ? "" : ".") + seg;

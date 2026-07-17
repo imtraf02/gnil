@@ -36,7 +36,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
@@ -76,7 +75,7 @@ namespace {
   }
 
   void focusExistingSettingsWindow(WaylandConnection& wayland, wl_surface* surface) {
-    static constexpr std::string_view kSettingsAppId = "dev.gnil.Gnil";
+    static constexpr std::string_view kSettingsAppId = "io.github.imtraf02.gnil";
     wayland.activateSurface(surface);
     wayland.activateToplevelForAppId(kSettingsAppId);
   }
@@ -118,7 +117,7 @@ namespace {
   class SettingsProfileWatch {
   public:
     SettingsProfileWatch() {
-      if (noctalia::profiling::enabled()) {
+      if (gnil::profiling::enabled()) {
         m_watch.emplace();
       }
     }
@@ -133,7 +132,7 @@ namespace {
     [[nodiscard]] double elapsedMs() const { return m_watch.has_value() ? m_watch->elapsedMs() : 0.0; }
 
   private:
-    std::optional<noctalia::profiling::StopWatch> m_watch;
+    std::optional<gnil::profiling::StopWatch> m_watch;
   };
 
   void logSettingsProfile(std::string_view label, const SettingsProfileWatch& watch) {
@@ -443,7 +442,7 @@ void SettingsWindow::open(std::string context) {
       .minWidth = minWidth,
       .minHeight = minHeight,
       .title = i18n::tr("settings.window.native-title"),
-      .appId = "dev.gnil.Gnil",
+      .appId = "io.github.imtraf02.gnil",
   };
 
   if (!m_surface->initialize(output, cfg)) {
@@ -748,37 +747,6 @@ void SettingsWindow::requestContentRebuild(bool refreshRegistry, bool refreshFil
       m_editorSheetPopup->rebuildBody();
     }
   });
-}
-
-void SettingsWindow::markPluginListDirty() {
-  m_pluginListDirty = true;
-  ++m_pluginListRefreshGeneration;
-}
-
-void SettingsWindow::refreshPluginListIfNeeded() {
-  if (m_pluginManager == nullptr || m_config == nullptr || !m_pluginListDirty || m_pluginListRefreshInFlight) {
-    return;
-  }
-
-  m_pluginListRefreshInFlight = true;
-  const std::uint64_t generation = m_pluginListRefreshGeneration;
-  auto* manager = m_pluginManager;
-  PluginsConfig pluginsSnapshot = m_config->config().plugins;
-  std::thread([this, manager, generation, pluginsSnapshot = std::move(pluginsSnapshot)]() {
-    auto plugins = manager->list(pluginsSnapshot);
-    DeferredCall::callLater([this, generation, plugins = std::move(plugins)]() mutable {
-      m_pluginListRefreshInFlight = false;
-      if (generation != m_pluginListRefreshGeneration) {
-        refreshPluginListIfNeeded();
-        return;
-      }
-      m_pluginList = std::move(plugins);
-      m_pluginListDirty = false;
-      if (isOpen() && m_selectedSection == "plugins") {
-        requestContentRebuild();
-      }
-    });
-  }).detach();
 }
 
 void SettingsWindow::clearStatusMessage() {
@@ -1166,13 +1134,6 @@ void SettingsWindow::onExternalOptionsChanged() {
   // External service/catalog changes can alter a control's choices, but do
   // not require rebuilding the window shell, sidebar, or scroll containers.
   requestContentRebuild(false, false, true);
-}
-
-void SettingsWindow::onPluginsChanged() {
-  markPluginListDirty();
-  if (isOpen() && m_selectedSection == "plugins") {
-    requestContentRebuild();
-  }
 }
 
 void SettingsWindow::refreshIdleLiveStatusText() {

@@ -744,7 +744,7 @@ void TestPanel::create() {
 
     auto demoGlyph = ui::glyph({
         .out = &m_transformDemoGlyph,
-        .glyph = "noctalia",
+        .glyph = "gnil",
         .glyphSize = 24.0f * scale,
         .color = colorSpecFromRole(ColorRole::Primary),
         .configure = [scale](Glyph& glyph) {

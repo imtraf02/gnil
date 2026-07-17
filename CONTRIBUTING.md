@@ -1,7 +1,7 @@
 Contributing
 ===
 
-This file collects contributor-facing details for Noctalia: design goals, stack notes, code style, source layout,
+This file collects contributor-facing details for GNIL: design goals, stack notes, code style, source layout,
 runtime asset behavior, and debugging helpers.
 
 For dependencies and normal build commands, start with [README.md](README.md).
@@ -37,7 +37,6 @@ For dependencies and normal build commands, start with [README.md](README.md).
 | Config | `tomlplusplus` (vendored) |
 | JSON | `nlohmann/json` (vendored) |
 | Math expressions | `libqalculate` |
-| Scripting | `Luau` (vendored) |
 | Theme generation | Material Color Utilities (vendored) |
 
 ## Runtime Assets
@@ -45,35 +44,35 @@ For dependencies and normal build commands, start with [README.md](README.md).
 `meson install` installs the binary and shipped assets separately using the normal prefix layout:
 
 ```text
-/usr/local/bin/noctalia
-/usr/local/share/noctalia/assets/...
+/usr/local/bin/gnil
+/usr/local/share/gnil/assets/...
 ```
 
 With a different Meson `prefix`/`datadir`, the same structure is preserved under that prefix.
 
-Noctalia needs the `assets/` tree at runtime. Copying only the bare `noctalia` binary is not enough.
+GNIL needs the `assets/` tree at runtime. Copying only the bare `gnil` binary is not enough.
 
 Portable bundle layouts are also supported:
 
 ```text
 bundle/
-  noctalia
+  gnil
   assets/
 ```
 
 ```text
 bundle/
-  bin/noctalia
-  share/noctalia/assets/
+  bin/gnil
+  share/gnil/assets/
 ```
 
 Runtime asset lookup order:
 
-1. `NOCTALIA_ASSETS_DIR`
+1. `GNIL_ASSETS_DIR`
 2. `assets/` next to the executable
 3. `assets/` one level above the executable
-4. install-style `../share/noctalia/assets` relative to the executable
-5. the compiled install path from Meson (`<prefix>/<datadir>/noctalia/assets`)
+4. install-style `../share/gnil/assets` relative to the executable
+5. the compiled install path from Meson (`<prefix>/<datadir>/gnil/assets`)
 6. the source-tree `assets/` directory as a development fallback
 
 An asset root is only accepted if it contains the expected shipped files such as `emoji.json`,
@@ -108,9 +107,9 @@ C++ identifiers.
 
 ## Translations
 
-Noctalia translations are managed through [Noctalia Translate](https://i18n.noctalia.dev/projects/noctalia). The JSON
-files in `assets/translations/` are exported from that workflow, with `assets/translations/en.json` acting as the
-source catalog for new strings.
+GNIL translations are maintained directly in the JSON files under
+`assets/translations/`, with `assets/translations/en.json` acting as the source
+catalog for new strings.
 
 When a code, UI, settings, or documentation change needs a new user-facing string, add or update the English string in
 `assets/translations/en.json` only. Do not machine translate strings, copy English into other locales, or include broad
@@ -156,7 +155,7 @@ src/
   i18n/             Translation catalog and language tag handling
   idle/             Idle manager, inhibitor, grace overlay
   ipc/              IPC client/service and CLI command parsing
-  launcher/         Launcher providers (apps, emoji, calculator, sessions, windows, plugins)
+  launcher/         Launcher providers (apps, emoji, calculator, sessions, windows)
   net/              HTTP client, URI parsing, URL opening
   notification/     Notification model, manager, filtering, history
   pipewire/         PipeWire audio service, sound playback, spectrum analyzer
@@ -167,7 +166,6 @@ src/
     programs/       GLES shader programs
     scene/          Scene graph nodes and pointer input dispatch
     text/           Cairo/Pango text and glyph rendering
-  scripting/        Luau plugin runtime, manifests, registry, source management, bindings
   shell/
     backdrop/       Backdrop layer surfaces
     bar/            Bar surface, instance, widget base/factory
@@ -177,7 +175,6 @@ src/
     desktop/        Desktop widget host, factory, layout, editor support
       widgets/      Desktop widget implementations
     dock/           Dock surface, model, pinned apps, context menu
-    greeter/        Greeter appearance sync
     launcher/       Launcher panel
     lockscreen/     Session lock surfaces and lockscreen widgets
     notification/   Notification toasts
@@ -217,24 +214,23 @@ third_party/
   wuffs/          Raster image decoding (vendored)
   dr_wav/         WAV decoder (vendored)
   fzy/            Fuzzy matching (vendored)
-  luau/           Plugin scripting runtime (vendored)
   material_color_utilities/ Material Design color generation (vendored)
 ```
 
 ## Debugging
 
-All debug commands use the `dev.noctalia.Debug` D-Bus service, available at runtime.
+All debug commands use the `io.github.imtraf02.gnil.Debug` D-Bus service, available at runtime.
 
 ```sh
 # Enable verbose debug logs
-gdbus call --session --dest dev.noctalia.Debug --object-path /dev/noctalia/Debug --method dev.noctalia.Debug.SetVerboseLogs true
+gdbus call --session --dest io.github.imtraf02.gnil.Debug --object-path /io/github/imtraf02/gnil/Debug --method io.github.imtraf02.gnil.Debug.SetVerboseLogs true
 
 # Disable verbose debug logs
-gdbus call --session --dest dev.noctalia.Debug --object-path /dev/noctalia/Debug --method dev.noctalia.Debug.SetVerboseLogs false
+gdbus call --session --dest io.github.imtraf02.gnil.Debug --object-path /io/github/imtraf02/gnil/Debug --method io.github.imtraf02.gnil.Debug.SetVerboseLogs false
 
 # Check current verbose log state
-gdbus call --session --dest dev.noctalia.Debug --object-path /dev/noctalia/Debug --method dev.noctalia.Debug.GetVerboseLogs
+gdbus call --session --dest io.github.imtraf02.gnil.Debug --object-path /io/github/imtraf02/gnil/Debug --method io.github.imtraf02.gnil.Debug.GetVerboseLogs
 
 # Emit an internal notification (app_name, summary, body, timeout_ms, urgency 0-2)
-gdbus call --session --dest dev.noctalia.Debug --object-path /dev/noctalia/Debug --method dev.noctalia.Debug.EmitInternalNotification "Noctalia" "Test" "Hello from debug" 5000 1
+gdbus call --session --dest io.github.imtraf02.gnil.Debug --object-path /io/github/imtraf02/gnil/Debug --method io.github.imtraf02.gnil.Debug.EmitInternalNotification "GNIL" "Test" "Hello from debug" 5000 1
 ```

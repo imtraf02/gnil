@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   namespace {
 
@@ -66,4 +66,4 @@ namespace noctalia::theme {
     return best;
   }
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

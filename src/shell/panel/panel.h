@@ -82,14 +82,14 @@ public:
   [[nodiscard]] virtual InputArea* initialFocusArea() const { return nullptr; }
   // Dynamic focus: consumed (returned once, then cleared) by PanelManager after
   // each update/layout pass. Lets content that arrives or changes after the
-  // scene build request keyboard focus (e.g. a plugin input with focus = true).
+  // scene build request keyboard focus.
   [[nodiscard]] virtual InputArea* takePendingFocusArea() { return nullptr; }
   // Panel placement policy. `Attached` merges with the bar when a suitable host
   // exists, `Floating` opens detached near the bar, and `Centered` opens in the
   // middle of the target output.
   [[nodiscard]] virtual PanelPlacement panelPlacement() const noexcept { return PanelPlacement::Floating; }
-  // Floating screen position (one of kPanelPositions). Built-ins use the
-  // structural spatial model; plugin panels may still provide a manifest value.
+  // Floating screen position (one of kPanelPositions). Panels may override it
+  // when their placement is structurally fixed.
   [[nodiscard]] virtual std::string panelScreenPosition() const { return "auto"; }
   [[nodiscard]] virtual bool panelOpenNearClick() const { return false; }
   // For attached panels: which bar edge to attach to when more than one bar exists on

@@ -353,7 +353,7 @@ namespace settings {
       LayoutConstraints c;
       // Exact width so wrapped setting labels measure their full line count. Max width
       // alone leaves cross-axis unconstrained during measure, which under-counts height
-      // for short bodies (e.g. a two-setting plugin sheet) and clips the last row.
+      // for short bodies (e.g. a two-setting sheet) and clips the last row.
       c.setExactWidth(innerCw);
       const float headerH = m_header->measure(renderer, c).height;
       float statusH = 0.0f;

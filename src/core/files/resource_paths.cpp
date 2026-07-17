@@ -18,14 +18,14 @@ namespace paths {
     constexpr Logger kLog("paths");
 
     std::filesystem::path installedAssetsRoot() {
-      const std::filesystem::path datadir(NOCTALIA_INSTALL_DATADIR);
+      const std::filesystem::path datadir(GNIL_INSTALL_DATADIR);
       if (datadir.is_absolute()) {
         return datadir / "gnil" / "assets";
       }
-      return std::filesystem::path(NOCTALIA_INSTALL_PREFIX) / datadir / "gnil" / "assets";
+      return std::filesystem::path(GNIL_INSTALL_PREFIX) / datadir / "gnil" / "assets";
     }
 
-    std::filesystem::path sourceAssetsRoot() { return std::filesystem::path(NOCTALIA_SOURCE_ASSETS_DIR); }
+    std::filesystem::path sourceAssetsRoot() { return std::filesystem::path(GNIL_SOURCE_ASSETS_DIR); }
 
     bool isAssetRoot(const std::filesystem::path& root) {
       if (root.empty()) {
@@ -76,7 +76,7 @@ namespace paths {
         appendUnique(candidates, exeDir / "assets");
         appendUnique(candidates, exeDir.parent_path() / "assets");
 
-        const std::filesystem::path datadir(NOCTALIA_INSTALL_DATADIR);
+        const std::filesystem::path datadir(GNIL_INSTALL_DATADIR);
         if (!datadir.empty() && !datadir.is_absolute()) {
           appendUnique(candidates, exeDir.parent_path() / datadir / "gnil" / "assets");
         }

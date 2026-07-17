@@ -1025,7 +1025,7 @@ void Wallpaper::syncLiveWallpaperPalette() {
   }
 }
 
-std::optional<noctalia::theme::LiveWallpaperPaletteSource>
+std::optional<gnil::theme::LiveWallpaperPaletteSource>
 Wallpaper::livePaletteSource(std::string_view outputSelector) {
   ensureLiveWallpaperPalette(outputSelector);
   if (m_livePaletteSource.has_value() && m_livePaletteSource->identity == m_livePaletteDesiredIdentity) {
@@ -1075,7 +1075,7 @@ void Wallpaper::ensureLiveWallpaperPalette(std::string_view outputSelector) {
     return;
   }
   const auto cacheRoot = std::filesystem::path(base) / "live-wallpaper-palette"
-      / noctalia::util::stringMd5Hex(identity);
+      / gnil::util::stringMd5Hex(identity);
   std::vector<std::string> framePaths;
   framePaths.reserve(4);
   std::vector<std::size_t> missing;
@@ -1093,7 +1093,7 @@ void Wallpaper::ensureLiveWallpaperPalette(std::string_view outputSelector) {
     }
   }
   if (missing.empty()) {
-    m_livePaletteSource = noctalia::theme::LiveWallpaperPaletteSource{
+    m_livePaletteSource = gnil::theme::LiveWallpaperPaletteSource{
         .identity = identity,
         .framePaths = std::move(framePaths),
     };
@@ -1181,7 +1181,7 @@ void Wallpaper::completeLivePaletteExtraction(
     m_livePaletteDesiredIdentity.clear();
     return;
   }
-  m_livePaletteSource = noctalia::theme::LiveWallpaperPaletteSource{
+  m_livePaletteSource = gnil::theme::LiveWallpaperPaletteSource{
       .identity = std::move(identity),
       .framePaths = std::move(framePaths),
   };
@@ -1803,7 +1803,7 @@ void Wallpaper::createInstance(const WaylandOutput& output) {
   instance->description = output.description;
 
   auto surfaceConfig = LayerSurfaceConfig{
-      .nameSpace = "noctalia-wallpaper",
+      .nameSpace = "gnil-wallpaper",
       .layer = LayerShellLayer::Background,
       .anchor = LayerShellAnchor::Top | LayerShellAnchor::Bottom | LayerShellAnchor::Left | LayerShellAnchor::Right,
       .width = 0,

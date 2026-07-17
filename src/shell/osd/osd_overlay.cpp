@@ -431,7 +431,7 @@ void OsdOverlay::ensureSurfaces() {
     }
 
     auto surfaceConfig = LayerSurfaceConfig{
-        .nameSpace = "noctalia-osd",
+        .nameSpace = "gnil-osd",
         .layer = LayerShellLayer::Overlay,
         .anchor = anchor,
         .width = surfaceWidth,

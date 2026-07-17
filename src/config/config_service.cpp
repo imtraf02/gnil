@@ -47,7 +47,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace schema = noctalia::config::schema;
+namespace schema = gnil::config::schema;
 
 namespace {
 
@@ -55,12 +55,12 @@ namespace {
 
   template <typename T>
   void readConfigSection(
-      const toml::table& table, T& target, const noctalia::config::schema::Schema<T>& sectionSchema,
-      std::string_view path, noctalia::config::schema::Diagnostics& diagnostics
+      const toml::table& table, T& target, const gnil::config::schema::Schema<T>& sectionSchema,
+      std::string_view path, gnil::config::schema::Diagnostics& diagnostics
   ) {
     T candidate = target;
     try {
-      noctalia::config::schema::readInto(table, candidate, sectionSchema, path, diagnostics);
+      gnil::config::schema::readInto(table, candidate, sectionSchema, path, diagnostics);
       target = std::move(candidate);
     } catch (const std::exception& e) {
       diagnostics.error(std::string(path), e.what());
@@ -195,7 +195,7 @@ namespace {
   }
 
   void restoreInvalidComponents(
-      Config& candidate, const Config& active, const noctalia::config::schema::Diagnostics& diagnostics
+      Config& candidate, const Config& active, const gnil::config::schema::Diagnostics& diagnostics
   ) {
     const auto restorePlacementWidget = [](std::vector<DesktopWidgetState>& candidateWidgets,
                                            const std::vector<DesktopWidgetState>& activeWidgets,
@@ -214,8 +214,8 @@ namespace {
     };
 
     for (const auto& entry : diagnostics.entries) {
-      if (entry.severity != noctalia::config::schema::Diagnostics::Severity::Error
-          || entry.recoveryScope != noctalia::config::schema::Diagnostics::RecoveryScope::Component) {
+      if (entry.severity != gnil::config::schema::Diagnostics::Severity::Error
+          || entry.recoveryScope != gnil::config::schema::Diagnostics::RecoveryScope::Component) {
         continue;
       }
       if (const auto barId = componentOwnerId(entry.ownerPath, "widget.")) {
@@ -278,7 +278,7 @@ namespace {
     }
     if (const auto* settingsTable = widgetTable["settings"].as_table()) {
       for (const auto& [key, value] : *settingsTable) {
-        if (auto parsed = noctalia::config::readWidgetSettingValue(value); parsed.has_value()) {
+        if (auto parsed = gnil::config::readWidgetSettingValue(value); parsed.has_value()) {
           widget.settings.emplace(std::string(key.str()), std::move(*parsed));
         }
       }
@@ -454,7 +454,7 @@ namespace {
 
   std::optional<toml::table>
   mergeUserConfigSources(std::string_view configDir, std::string_view settingsPath, std::string* error) {
-    auto mergeResult = noctalia::config::mergeConfigWithIncludes(configDir);
+    auto mergeResult = gnil::config::mergeConfigWithIncludes(configDir);
     toml::table merged = std::move(mergeResult.merged);
     if (!mergeResult.firstError.empty()) {
       if (error != nullptr) {
@@ -468,9 +468,9 @@ namespace {
       try {
         toml::table sidecar = toml::parse_file(std::string(settingsPath));
         schema::Diagnostics migrationDiag;
-        const auto storedVersion = noctalia::config::storedConfigVersion(sidecar, migrationDiag);
+        const auto storedVersion = gnil::config::storedConfigVersion(sidecar, migrationDiag);
         if (storedVersion.has_value()) {
-          (void)noctalia::config::applyPendingConfigMigrations(sidecar, *storedVersion, migrationDiag);
+          (void)gnil::config::applyPendingConfigMigrations(sidecar, *storedVersion, migrationDiag);
         }
         for (const auto& entry : migrationDiag.entries) {
           if (entry.severity == schema::Diagnostics::Severity::Error) {
@@ -580,7 +580,7 @@ void ConfigService::setNotificationManager(NotificationManager* manager) {
         m_notificationManager->close(m_configErrorNotificationId);
       }
       m_configErrorNotificationId =
-          m_notificationManager->addInternal("Noctalia", "Config error", pendingError, Urgency::Critical, 0);
+          m_notificationManager->addInternal("GNIL", "Config error", pendingError, Urgency::Critical, 0);
     });
   }
   if (m_notificationManager != nullptr && m_legacyReminderPending) {
@@ -606,7 +606,7 @@ void ConfigService::forceReload() {
 }
 
 void ConfigService::fireReloadCallbacks() {
-  if (!noctalia::profiling::enabled()) {
+  if (!gnil::profiling::enabled()) {
     for (const auto& sub : m_reloadCallbacks) {
       sub.callback();
     }
@@ -643,18 +643,16 @@ void ConfigService::fireReloadCallbacks() {
     add(m_lastChange.idle, "idle");
     add(m_lastChange.hooks, "hooks");
     add(m_lastChange.theme, "theme");
-    add(m_lastChange.controlCenter, "controlCenter");
-    add(m_lastChange.plugins, "plugins");
     add(m_lastChange.accessibility, "accessibility");
     add(m_lastChange.nexus, "nexus");
     add(m_lastChange.defaultApps, "defaultApps");
     kLog.info("reload: changed sections = [{}]", changed.empty() ? "none" : changed);
   }
 
-  noctalia::profiling::StopWatch total;
+  gnil::profiling::StopWatch total;
   for (std::size_t i = 0; i < m_reloadCallbacks.size(); ++i) {
     const auto& sub = m_reloadCallbacks[i];
-    noctalia::profiling::StopWatch one;
+    gnil::profiling::StopWatch one;
     sub.callback();
     const double ms = one.elapsedMs();
     if (ms >= 0.5) {
@@ -696,8 +694,8 @@ std::string ConfigService::buildSupportReport() const {
   report.insert_or_assign("format_version", std::int64_t{1});
   report.insert_or_assign("generated_by", "gnil");
   report.insert_or_assign("generated_at_utc", utcTimestamp());
-  report.insert_or_assign("gnil_version", std::string(noctalia::build_info::version()));
-  report.insert_or_assign("git_revision", std::string(noctalia::build_info::revision()));
+  report.insert_or_assign("gnil_version", std::string(gnil::build_info::version()));
+  report.insert_or_assign("git_revision", std::string(gnil::build_info::revision()));
   root.insert_or_assign("report", std::move(report));
 
   toml::table system;
@@ -797,10 +795,10 @@ std::string ConfigService::buildEffectiveConfigFromSources(
     }
     return {};
   }
-  runtime->erase(noctalia::config::kConfigVersionKey);
+  runtime->erase(gnil::config::kConfigVersionKey);
 
   Config config;
-  noctalia::config::seedBuiltinWidgets(config);
+  gnil::config::seedBuiltinWidgets(config);
   try {
     parseConfigTable(*runtime, config, false, false);
   } catch (const std::exception& e) {
@@ -818,12 +816,10 @@ std::string ConfigService::buildEffectiveConfigFromSources(
 
 Config ConfigService::makeDefaultConfig() {
   Config config;
-  noctalia::config::seedBuiltinWidgets(config);
+  gnil::config::seedBuiltinWidgets(config);
   config.idle.behaviors = defaultIdleBehaviors();
   config.bars.push_back(BarConfig{});
-  config.controlCenter.shortcuts = defaultControlCenterShortcuts();
   config.shell.session.actions = defaultSessionPanelActions();
-  config.plugins.sources = defaultPluginSources();
   return config;
 }
 
@@ -1228,13 +1224,13 @@ void ConfigService::setConfigParseError(std::string parseError) {
       m_notificationManager->close(m_configErrorNotificationId);
     }
     m_configErrorNotificationId =
-        m_notificationManager->addInternal("Noctalia", "Config error", parseError, Urgency::Critical, 0);
+        m_notificationManager->addInternal("GNIL", "Config error", parseError, Urgency::Critical, 0);
   } else {
     m_pendingError = std::move(parseError);
   }
 }
 
-void ConfigService::updateLegacyConfigIssues(noctalia::config::LegacyConfigIssues issues) {
+void ConfigService::updateLegacyConfigIssues(gnil::config::LegacyConfigIssues issues) {
   std::ranges::sort(issues, [](const auto& lhs, const auto& rhs) {
     return std::tie(lhs.migrationVersion, lhs.path) < std::tie(rhs.migrationVersion, rhs.path);
   });
@@ -1245,7 +1241,7 @@ void ConfigService::updateLegacyConfigIssues(noctalia::config::LegacyConfigIssue
       issues.end()
   );
 
-  const std::string fingerprint = noctalia::config::legacyConfigIssueFingerprint(issues);
+  const std::string fingerprint = gnil::config::legacyConfigIssueFingerprint(issues);
   if (fingerprint != m_loggedLegacyIssueFingerprint) {
     for (const auto& issue : issues) {
       kLog.warn("{}: {} (migrated in memory)", issue.path, issue.message);
@@ -1267,9 +1263,9 @@ void ConfigService::updateLegacyConfigIssues(noctalia::config::LegacyConfigIssue
   const auto encodedState = m_stateStore.stringValue(kMigrationReminderOwner, kMigrationReminderKey);
   const auto reminderState = encodedState.has_value() ? parseMigrationReminderState(*encodedState) : std::nullopt;
   const bool hasNewIssues = !reminderState.has_value()
-      || noctalia::config::legacyConfigFingerprintHasNewIssues(fingerprint, reminderState->issueFingerprint);
+      || gnil::config::legacyConfigFingerprintHasNewIssues(fingerprint, reminderState->issueFingerprint);
   const bool intervalElapsed = !reminderState.has_value()
-      || noctalia::config::legacyConfigReminderIntervalElapsed(now, reminderState->epochSeconds);
+      || gnil::config::legacyConfigReminderIntervalElapsed(now, reminderState->epochSeconds);
   m_legacyReminderPending = hasNewIssues || intervalElapsed;
   if (m_legacyReminderPending) {
     notifyLegacyConfigIssues();
@@ -1277,7 +1273,7 @@ void ConfigService::updateLegacyConfigIssues(noctalia::config::LegacyConfigIssue
   }
 
   const auto elapsed = std::chrono::seconds(now - reminderState->epochSeconds);
-  const auto remaining = std::chrono::seconds(noctalia::config::kLegacyConfigReminderIntervalSeconds) - elapsed;
+  const auto remaining = std::chrono::seconds(gnil::config::kLegacyConfigReminderIntervalSeconds) - elapsed;
   m_legacyReminderTimer.start(std::chrono::duration_cast<std::chrono::milliseconds>(remaining), [this]() {
     m_legacyReminderPending = true;
     notifyLegacyConfigIssues();
@@ -1289,17 +1285,17 @@ void ConfigService::notifyLegacyConfigIssues() {
     return;
   }
 
-  const std::string fingerprint = noctalia::config::legacyConfigIssueFingerprint(m_legacyConfigIssues);
+  const std::string fingerprint = gnil::config::legacyConfigIssueFingerprint(m_legacyConfigIssues);
   const std::int64_t now = currentEpochSeconds();
   (void)m_notificationManager->addInternal(
-      "Noctalia", i18n::tr("notifications.internal.config-migration-title"),
+      "GNIL", i18n::tr("notifications.internal.config-migration-title"),
       i18n::tr("notifications.internal.config-migration-body", "path", m_legacyConfigIssues.front().path),
       Urgency::Normal
   );
   (void)m_stateStore.setString(kMigrationReminderOwner, kMigrationReminderKey, std::format("{}\n{}", now, fingerprint));
   m_legacyReminderPending = false;
   m_legacyReminderTimer.start(
-      std::chrono::milliseconds(noctalia::config::kLegacyConfigReminderIntervalSeconds * 1000), [this]() {
+      std::chrono::milliseconds(gnil::config::kLegacyConfigReminderIntervalSeconds * 1000), [this]() {
         m_legacyReminderPending = true;
         notifyLegacyConfigIssues();
       }
@@ -1322,11 +1318,11 @@ void ConfigService::deepMerge(toml::table& base, const toml::table& overlay) {
 }
 
 void ConfigService::loadAll() {
-  noctalia::profiling::ScopedTimer parseTimer(kLog, "reload: parse (loadAll)");
+  gnil::profiling::ScopedTimer parseTimer(kLog, "reload: parse (loadAll)");
   m_effectiveOverrideCache.clear();
 
   Config nextConfig;
-  noctalia::config::seedBuiltinWidgets(nextConfig);
+  gnil::config::seedBuiltinWidgets(nextConfig);
 
   // Legacy config fragments and include graphs are intentionally ignored.  A
   // fresh XDG profile and the real profile now resolve through the same source.
@@ -1375,17 +1371,17 @@ void ConfigService::loadAll() {
   toml::table effectiveOverrides = m_overridesTable;
   schema::Diagnostics migrationDiag;
   std::string migrationError;
-  int storedVersion = noctalia::config::currentConfigVersion();
+  int storedVersion = gnil::config::currentConfigVersion();
   int appliedVersion = storedVersion;
   bool sidecarNeedsPersist = false;
   if (!m_overridesTable.empty()) {
-    const auto parsedVersion = noctalia::config::storedConfigVersion(effectiveOverrides, migrationDiag);
+    const auto parsedVersion = gnil::config::storedConfigVersion(effectiveOverrides, migrationDiag);
     if (parsedVersion.has_value()) {
       storedVersion = *parsedVersion;
-      appliedVersion = noctalia::config::applyPendingConfigMigrations(effectiveOverrides, storedVersion, migrationDiag);
+      appliedVersion = gnil::config::applyPendingConfigMigrations(effectiveOverrides, storedVersion, migrationDiag);
       sidecarNeedsPersist = appliedVersion != storedVersion;
       effectiveOverrides.insert_or_assign(
-          noctalia::config::kConfigVersionKey, static_cast<std::int64_t>(appliedVersion)
+          gnil::config::kConfigVersionKey, static_cast<std::int64_t>(appliedVersion)
       );
     }
   }
@@ -1402,9 +1398,9 @@ void ConfigService::loadAll() {
   // Apply the app-writable overrides overlay last; sidecar wins. Compatibility
   // normalization must see the final effective values to preserve overlay intent.
   deepMerge(merged, effectiveOverrides);
-  merged.erase(noctalia::config::kConfigVersionKey);
-  noctalia::config::LegacyConfigIssues legacyIssues;
-  noctalia::config::normalizeLegacyConfig(merged, legacyIssues);
+  merged.erase(gnil::config::kConfigVersionKey);
+  gnil::config::LegacyConfigIssues legacyIssues;
+  gnil::config::normalizeLegacyConfig(merged, legacyIssues);
 
   if (m_includeLoadedFiles.empty() && m_overridesTable.empty()) {
     kLog.info("no config files found, using defaults");
@@ -1429,7 +1425,7 @@ void ConfigService::loadAll() {
   schema::Diagnostics diagnostics;
   if (semanticError.empty()) {
     try {
-      diagnostics = noctalia::config::validateMergedConfig(merged);
+      diagnostics = gnil::config::validateMergedConfig(merged);
       std::size_t errorCount = 0;
       for (const auto& entry : diagnostics.entries) {
         if (entry.severity == schema::Diagnostics::Severity::Error) {
@@ -1593,7 +1589,7 @@ void ConfigService::parseConfigTable(
       }
 
       const std::string widgetName(name.str());
-      WidgetConfig wc = noctalia::config::readBarWidgetConfig(widgetName, *entryTbl, config);
+      WidgetConfig wc = gnil::config::readBarWidgetConfig(widgetName, *entryTbl, config);
 
       try {
         validateWidgetSettings(widgetName, wc);
@@ -1635,12 +1631,6 @@ void ConfigService::parseConfigTable(
   if (!sessionActionsConfigured && config.shell.session.actions.empty()) {
     config.shell.session.actions = defaultSessionPanelActions();
   }
-  if (!hasExplicitArray("control_center", "shortcuts") && config.controlCenter.shortcuts.empty()) {
-    config.controlCenter.shortcuts = defaultControlCenterShortcuts();
-  }
-  if (!hasExplicitArray("plugins", "source") && config.plugins.sources.empty()) {
-    config.plugins.sources = defaultPluginSources();
-  }
   if (config.idle.behaviors.empty()) {
     config.idle.behaviors = defaultIdleBehaviors();
   }
@@ -1655,24 +1645,6 @@ void ConfigService::parseConfigTable(
       desktopWidgets.schemaVersion = static_cast<std::int32_t>(*schemaVersion);
     }
     parseWidgetsPlacementSection(*desktopWidgetsTbl, desktopWidgets.grid, desktopWidgets.widgets, "desktop_widgets");
-  }
-
-  // Parse [plugin_settings."author/plugin"] — open-ended per-plugin setting maps,
-  // validated against the manifest schema (not the static pluginsSchema). Keys may
-  // contain '/', so this is a top-level table rather than nested under [plugins].
-  if (auto* pluginSettingsTbl = tbl["plugin_settings"].as_table()) {
-    for (const auto& [pluginId, pluginNode] : *pluginSettingsTbl) {
-      const auto* perPlugin = pluginNode.as_table();
-      if (perPlugin == nullptr) {
-        continue;
-      }
-      auto& bucket = config.plugins.pluginSettings[std::string(pluginId.str())];
-      for (const auto& [key, value] : *perPlugin) {
-        if (auto parsed = noctalia::config::readWidgetSettingValue(value); parsed.has_value()) {
-          bucket[std::string(key.str())] = std::move(*parsed);
-        }
-      }
-    }
   }
 
   if (config.bars.empty()) {

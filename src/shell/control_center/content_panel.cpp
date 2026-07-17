@@ -148,7 +148,7 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
   );
   add(
       {.id = "network", .naturalWidth = 480.0f},
-      std::make_unique<NetworkTab>(services.network, services.networkSecrets, services.httpClient, services.config)
+      std::make_unique<NetworkTab>(services.network, services.networkSecrets)
   );
   add(
       {.id = "bluetooth", .naturalWidth = 480.0f},

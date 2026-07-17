@@ -175,7 +175,7 @@ TooltipManager& TooltipManager::instance() {
 
 void TooltipManager::initialize(WaylandConnection& wayland, ConfigService* config, RenderContext* renderContext) {
   // GNIL intentionally has no hover tooltips. Keep the manager inert at the
-  // shared boundary so built-in controls, plugins, settings, dock and panels
+  // shared boundary so built-in controls, settings, dock and panels
   // all follow the same policy without carrying per-widget exceptions.
   (void)wayland;
   (void)config;

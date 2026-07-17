@@ -14,7 +14,7 @@ namespace {
 
 } // namespace
 
-ThemeModeWidget::ThemeModeWidget(noctalia::theme::ThemeService* themeService) : m_themeService(themeService) {}
+ThemeModeWidget::ThemeModeWidget(gnil::theme::ThemeService* themeService) : m_themeService(themeService) {}
 
 void ThemeModeWidget::create() {
   auto area = std::make_unique<InputArea>();

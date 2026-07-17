@@ -21,7 +21,7 @@ jobs:
 
       - name: Create release archive
         run: |
-          mkdir -p ../noctalia-release
+          mkdir -p ../gnil-release
           rsync -av \
             --exclude='.git' \
             --exclude='.github' \
@@ -29,10 +29,10 @@ jobs:
             --exclude='flake.nix' \
             --exclude='flake.lock' \
             --exclude='result*' \
-            ./ ../noctalia-release/
+            ./ ../gnil-release/
           cd ..
-          tar -czf noctalia-${{ github.ref_name }}.tar.gz noctalia-release/
-          cp noctalia-${{ github.ref_name }}.tar.gz noctalia-latest.tar.gz
+          tar -czf gnil-${{ github.ref_name }}.tar.gz gnil-release/
+          cp gnil-${{ github.ref_name }}.tar.gz gnil-latest.tar.gz
           mv *.tar.gz ${{ github.workspace }}/
 
       - name: Generate release notes
@@ -61,8 +61,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            noctalia-${{ github.ref_name }}.tar.gz
-            noctalia-latest.tar.gz
+            gnil-${{ github.ref_name }}.tar.gz
+            gnil-latest.tar.gz
           body_path: release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

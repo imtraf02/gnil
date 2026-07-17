@@ -15,7 +15,7 @@ namespace GlyphRegistry {
 
   // Full catalog loaded from the pinned official .codepoints file.
   [[nodiscard]] const std::unordered_map<std::string, char32_t>& materialSymbols();
-  // Stable GNIL/Noctalia-facing name -> native Material Symbol name.
+  // Stable GNIL-facing name -> native Material Symbol name.
   [[nodiscard]] const std::unordered_map<std::string, std::string_view>& aliases();
 
 } // namespace GlyphRegistry

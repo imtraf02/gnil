@@ -23,7 +23,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   namespace {
 
@@ -252,7 +252,7 @@ namespace noctalia::theme {
     }
 
     if (!imagePath && !themeJsonPath) {
-      std::println(stderr, "error: theme requires an image path or --theme-json (try: noctalia theme --help)");
+      std::println(stderr, "error: theme requires an image path or --theme-json (try: gnil theme --help)");
       return 1;
     }
 
@@ -304,4 +304,4 @@ namespace noctalia::theme {
     return 0;
   }
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

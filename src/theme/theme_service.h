@@ -14,10 +14,9 @@
 #include <string_view>
 
 class ConfigService;
-class HttpClient;
 class IpcService;
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   class ThemeService {
   public:
@@ -26,7 +25,7 @@ namespace noctalia::theme {
     using LiveWallpaperPaletteProvider =
         std::function<std::optional<LiveWallpaperPaletteSource>(std::string_view outputSelector)>;
 
-    ThemeService(ConfigService& config, HttpClient& httpClient);
+    explicit ThemeService(ConfigService& config);
 
     // Snaps the palette to the resolved theme (no fade). Used at startup.
     void apply();
@@ -48,7 +47,7 @@ namespace noctalia::theme {
 
     void registerIpc(IpcService& ipc);
 
-    // Writes the current wallpaper-generated palette to ~/.config/noctalia/palettes/
+    // Writes the current wallpaper-generated palette to ~/.config/gnil/palettes/
     // and switches palette source to custom.
     [[nodiscard]] bool saveWallpaperPaletteAsCustom(std::string* paletteNameOut, std::string* errorOut = nullptr);
 
@@ -64,12 +63,9 @@ namespace noctalia::theme {
     void startTransition(const Palette& target);
     void finishTransition(bool deferResolvedCallback);
     void tickTransition();
-    void startCommunityDownload(const std::string& name);
     void rescheduleAutoTimer();
 
     ConfigService& m_config;
-    HttpClient& m_httpClient;
-    std::string m_inflightCommunityName;
 
     // Memoized wallpaper palette (see resolveWallpaperGenerated). Keyed on the
     // wallpaper path, its mtime, and the active scheme; any mismatch re-decodes.
@@ -102,4 +98,4 @@ namespace noctalia::theme {
     Timer m_autoTimer;
   };
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

@@ -7,7 +7,7 @@
 #include <array>
 #include <utility>
 
-namespace noctalia::config::schema {
+namespace gnil::config::schema {
   namespace {
 
     template <typename T> SectionSpec makeSection(std::string_view name, T Config::* member, const Schema<T>& schema) {
@@ -67,8 +67,6 @@ namespace noctalia::config::schema {
         t.push_back(makeSection("idle", &Config::idle, idleSchema()));
         t.push_back(makeSection("keybinds", &Config::keybinds, keybindsSchema()));
         t.push_back(makeSection("hot_corners", &Config::hotCorners, hotCornersSchema()));
-        t.push_back(makeSection("control_center", &Config::controlCenter, controlCenterSchema()));
-        t.push_back(makeSection("plugins", &Config::plugins, pluginsSchema()));
         t.push_back(makeSection("hooks", &Config::hooks, hooksSchema()));
 
         return t;
@@ -88,7 +86,7 @@ namespace noctalia::config::schema {
 
   std::span<const std::string_view> customRootKeys() {
     static constexpr std::array<std::string_view, 6> kKeys = {
-        "bar", "widget", "desktop_widgets", "plugin_settings", "include", "config_version",
+        "bar", "widget", "desktop_widgets", "include", "config_version",
     };
     return kKeys;
   }
@@ -97,4 +95,4 @@ namespace noctalia::config::schema {
     return findSection(name) != nullptr || std::ranges::find(customRootKeys(), name) != customRootKeys().end();
   }
 
-} // namespace noctalia::config::schema
+} // namespace gnil::config::schema

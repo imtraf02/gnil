@@ -6,7 +6,7 @@
 
 #include <string>
 
-Palette palette = noctalia::theme::findBuiltinPalette("Noctalia")->dark.palette;
+Palette palette = gnil::theme::findBuiltinPalette("GNIL")->dark.palette;
 bool g_resolvedThemeLight = false;
 
 namespace {

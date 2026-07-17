@@ -6,7 +6,6 @@
 #include "config/schema/ranges.h"
 #include "core/input/key_chord.h"
 #include "notification/notification_filter.h"
-#include "scripting/plugin_id.h"
 #include "util/file_utils.h"
 
 #include <algorithm>
@@ -15,7 +14,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace noctalia::config::schema {
+namespace gnil::config::schema {
 
   const Schema<AudioConfig>& audioSchema() {
     static const Schema<AudioConfig> s = {
@@ -174,7 +173,6 @@ namespace noctalia::config::schema {
 
   const Schema<LocationConfig>& locationSchema() {
     static const Schema<LocationConfig> s = {
-        field(&LocationConfig::autoLocate, "auto_locate"),
         field(&LocationConfig::address, "address"),
         field(&LocationConfig::customSchedule, "custom_schedule"),
         field(&LocationConfig::sunset, "sunset"),
@@ -505,77 +503,6 @@ namespace noctalia::config::schema {
             [](BatteryDeviceWarningThreshold& d, std::string_view name) { d.selector = std::string(name); },
             [](const BatteryDeviceWarningThreshold& d) { return d.selector; }, /*readSkipEmptyName=*/true
         ),
-    };
-    return s;
-  }
-
-  namespace {
-    const Schema<ShortcutConfig>& shortcutSchema() {
-      static const Schema<ShortcutConfig> s = {field(&ShortcutConfig::type, "type")};
-      return s;
-    }
-
-    const Schema<ControlCenterConfig::CalendarTabConfig>& calendarTabSchema() {
-      static const Schema<ControlCenterConfig::CalendarTabConfig> s = {
-          field(&ControlCenterConfig::CalendarTabConfig::showEventsCard, "show_events_card"),
-      };
-      return s;
-    }
-  } // namespace
-
-  const Schema<ControlCenterConfig>& controlCenterSchema() {
-    static const Schema<ControlCenterConfig> s = {
-        enumField(&ControlCenterConfig::sidebarMode, "sidebar", kControlCenterSidebarModes),
-        enumField(&ControlCenterConfig::sidebarSectionMode, "sidebar_section", kControlCenterSidebarModes),
-        field(&ControlCenterConfig::width, "width", kControlCenterWidthRange),
-        field(&ControlCenterConfig::hiddenTabs, "hidden_tabs"),
-        subTable(&ControlCenterConfig::calendarTab, "calendar", calendarTabSchema()),
-        arrayOf<ControlCenterConfig, ShortcutConfig>(
-            &ControlCenterConfig::shortcuts, "shortcuts", shortcutSchema(),
-            [](const ShortcutConfig& sc) { return !sc.type.empty(); }
-        ),
-    };
-    return s;
-  }
-
-  namespace {
-    const Schema<PluginSourceConfig>& pluginSourceSchema() {
-      static const Schema<PluginSourceConfig> s = {
-          field(&PluginSourceConfig::name, "name"),
-          enumField(&PluginSourceConfig::kind, "kind", kPluginSourceKinds),
-          field(&PluginSourceConfig::location, "location"),
-          field(&PluginSourceConfig::autoUpdate, "auto_update"),
-          field(&PluginSourceConfig::enabled, "enabled"),
-          finalize<PluginSourceConfig>([](PluginSourceConfig& src, std::string_view parentPath, Diagnostics& diag) {
-            if (!src.name.empty() && !isValidPluginSourceName(src.name)) {
-              diag.warn(
-                  joinPath(parentPath, "name"),
-                  "invalid plugin source name; use letters, digits, '.', '_' or '-', starting with a letter or digit"
-              );
-            }
-          }),
-      };
-      return s;
-    }
-  } // namespace
-
-  const Schema<PluginsConfig>& pluginsSchema() {
-    static const Schema<PluginsConfig> s = {
-        arrayOf<PluginsConfig, PluginSourceConfig>(
-            &PluginsConfig::sources, "source", pluginSourceSchema(),
-            [](const PluginSourceConfig& src) { return isValidPluginSourceName(src.name); }
-        ),
-        field(&PluginsConfig::enabled, "enabled"),
-        finalize<PluginsConfig>([](PluginsConfig& plugins, std::string_view parentPath, Diagnostics& diag) {
-          for (auto it = plugins.enabled.begin(); it != plugins.enabled.end();) {
-            if (scripting::isValidPluginId(*it)) {
-              ++it;
-              continue;
-            }
-            diag.warn(joinPath(parentPath, "enabled"), "invalid plugin id \"" + *it + "\"; expected author/plugin");
-            it = plugins.enabled.erase(it);
-          }
-        }),
     };
     return s;
   }
@@ -930,7 +857,6 @@ namespace noctalia::config::schema {
     static const Schema<ThemeConfig> s = {
         enumField(&ThemeConfig::source, "source", kPaletteSources),
         field(&ThemeConfig::builtinPalette, "builtin"),
-        field(&ThemeConfig::communityPalette, "community_palette"),
         field(&ThemeConfig::customPalette, "custom_palette"),
         field(&ThemeConfig::wallpaperScheme, "wallpaper_scheme"),
         field(&ThemeConfig::liveWallpaperOutput, "live_wallpaper_output"),
@@ -1138,26 +1064,6 @@ namespace noctalia::config::schema {
 
     const Schema<typename ShellSessionConfig::ShellSessionPowerConfig>& shellSessionPowerSchema();
 
-    const Schema<ShellGreeterSyncConfig>& shellGreeterSyncSchema() {
-      static const Schema<ShellGreeterSyncConfig> s = {
-          field(&ShellGreeterSyncConfig::autoSync, "auto_sync"),
-          custom<ShellGreeterSyncConfig>(
-              "privilege_command",
-              [](const toml::table& tbl, ShellGreeterSyncConfig& out, std::string_view, Diagnostics&) {
-                if (auto v = tbl["privilege_command"].value<std::string>()) {
-                  out.privilegeCommand = StringUtils::trim(*v);
-                }
-              },
-              [](toml::table& tbl, const ShellGreeterSyncConfig& in) {
-                if (!in.privilegeCommand.empty()) {
-                  tbl.insert_or_assign("privilege_command", in.privilegeCommand);
-                }
-              }
-          ),
-      };
-      return s;
-    }
-
     const Schema<ShellSessionConfig>& shellSessionSchema() {
       static const Schema<ShellSessionConfig> s = {
           arrayOf<ShellSessionConfig, SessionPanelActionConfig>(
@@ -1213,8 +1119,6 @@ namespace noctalia::config::schema {
         field(&ShellConfig::timeFormat, "time_format"),
         field(&ShellConfig::dateFormat, "date_format"),
         field(&ShellConfig::offlineMode, "offline_mode"),
-        field(&ShellConfig::externalIpEnabled, "external_ip_enabled"),
-        field(&ShellConfig::telemetryEnabled, "telemetry_enabled"),
         field(&ShellConfig::setupWizardEnabled, "setup_wizard_enabled"),
         field(&ShellConfig::niriOverviewTypeToLaunchEnabled, "niri_overview_type_to_launch_enabled"),
         field(&ShellConfig::polkitAgent, "polkit_agent"),
@@ -1246,7 +1150,6 @@ namespace noctalia::config::schema {
         subTable(&ShellConfig::screenshot, "screenshot", shellScreenshotSchema()),
         subTable(&ShellConfig::privacy, "privacy", shellPrivacySchema()),
         subTable(&ShellConfig::session, "session", shellSessionSchema()),
-        subTable(&ShellConfig::greeterSync, "greeter_sync", shellGreeterSyncSchema()),
     };
     return s;
   }
@@ -1436,11 +1339,6 @@ namespace noctalia::config::schema {
       return true;
     }
 
-    // [plugin_settings."author/plugin"].<key> — open schema; keys validate against
-    // the manifest in config_validate's validatePluginSettings, not here.
-    if (section == "plugin_settings") {
-      return path.size() <= 3;
-    }
 
     if (path.size() < 2) {
       return false; // a bare section is not a setting path
@@ -1878,4 +1776,4 @@ namespace noctalia::config::schema {
     return s;
   }
 
-} // namespace noctalia::config::schema
+} // namespace gnil::config::schema

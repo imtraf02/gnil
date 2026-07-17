@@ -18,7 +18,6 @@
 #include "shell/wallpaper/cyclic_picker.h"
 #include "system/desktop_entry.h"
 #include "theme/builtin_palettes.h"
-#include "theme/community_palettes.h"
 #include "theme/custom_palettes.h"
 #include "ui/app_icon_colorization.h"
 #include "ui/builders.h"
@@ -939,10 +938,6 @@ void LauncherPanel::addProvider(std::unique_ptr<LauncherProvider> provider) {
   m_providers.push_back(std::move(provider));
 }
 
-void LauncherPanel::clearDynamicProviders() {
-  std::erase_if(m_providers, [](const std::unique_ptr<LauncherProvider>& provider) { return provider->isDynamic(); });
-}
-
 void LauncherPanel::clearProvidersWithIdPrefix(std::string_view prefix) {
   std::erase_if(m_providers, [&](const std::unique_ptr<LauncherProvider>& provider) {
     return provider->id().starts_with(prefix);
@@ -1741,13 +1736,10 @@ std::vector<LauncherResult> LauncherPanel::commandSchemeResults(std::string_view
         .glyphName = "palette",
     });
   };
-  for (const auto& entry : noctalia::theme::builtinPalettes()) {
+  for (const auto& entry : gnil::theme::builtinPalettes()) {
     append("builtin", entry.name);
   }
-  for (const auto& entry : noctalia::theme::availableCommunityPalettes()) {
-    append("community", entry.name);
-  }
-  for (const auto& entry : noctalia::theme::availableCustomPalettes()) {
+  for (const auto& entry : gnil::theme::availableCustomPalettes()) {
     append("custom", entry.name);
   }
   return results;
@@ -2286,9 +2278,7 @@ bool LauncherPanel::activateCommandResult(const LauncherResult& result) {
     const std::string_view source = value.substr(0, separator);
     const std::string_view name = value.substr(separator + 1);
     PaletteSource paletteSource = PaletteSource::Builtin;
-    if (source == "community") {
-      paletteSource = PaletteSource::Community;
-    } else if (source == "custom") {
+    if (source == "custom") {
       paletteSource = PaletteSource::Custom;
     }
     if (m_config->setThemeColorScheme(paletteSource, name)) {

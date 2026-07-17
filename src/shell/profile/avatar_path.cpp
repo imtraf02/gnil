@@ -24,10 +24,10 @@ namespace {
     const char* cacheHome = std::getenv("XDG_CACHE_HOME");
     const char* home = std::getenv("HOME");
     if (cacheHome != nullptr && cacheHome[0] != '\0') {
-      return std::filesystem::path(cacheHome) / "noctalia";
+      return std::filesystem::path(cacheHome) / "gnil";
     }
     if (home != nullptr && home[0] != '\0') {
-      return std::filesystem::path(home) / ".cache" / "noctalia";
+      return std::filesystem::path(home) / ".cache" / "gnil";
     }
     return {};
   }

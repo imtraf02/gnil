@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace noctalia::theme {
+namespace gnil::theme {
 
   enum class Scheme;
 
@@ -23,4 +23,4 @@ namespace noctalia::theme {
   [[nodiscard]] std::expected<LoadedImage, std::string>
   buildLiveWallpaperMosaic(const std::vector<std::string>& framePaths, Scheme scheme);
 
-} // namespace noctalia::theme
+} // namespace gnil::theme

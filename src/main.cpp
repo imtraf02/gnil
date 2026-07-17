@@ -6,7 +6,6 @@
 #include "core/process/process_fds.h"
 #include "ipc/cli.h"
 #include "launcher/dmenu_cli.h"
-#include "scripting/plugin_lint.h"
 #include "theme/cli.h"
 
 #include <array>
@@ -22,7 +21,7 @@
 #include <unistd.h>
 
 #ifdef __GLIBC__
-#ifdef NOCTALIA_USE_JEMALLOC
+#ifdef GNIL_USE_JEMALLOC
 #include <jemalloc/jemalloc.h>
 #else
 #include <malloc.h>
@@ -33,7 +32,7 @@ namespace {
 
   enum class SpawnResult { Parent, Error };
 
-  constexpr const char* kDaemonPipeEnv = "NOCTALIA_DAEMON_PIPE_FD";
+  constexpr const char* kDaemonPipeEnv = "GNIL_DAEMON_PIPE_FD";
   int g_daemonPipe = -1;
 
   void closeFd(int& fd) {
@@ -126,7 +125,7 @@ namespace {
 
   int runTopLevelFlag(const char* flag) {
     if (std::strcmp(flag, "--version") == 0 || std::strcmp(flag, "-v") == 0) {
-      const std::string version = noctalia::build_info::displayVersion();
+      const std::string version = gnil::build_info::displayVersion();
       std::println("gnil {}", version);
       return 0;
     }
@@ -146,8 +145,6 @@ namespace {
           "                   Run 'gnil theme --help' for options\n"
           "  config <command> Validate config and support/replay helpers\n"
           "                   Run 'gnil config --help' for options\n"
-          "  plugins <cmd>    Offline plugin author tools (lint)\n"
-          "                   Run 'gnil plugins --help' for options\n"
           "\n"
           "For more information and documentation, visit:\n"
           "  https://github.com/imtraf02/gnil"
@@ -264,13 +261,13 @@ namespace {
 
 } // namespace
 
-#ifdef NOCTALIA_USE_JEMALLOC
+#ifdef GNIL_USE_JEMALLOC
 const char* malloc_conf = "narenas:2,dirty_decay_ms:1000,muzzy_decay_ms:5000,lg_tcache_max:12";
 #endif
 
 int main(int argc, char* argv[]) {
 
-#if defined(__GLIBC__) && !defined(NOCTALIA_USE_JEMALLOC)
+#if defined(__GLIBC__) && !defined(GNIL_USE_JEMALLOC)
   mallopt(M_ARENA_MAX, 2);
 #endif
 
@@ -296,15 +293,13 @@ int main(int argc, char* argv[]) {
 
   if (argc >= 2) {
     if (std::strcmp(argv[1], "theme") == 0)
-      return noctalia::theme::runCli(argc, argv);
+      return gnil::theme::runCli(argc, argv);
     if (std::strcmp(argv[1], "msg") == 0)
-      return noctalia::ipc::runCli(argc, argv);
+      return gnil::ipc::runCli(argc, argv);
     if (std::strcmp(argv[1], "config") == 0)
-      return noctalia::config::runCli(argc, argv);
+      return gnil::config::runCli(argc, argv);
     if (std::strcmp(argv[1], "dmenu") == 0)
-      return noctalia::launcher::runDmenuCli(argc, argv);
-    if (std::strcmp(argv[1], "plugins") == 0)
-      return noctalia::plugins::runCli(argc, argv);
+      return gnil::launcher::runDmenuCli(argc, argv);
   }
 
   for (int i = 1; i < argc; ++i) {

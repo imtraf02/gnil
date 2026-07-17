@@ -25,8 +25,8 @@ namespace {
 } // namespace
 
 int main() {
-  constexpr const char* kPathName = "NOCTALIA_WALLPAPER_PATH";
-  constexpr const char* kConnectorName = "NOCTALIA_WALLPAPER_CONNECTOR";
+  constexpr const char* kPathName = "GNIL_WALLPAPER_PATH";
+  constexpr const char* kConnectorName = "GNIL_WALLPAPER_CONNECTOR";
 
   ::unsetenv(kPathName);
   ::unsetenv(kConnectorName);
@@ -46,11 +46,11 @@ int main() {
     return true;
   });
 
-  hooks.fire(HookKind::WallpaperChanged, {{kPathName, "/tmp/noctalia test/wallpaper.png"}, {kConnectorName, "DP-1"}});
+  hooks.fire(HookKind::WallpaperChanged, {{kPathName, "/tmp/gnil test/wallpaper.png"}, {kConnectorName, "DP-1"}});
 
   assert(commands.size() == 1);
   assert(commands[0] == "record-wallpaper-hook");
-  assert(pathSeen == "/tmp/noctalia test/wallpaper.png");
+  assert(pathSeen == "/tmp/gnil test/wallpaper.png");
   assert(connectorSeen == "DP-1");
   assert(std::getenv(kPathName) == nullptr);
   assert(std::getenv(kConnectorName) == nullptr);

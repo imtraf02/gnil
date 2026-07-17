@@ -17,18 +17,15 @@ class WeatherService;
 class HttpClient;
 class ClipboardService;
 
-namespace noctalia::theme {
+namespace gnil::theme {
   class ThemeService;
-}
-namespace scripting {
-  class ScriptApiContext;
 }
 
 struct ShortcutServices {
   INetworkService* network = nullptr;
   BluetoothService* bluetooth = nullptr;
   GammaService* nightLight = nullptr;
-  noctalia::theme::ThemeService* theme = nullptr;
+  gnil::theme::ThemeService* theme = nullptr;
   NotificationManager* notifications = nullptr;
   IdleInhibitor* idleInhibitor = nullptr;
   PipeWireService* audio = nullptr;
@@ -39,8 +36,6 @@ struct ShortcutServices {
   DependencyService* dependencies = nullptr;
   CompositorPlatform* platform = nullptr;
   IpcService* ipc = nullptr;
-  // Plugin shortcut runtime dependencies.
-  scripting::ScriptApiContext* scriptApi = nullptr;
   FileWatcher* fileWatcher = nullptr;
   HttpClient* httpClient = nullptr;
   ClipboardService* clipboard = nullptr;

@@ -31,11 +31,8 @@ class Wallpaper;
 class WeatherService;
 class GammaService;
 
-namespace noctalia::theme {
+namespace gnil::theme {
   class ThemeService;
-}
-namespace scripting {
-  class ScriptApiContext;
 }
 
 struct ControlCenterServices {
@@ -57,14 +54,13 @@ struct ControlCenterServices {
   SystemMonitorService* sysmon = nullptr;
   ScreenTimeService* screenTime = nullptr;
   GammaService* nightLight = nullptr;
-  noctalia::theme::ThemeService* theme = nullptr;
+  gnil::theme::ThemeService* theme = nullptr;
   IdleInhibitor* idleInhibitor = nullptr;
   DependencyService* dependencies = nullptr;
   CompositorPlatform* platform = nullptr;
   IpcService* ipc = nullptr;
   Wallpaper* wallpaper = nullptr;
   CalendarService* calendar = nullptr;
-  scripting::ScriptApiContext* scriptApi = nullptr;
   FileWatcher* fileWatcher = nullptr;
   ClipboardService* clipboard = nullptr;
   AccountsService* accounts = nullptr;
@@ -86,7 +82,6 @@ struct ControlCenterServices {
         .dependencies = dependencies,
         .platform = platform,
         .ipc = ipc,
-        .scriptApi = scriptApi,
         .fileWatcher = fileWatcher,
         .httpClient = httpClient,
         .clipboard = clipboard,

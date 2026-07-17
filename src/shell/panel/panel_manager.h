@@ -91,8 +91,7 @@ public:
   void onAttachedBarRevealSettled(wl_output* output, std::string_view barName);
 
   void registerPanel(const std::string& id, std::unique_ptr<Panel> content);
-  // Drops a previously registered panel, closing it first if it is open. Used to
-  // retire plugin-backed panels on a plugin enable/disable/reload.
+  // Drops a previously registered panel, closing it first if it is open.
   void unregisterPanel(const std::string& id);
 
   void openPanel(const std::string& panelId, PanelOpenRequest request = {});

@@ -42,7 +42,6 @@
 #include "launcher/dmenu_provider.h"
 #include "launcher/emoji_provider.h"
 #include "launcher/math_provider.h"
-#include "launcher/plugin_launcher_provider.h"
 #include "launcher/session_provider.h"
 #include "launcher/wallpaper_provider.h"
 #include "launcher/window_provider.h"
@@ -56,17 +55,10 @@
 #include "render/backend/render_backend.h"
 #include "render/core/texture_manager.h"
 #include "render/text/font_weight_catalog.h"
-#include "scripting/plugin_ipc.h"
-#include "scripting/plugin_manifest.h"
-#include "scripting/plugin_panel_shell.h"
-#include "scripting/plugin_registry.h"
-#include "scripting/plugin_runtime_context.h"
 #include "shell/clipboard/clipboard_panel.h"
 #include "shell/clipboard/clipboard_paste.h"
 #include "shell/control_center/content_panel.h"
-#include "shell/greeter/greeter_appearance_sync.h"
 #include "shell/launcher/launcher_panel.h"
-#include "shell/panel/plugin_panel.h"
 #include "shell/polkit/polkit_panel.h"
 #include "shell/session/session_ipc.h"
 #include "shell/session/session_panel.h"
@@ -142,7 +134,7 @@ void Application::initIpc() {
   m_ipcService.registerHandler(
       "log-level-set",
       [](const std::string& args) -> std::string {
-        const auto parts = noctalia::ipc::splitWords(args);
+        const auto parts = gnil::ipc::splitWords(args);
         if (parts.size() != 1) {
           return "error: log-level-set requires <debug|info|warn|error>\n";
         }
@@ -176,7 +168,7 @@ void Application::initIpc() {
   m_ipcService.registerHandler(
       "notification-dnd-set",
       [this, applyNotificationDnd](const std::string& args) -> std::string {
-        const auto parts = noctalia::ipc::splitWords(args);
+        const auto parts = gnil::ipc::splitWords(args);
         if (parts.size() != 1) {
           return "error: notification-dnd-set requires <on|off|true|false|1|0>\n";
         }
@@ -392,13 +384,13 @@ void Application::initIpc() {
 
         if (icon.has_value()) {
           const std::string& iconValue = *icon;
-          const bool hasExplicitPrefix = iconValue.starts_with("noctalia-glyph:");
+          const bool hasExplicitPrefix = iconValue.starts_with("gnil-glyph:");
           const bool looksLikePath =
               iconValue.starts_with('/') || iconValue.starts_with("~/") || iconValue.contains('/');
           const bool looksLikeFileUri = iconValue.starts_with("file:");
           const bool looksLikeRemoteUrl = iconValue.starts_with("http://") || iconValue.starts_with("https://");
           if (!hasExplicitPrefix && !looksLikePath && !looksLikeFileUri && !looksLikeRemoteUrl) {
-            icon = "noctalia-glyph:" + iconValue;
+            icon = "gnil-glyph:" + iconValue;
           }
         }
 
@@ -473,7 +465,7 @@ void Application::initIpc() {
   m_ipcService.registerHandler(
       "workspace-alert-add-window",
       [this](const std::string& args) -> std::string {
-        const auto parts = noctalia::ipc::splitWords(args);
+        const auto parts = gnil::ipc::splitWords(args);
         if (parts.size() != 1) {
           return "error: workspace-alert-add-window requires <window-id>\n";
         }
@@ -503,7 +495,7 @@ void Application::initIpc() {
   m_ipcService.registerHandler(
       "workspace-alert-clear-all",
       [this](const std::string& args) -> std::string {
-        if (!noctalia::ipc::splitWords(args).empty()) {
+        if (!gnil::ipc::splitWords(args).empty()) {
           return "error: workspace-alert-clear-all takes no arguments\n";
         }
         m_workspaceAlertService.clearAll();
@@ -515,7 +507,7 @@ void Application::initIpc() {
   m_ipcService.registerHandler(
       "workspace-alert-status",
       [workspaceAlertStatus](const std::string& args) -> std::string {
-        if (!noctalia::ipc::splitWords(args).empty()) {
+        if (!gnil::ipc::splitWords(args).empty()) {
           return "error: workspace-alert-status takes no arguments\n";
         }
         return workspaceAlertStatus();
@@ -547,11 +539,11 @@ void Application::initIpc() {
   m_ipcService.registerHandler(
       "brightness-osd",
       [this](const std::string& args) -> std::string {
-        const auto parts = noctalia::ipc::splitWords(args);
+        const auto parts = gnil::ipc::splitWords(args);
         if (parts.size() != 1) {
           return "error: brightness-osd requires <value>\n";
         }
-        const auto value = noctalia::ipc::parseNormalizedOrPercent(parts[0]);
+        const auto value = gnil::ipc::parseNormalizedOrPercent(parts[0]);
         if (!value.has_value()) {
           return "error: invalid brightness value (use percent like 65 or 65%, or normalized like 0.65)\n";
         }
@@ -561,108 +553,6 @@ void Application::initIpc() {
       "brightness-osd <value>", "Show brightness OSD without changing brightness"
   );
   m_configService.registerIpc(m_ipcService);
-  scripting::PluginIpcRouter::instance().setPlatform(&m_compositorPlatform);
-  m_ipcService.registerHandler(
-      "plugin",
-      [](const std::string& args) -> std::string { return scripting::PluginIpcRouter::instance().dispatch(args); },
-      "plugin <author/plugin:entry> <target[:bar-name]> <event> [payload]", "Dispatch an event to a plugin entry"
-  );
-  m_ipcService.registerHandler(
-      "plugins",
-      [this](const std::string& args) -> std::string {
-        const auto parts = noctalia::ipc::splitWords(args);
-        if (parts.empty()) {
-          return "error: plugins <list|enable|disable> [author/plugin]\n";
-        }
-        const std::string& cmd = parts[0];
-        if (cmd == "list") {
-          std::string out;
-          for (const auto& s : m_pluginManager.list()) {
-            const std::string dependencies =
-                s.dependencies.empty() ? std::string{} : " requires " + StringUtils::join(s.dependencies, ", ");
-            out += std::format(
-                "{} [{}] {}{}{}{}{}\n", s.id, s.source, s.version.empty() ? "-" : s.version,
-                s.enabled ? " enabled" : "", s.compatible ? "" : " incompatible", s.deprecated ? " deprecated" : "",
-                dependencies
-            );
-          }
-          return out.empty() ? "(no plugins)\n" : out;
-        }
-        if (cmd == "enable") {
-          if (parts.size() != 2) {
-            return "error: plugins enable <author/plugin>\n";
-          }
-          const auto res = m_pluginManager.enable(parts[1]);
-          if (!res.ok) {
-            return "error: " + res.error + "\n";
-          }
-          return m_pluginManager.isEnabling(parts[1]) ? "ok (exporting in background)\n" : "ok\n";
-        }
-        if (cmd == "disable") {
-          if (parts.size() != 2) {
-            return "error: plugins disable <author/plugin>\n";
-          }
-          m_pluginManager.disable(parts[1]);
-          return "ok\n";
-        }
-        if (cmd == "update") {
-          if (parts.size() != 2) {
-            return "error: plugins update <source-name>\n";
-          }
-          m_pluginManager.update(parts[1]);
-          return "ok (updating in background)\n";
-        }
-        if (cmd == "source") {
-          if (parts.size() < 2) {
-            return "error: plugins source <list|add|remove> ...\n";
-          }
-          const std::string& sub = parts[1];
-          if (sub == "list") {
-            std::string out;
-            for (const auto& s : m_configService.config().plugins.sources) {
-              out += std::format(
-                  "{} {} {}{}\n", s.name, enumToKey(kPluginSourceKinds, s.kind), s.location, s.autoUpdate ? " auto" : ""
-              );
-            }
-            return out.empty() ? "(no sources)\n" : out;
-          }
-          if (sub == "add") {
-            if (parts.size() < 5) {
-              return "error: plugins source add <name> <git|path> <location> [auto]\n";
-            }
-            const auto kind = enumFromKey(kPluginSourceKinds, parts[3]);
-            if (!kind.has_value()) {
-              return "error: source kind must be 'git' or 'path'\n";
-            }
-            if (!isValidPluginSourceName(parts[2])) {
-              return "error: source name must use letters, digits, '.', '_' or '-', starting with a letter or digit\n";
-            }
-            PluginSourceConfig source{
-                .kind = *kind,
-                .name = parts[2],
-                .location = parts[4],
-                .autoUpdate = parts.size() > 5 && (parts[5] == "auto" || parts[5] == "true"),
-            };
-            m_pluginManager.addSource(source);
-            return "ok\n";
-          }
-          if (sub == "remove") {
-            if (parts.size() != 3) {
-              return "error: plugins source remove <name>\n";
-            }
-            if (isDefaultPluginSourceName(parts[2])) {
-              return "error: built-in plugin sources cannot be removed from IPC\n";
-            }
-            m_pluginManager.removeSource(parts[2]);
-            return "ok\n";
-          }
-          return "error: unknown plugins source subcommand '" + sub + "'\n";
-        }
-        return "error: unknown plugins subcommand '" + cmd + "'\n";
-      },
-      "plugins <list|enable|disable|update|source> ...",
-      "Manage plugins and sources (list/enable/disable/update, source list/add/remove)"
-  );
   m_bar.registerIpc(m_ipcService);
   m_desktopWidgetsController.registerIpc(m_ipcService);
   m_panelManager.registerIpc(m_ipcService);
@@ -671,7 +561,7 @@ void Application::initIpc() {
   m_ipcService.registerHandler(
       "panel",
       [this](const std::string& args) -> std::string {
-        const auto parts = noctalia::ipc::splitWords(args);
+        const auto parts = gnil::ipc::splitWords(args);
         if (parts.size() != 2) {
           return "error: panel requires <toggle|open|close> <panel-name>\n";
         }
@@ -708,10 +598,6 @@ void Application::initIpc() {
   m_gammaService.registerIpc(m_ipcService);
   m_themeService.registerIpc(m_ipcService);
   m_wallpaper.registerIpc(m_ipcService);
-  greeter::registerIpc(
-      m_ipcService, m_configService, [this]() { return m_themeService.resolvedMode(); }, &m_compositorPlatform,
-      [this]() { return m_logindService != nullptr; }
-  );
   if (m_mprisService) {
     m_mprisService->registerIpc(m_ipcService);
   }

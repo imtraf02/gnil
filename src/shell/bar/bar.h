@@ -39,11 +39,8 @@ class UPowerService;
 class TrayService;
 class GammaService;
 class WeatherService;
-namespace noctalia::theme {
+namespace gnil::theme {
   class ThemeService;
-}
-namespace scripting {
-  class ScriptApiContext;
 }
 struct PointerEvent;
 struct wl_surface;
@@ -178,14 +175,13 @@ private:
   WeatherService* m_weatherService = nullptr;
   RenderContext* m_renderContext = nullptr;
   GammaService* m_nightLight = nullptr;
-  noctalia::theme::ThemeService* m_themeService = nullptr;
+  gnil::theme::ThemeService* m_themeService = nullptr;
   BluetoothService* m_bluetooth = nullptr;
   BrightnessService* m_brightness = nullptr;
   LockKeysService* m_lockKeys = nullptr;
   ClipboardService* m_clipboard = nullptr;
   ScreenshotService* m_screenshots = nullptr;
   FileWatcher* m_fileWatcher = nullptr;
-  scripting::ScriptApiContext* m_scriptApi = nullptr;
   std::unique_ptr<WidgetFactory> m_widgetFactory;
   std::vector<std::unique_ptr<BarInstance>> m_instances;
 
@@ -195,9 +191,6 @@ private:
   std::unordered_map<std::string, WidgetConfig> m_lastWidgets;
   ShellConfig::ShadowConfig m_lastShadow;
   ShellConfig::ChromeConfig m_lastChrome;
-  // Plugin enable/disable changes which widget types resolve, so a plugins-only
-  // config change must also rebuild widgets.
-  PluginsConfig m_lastPlugins;
 
   // Surface → BarInstance mapping for pointer event routing
   std::unordered_map<wl_surface*, BarInstance*> m_surfaceMap;

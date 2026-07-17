@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace noctalia::version {
+namespace gnil::version {
 
   // Parse up to three dotted numeric components (major.minor.patch). Any
   // pre-release / build suffix (`-rc1`, `+meta`) is ignored — comparison is on
@@ -46,9 +46,9 @@ namespace noctalia::version {
     return 0;
   }
 
-  // True when `running` satisfies a `>= required` floor (the `min_noctalia` gate).
+  // True when `running` satisfies a `>= required` floor (the `min_gnil` gate).
   [[nodiscard]] inline bool atLeast(std::string_view running, std::string_view required) {
     return compare(running, required) >= 0;
   }
 
-} // namespace noctalia::version
+} // namespace gnil::version

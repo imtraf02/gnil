@@ -8,9 +8,9 @@ namespace {
 
   constexpr Logger kLog("debug");
 
-  const sdbus::ServiceName kDebugBusName{"dev.noctalia.Debug"};
-  const sdbus::ObjectPath kDebugObjectPath{"/dev/noctalia/Debug"};
-  constexpr auto kDebugInterface = "dev.noctalia.Debug";
+  const sdbus::ServiceName kDebugBusName{"io.github.imtraf02.gnil.Debug"};
+  const sdbus::ObjectPath kDebugObjectPath{"/io/github/imtraf02/gnil/Debug"};
+  constexpr auto kDebugInterface = "io.github.imtraf02.gnil.Debug";
 
   Urgency clamp_urgency(uint8_t urgency) {
     if (urgency > static_cast<uint8_t>(Urgency::Critical)) {

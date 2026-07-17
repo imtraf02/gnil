@@ -4,7 +4,7 @@
 #include <fstream>
 #include <glib.h>
 
-namespace noctalia::util {
+namespace gnil::util {
 
   std::string stringMd5Hex(std::string_view value) {
     GChecksum* checksum = g_checksum_new(G_CHECKSUM_MD5);
@@ -50,4 +50,4 @@ namespace noctalia::util {
     return digest;
   }
 
-} // namespace noctalia::util
+} // namespace gnil::util

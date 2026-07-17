@@ -11,11 +11,7 @@
 #include "idle/idle_inhibitor.h"
 #include "notification/notification_manager.h"
 #include "pipewire/pipewire_service.h"
-#include "scripting/plugin_manifest.h"
-#include "scripting/plugin_registry.h"
-#include "scripting/plugin_runtime_context.h"
 #include "shell/bar/widgets/keyboard_layout_widget.h"
-#include "shell/control_center/plugin_shortcut.h"
 #include "shell/control_center/shortcut_services.h"
 #include "shell/panel/panel_manager.h"
 #include "system/gamma_service.h"
@@ -24,7 +20,6 @@
 
 #include <array>
 #include <cmath>
-#include <deque>
 #include <format>
 #include <optional>
 #include <vector>
@@ -191,7 +186,7 @@ namespace {
 
   class DarkModeShortcut final : public Shortcut {
   public:
-    explicit DarkModeShortcut(noctalia::theme::ThemeService* svc) : m_svc(svc) {}
+    explicit DarkModeShortcut(gnil::theme::ThemeService* svc) : m_svc(svc) {}
     std::string_view id() const override { return "dark_mode"; }
     std::string defaultLabel() const override { return i18n::tr("control-center.shortcuts.dark-mode.dark"); }
     std::string displayLabel() const override {
@@ -221,7 +216,7 @@ namespace {
     }
 
   private:
-    noctalia::theme::ThemeService* m_svc;
+    gnil::theme::ThemeService* m_svc;
   };
 
   class IdleInhibitorShortcut final : public Shortcut {
@@ -522,23 +517,7 @@ namespace {
 } // namespace
 
 std::span<const ShortcutRegistry::CatalogEntry> ShortcutRegistry::catalog() {
-  // Built-in shortcuts plus every plugin [[shortcut]] entry. Plugin id/label
-  // strings are held in a stable static deque so the CatalogEntry views stay valid.
-  static std::deque<std::string> storage;
-  static const std::vector<CatalogEntry> combined = [] {
-    std::vector<CatalogEntry> result(kShortcutCatalog.begin(), kShortcutCatalog.end());
-    scripting::PluginRegistry::instance().ensureScanned();
-    for (const auto& entry :
-         scripting::PluginRegistry::instance().entriesOfKind(scripting::PluginEntryKind::Shortcut)) {
-      storage.push_back(entry.fullId());
-      const std::string_view typeView = storage.back();
-      storage.push_back(entry.manifest->name.empty() ? entry.fullId() : entry.manifest->name);
-      const std::string_view labelView = storage.back();
-      result.push_back(CatalogEntry{.type = typeView, .labelKey = labelView, .literalLabel = true});
-    }
-    return result;
-  }();
-  return combined;
+  return kShortcutCatalog;
 }
 
 bool ShortcutRegistry::isAvailable(std::string_view type, const Config& config) {
@@ -554,32 +533,6 @@ bool ShortcutRegistry::isAvailable(std::string_view type, const Config& config) 
 }
 
 std::unique_ptr<Shortcut> ShortcutRegistry::create(std::string_view type, const ShortcutServices& s) {
-  if (auto entry = scripting::PluginRegistry::instance().resolve(type);
-      entry.has_value() && entry->entry->kind == scripting::PluginEntryKind::Shortcut) {
-    if (s.scriptApi == nullptr) {
-      return nullptr;
-    }
-    auto seeded = scripting::seedEntrySettings(*entry->entry, {});
-    static const std::unordered_map<std::string, WidgetSettingValue> kNoPluginOverrides;
-    const auto* overrides = &kNoPluginOverrides;
-    if (s.config != nullptr) {
-      const auto& pluginSettings = s.config->config().plugins.pluginSettings;
-      if (const auto psIt = pluginSettings.find(entry->manifest->id); psIt != pluginSettings.end()) {
-        overrides = &psIt->second;
-      }
-    }
-    scripting::mergePluginSettings(*entry->manifest, *overrides, seeded);
-    return std::make_unique<PluginShortcut>(scripting::PluginRuntimeContext{
-        .entryId = entry->fullId(),
-        .sourcePath = entry->sourcePath,
-        .settings = std::move(seeded),
-        .scriptApi = *s.scriptApi,
-        .fileWatcher = s.fileWatcher,
-        .httpClient = s.httpClient,
-        .clipboard = s.clipboard,
-        .platform = s.platform,
-    });
-  }
   if (type == "wifi")
     return std::make_unique<WifiShortcut>(s.network);
   if (type == "bluetooth")

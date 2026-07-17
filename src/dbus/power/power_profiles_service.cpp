@@ -285,7 +285,7 @@ PowerProfilesChangeOrigin PowerProfilesService::consumeActiveProfileChangeOrigin
   }
   const bool matchesLocalRequest = *m_pendingLocalActiveProfile == profile;
   m_pendingLocalActiveProfile.reset();
-  return matchesLocalRequest ? PowerProfilesChangeOrigin::Noctalia : PowerProfilesChangeOrigin::External;
+  return matchesLocalRequest ? PowerProfilesChangeOrigin::Gnil : PowerProfilesChangeOrigin::External;
 }
 
 void PowerProfilesService::emitChangedIfNeeded(PowerProfilesState next, bool stateSnapshot) {

@@ -42,13 +42,13 @@ namespace {
     return rgb;
   }
 
-  uint32_t token(const noctalia::theme::GeneratedPalette& palette, const std::string& name) {
+  uint32_t token(const gnil::theme::GeneratedPalette& palette, const std::string& name) {
     const auto it = palette.dark.find(name);
     return it == palette.dark.end() ? 0u : it->second;
   }
 
   double saturation(uint32_t argb) {
-    const auto color = noctalia::theme::Color::fromArgb(argb);
+    const auto color = gnil::theme::Color::fromArgb(argb);
     const auto [h, s, l] = color.toHsl();
     (void)h;
     (void)l;
@@ -56,12 +56,12 @@ namespace {
   }
 
   bool checkSchemeStrings() {
-    using noctalia::theme::Scheme;
+    using gnil::theme::Scheme;
     bool ok = true;
-    const auto parsed = noctalia::theme::schemeFromString("soft");
+    const auto parsed = gnil::theme::schemeFromString("soft");
     ok = expect(parsed.has_value() && *parsed == Scheme::Soft, "parses canonical soft scheme") && ok;
-    ok = expect(noctalia::theme::schemeToString(Scheme::Soft) == "soft", "serializes canonical soft scheme") && ok;
-    ok = expect(!noctalia::theme::schemeFromString("softened").has_value(), "rejects non-canonical soft alias") && ok;
+    ok = expect(gnil::theme::schemeToString(Scheme::Soft) == "soft", "serializes canonical soft scheme") && ok;
+    ok = expect(!gnil::theme::schemeFromString("softened").has_value(), "rejects non-canonical soft alias") && ok;
     const std::pair<std::string_view, Scheme> material[] = {
         {"vibrant", Scheme::Vibrant},          {"m3-tonal-spot", Scheme::TonalSpot},
         {"m3-expressive", Scheme::Expressive}, {"m3-fidelity", Scheme::Fidelity},
@@ -70,17 +70,17 @@ namespace {
         {"m3-monochrome", Scheme::Monochrome},
     };
     for (const auto& [name, scheme] : material) {
-      const auto value = noctalia::theme::schemeFromString(name);
+      const auto value = gnil::theme::schemeFromString(name);
       ok = expect(value.has_value() && *value == scheme, "parses all Material variants") && ok;
-      ok = expect(noctalia::theme::isMaterialScheme(scheme), "Material variant classified as custom") && ok;
-      const auto generated = noctalia::theme::generateMaterial(makeColorfulBuffer(), scheme);
+      ok = expect(gnil::theme::isMaterialScheme(scheme), "Material variant classified as custom") && ok;
+      const auto generated = gnil::theme::generateMaterial(makeColorfulBuffer(), scheme);
       for (const std::string_view required : {"primary", "on_primary", "surface", "on_surface", "outline"}) {
         ok = expect(generated.dark.contains(std::string(required)), "dark Material palette is incomplete") && ok;
         ok = expect(generated.light.contains(std::string(required)), "light Material palette is incomplete") && ok;
       }
     }
     ok = expect(
-             noctalia::theme::schemeFromString("custom-vibrant") == Scheme::CustomVibrant,
+             gnil::theme::schemeFromString("custom-vibrant") == Scheme::CustomVibrant,
              "legacy custom vibrant canonical name is missing"
          )
         && ok;
@@ -88,12 +88,12 @@ namespace {
   }
 
   bool checkSoftGeneration() {
-    using noctalia::theme::Scheme;
+    using gnil::theme::Scheme;
 
     const auto rgb = makeColorfulBuffer();
-    const auto faithful = noctalia::theme::generateCustom(rgb, Scheme::Faithful);
-    const auto soft = noctalia::theme::generateCustom(rgb, Scheme::Soft);
-    const auto muted = noctalia::theme::generateCustom(rgb, Scheme::Muted);
+    const auto faithful = gnil::theme::generateCustom(rgb, Scheme::Faithful);
+    const auto soft = gnil::theme::generateCustom(rgb, Scheme::Soft);
+    const auto muted = gnil::theme::generateCustom(rgb, Scheme::Muted);
 
     bool ok = true;
     const std::string required[] = {

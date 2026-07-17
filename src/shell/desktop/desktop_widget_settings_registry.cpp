@@ -1,8 +1,6 @@
 #include "shell/desktop/desktop_widget_settings_registry.h"
 
 #include "i18n/i18n.h"
-#include "scripting/plugin_i18n.h"
-#include "scripting/plugin_registry.h"
 #include "shell/settings/font_family_catalog.h"
 #include "shell/settings/widget_settings_registry.h"
 #include "util/string_utils.h"
@@ -105,25 +103,10 @@ namespace desktop_settings {
     // Empty value = inherit the shell font.
     WidgetSettingSpec fontFamilySpec() {
       auto spec = baseSpec("font_family", WidgetControlKind::Select, std::string{});
-      spec.schema.type = noctalia::config::schema::WidgetSettingType::String;
+      spec.schema.type = gnil::config::schema::WidgetSettingType::String;
       spec.options = settings::buildFontFamilySelectOptions();
       spec.literalLabels = true;
       return spec;
-    }
-
-    // Resolve "author/plugin:entry" to its [[desktop_widget]] entry, or nullopt.
-    std::optional<scripting::ResolvedPluginEntry>
-    resolvePluginDesktopWidget(std::string_view type, scripting::PluginRegistry* pluginRegistry = nullptr) {
-      if (!type.contains('/')) {
-        return std::nullopt;
-      }
-      auto& registry = pluginRegistry != nullptr ? *pluginRegistry : scripting::PluginRegistry::instance();
-      registry.ensureScanned();
-      auto entry = registry.resolve(type);
-      if (entry.has_value() && entry->entry->kind == scripting::PluginEntryKind::DesktopWidget) {
-        return entry;
-      }
-      return std::nullopt;
     }
 
   } // namespace
@@ -135,14 +118,6 @@ namespace desktop_settings {
     options.reserve(kDesktopWidgetTypeSpecs.size());
     for (const auto& spec : kDesktopWidgetTypeSpecs) {
       options.push_back(DesktopWidgetTypeOption{.value = std::string(spec.type), .label = i18n::tr(spec.labelKey)});
-    }
-
-    scripting::PluginRegistry::instance().ensureScanned();
-    for (const auto& entry :
-         scripting::PluginRegistry::instance().entriesOfKind(scripting::PluginEntryKind::DesktopWidget)) {
-      const std::string entryId = entry.fullId();
-      std::string label = entry.manifest->name.empty() ? entryId : entry.manifest->name;
-      options.push_back(DesktopWidgetTypeOption{.value = entryId, .label = std::move(label)});
     }
 
     std::ranges::sort(options, {}, &DesktopWidgetTypeOption::label);
@@ -157,11 +132,6 @@ namespace desktop_settings {
     }
     if (type == "login_box") {
       return i18n::tr("desktop-widgets.editor.types.login-box");
-    }
-    if (auto entry = resolvePluginDesktopWidget(type); entry.has_value()) {
-      if (!entry->manifest->name.empty()) {
-        return entry->manifest->name;
-      }
     }
     return std::string(type);
   }
@@ -207,12 +177,6 @@ namespace desktop_settings {
   }
 
   std::vector<WidgetSettingSpec> desktopWidgetSettingSpecs(std::string_view type) {
-    if (auto pluginEntry = resolvePluginDesktopWidget(type)) {
-      scripting::PluginTranslationCatalog translations;
-      translations.load(pluginEntry->sourcePath.parent_path());
-      return settings::manifestSettingSpecs(pluginEntry->entry->settings, &translations);
-    }
-
     const std::vector<WidgetSettingSelectOption> sysmonStats = {
         {"cpu_usage", "desktop-widgets.editor.settings.stat-cpu-usage"},
         {"cpu_temp", "desktop-widgets.editor.settings.stat-cpu-temp"},
@@ -428,17 +392,11 @@ namespace desktop_settings {
     return specs;
   }
 
-  noctalia::config::schema::WidgetSettingSchema
-  desktopWidgetSettingSchema(std::string_view type, scripting::PluginRegistry* pluginRegistry) {
-    noctalia::config::schema::WidgetSettingSchema out;
-    if (auto pluginEntry = resolvePluginDesktopWidget(type, pluginRegistry)) {
-      for (const auto& spec : settings::manifestSettingSpecs(pluginEntry->entry->settings)) {
-        out.push_back(spec.schema);
-      }
-    } else {
-      for (const auto& spec : desktopWidgetSettingSpecs(type)) {
-        out.push_back(spec.schema);
-      }
+  gnil::config::schema::WidgetSettingSchema
+  desktopWidgetSettingSchema(std::string_view type) {
+    gnil::config::schema::WidgetSettingSchema out;
+    for (const auto& spec : desktopWidgetSettingSpecs(type)) {
+      out.push_back(spec.schema);
     }
     for (const auto& spec : commonDesktopWidgetSettingSpecs(type)) {
       out.push_back(spec.schema);

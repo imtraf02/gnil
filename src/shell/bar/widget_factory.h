@@ -31,11 +31,8 @@ class UPowerService;
 class WeatherService;
 struct wl_output;
 class GammaService;
-namespace noctalia::theme {
+namespace gnil::theme {
   class ThemeService;
-}
-namespace scripting {
-  class ScriptApiContext;
 }
 
 class WidgetFactory {
@@ -66,7 +63,7 @@ private:
   HttpClient* m_httpClient;
   WeatherService* m_weather;
   GammaService* m_nightLight;
-  noctalia::theme::ThemeService* m_themeService;
+  gnil::theme::ThemeService* m_themeService;
   BluetoothService* m_bluetooth;
   BrightnessService* m_brightness;
   LockKeysService* m_lockKeys;
@@ -74,5 +71,4 @@ private:
   FileWatcher* m_fileWatcher;
   ScreenshotService* m_screenshots;
   RenderContext* m_renderContext = nullptr;
-  scripting::ScriptApiContext* m_scriptApi = nullptr;
 };

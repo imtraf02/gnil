@@ -392,11 +392,11 @@ namespace {
     return total;
   }
 
-  noctalia::system::cpu_temp::ProbeResult readCpuTempSensor(const SystemConfig::MonitorConfig& config) {
+  gnil::system::cpu_temp::ProbeResult readCpuTempSensor(const SystemConfig::MonitorConfig& config) {
     try {
-      return noctalia::system::cpu_temp::read("/sys/class/hwmon", "/sys/class/thermal", config.cpuTempSensorPath);
+      return gnil::system::cpu_temp::read("/sys/class/hwmon", "/sys/class/thermal", config.cpuTempSensorPath);
     } catch (...) {
-      return noctalia::system::cpu_temp::ProbeResult{
+      return gnil::system::cpu_temp::ProbeResult{
           .reading = std::nullopt, .error = "CPU temperature sensor scan failed"
       };
     }
@@ -930,11 +930,11 @@ private:
 // needs the previous scan kept between polls.
 struct SystemMonitorService::IntelGpuReader {
   IntelGpuReader() {
-    m_devices = noctalia::system::intel_gpu::findDevices();
+    m_devices = gnil::system::intel_gpu::findDevices();
     // A discrete card is the one that reports VRAM; order it ahead of an integrated GPU so the
     // stats describe the card the user cares about.
-    std::ranges::stable_partition(m_devices, [](const noctalia::system::intel_gpu::Device& device) {
-      return noctalia::system::intel_gpu::readVram(device).has_value();
+    std::ranges::stable_partition(m_devices, [](const gnil::system::intel_gpu::Device& device) {
+      return gnil::system::intel_gpu::readVram(device).has_value();
     });
   }
 
@@ -942,10 +942,10 @@ struct SystemMonitorService::IntelGpuReader {
 
   // The first scan only baselines the counters, so name the source before it can report a value.
   [[nodiscard]] std::string usageSource() const {
-    return m_devices.empty() ? std::string{} : noctalia::system::intel_gpu::usageSource(m_devices.front());
+    return m_devices.empty() ? std::string{} : gnil::system::intel_gpu::usageSource(m_devices.front());
   }
 
-  [[nodiscard]] std::optional<noctalia::system::intel_gpu::UsageReading> readUsage() {
+  [[nodiscard]] std::optional<gnil::system::intel_gpu::UsageReading> readUsage() {
     for (const auto& device : m_devices) {
       if (const auto reading = m_samplers[device.pciSlot].sample(device); reading.has_value()) {
         return reading;
@@ -954,9 +954,9 @@ struct SystemMonitorService::IntelGpuReader {
     return std::nullopt;
   }
 
-  [[nodiscard]] std::optional<noctalia::system::intel_gpu::VramReading> readVram() const {
+  [[nodiscard]] std::optional<gnil::system::intel_gpu::VramReading> readVram() const {
     for (const auto& device : m_devices) {
-      if (const auto reading = noctalia::system::intel_gpu::readVram(device); reading.has_value()) {
+      if (const auto reading = gnil::system::intel_gpu::readVram(device); reading.has_value()) {
         return reading;
       }
     }
@@ -964,8 +964,8 @@ struct SystemMonitorService::IntelGpuReader {
   }
 
 private:
-  std::vector<noctalia::system::intel_gpu::Device> m_devices;
-  std::unordered_map<std::string, noctalia::system::intel_gpu::UsageSampler> m_samplers;
+  std::vector<gnil::system::intel_gpu::Device> m_devices;
+  std::unordered_map<std::string, gnil::system::intel_gpu::UsageSampler> m_samplers;
 };
 
 SystemMonitorService::SystemMonitorService(const SystemConfig::MonitorConfig& config) {
