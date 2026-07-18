@@ -20,6 +20,8 @@ public:
 
   void setFill(const ColorSpec& color);
   void setFill(const Color& color);
+  void setFillGradient(const ColorSpec& color1, const ColorSpec& color2);
+  void setFillGradient(const Color& color1, const Color& color2);
   void setTrack(const ColorSpec& color);
   void setTrack(const Color& color);
   void setFillColor(const ColorSpec& color);
@@ -44,6 +46,7 @@ private:
   RectNode* m_fill = nullptr;
   ColorSpec m_trackColor = colorSpecFromRole(ColorRole::SurfaceVariant);
   ColorSpec m_fillColor = colorSpecFromRole(ColorRole::Primary);
+  std::optional<ColorSpec> m_fillColor2 = std::nullopt;
   float m_progress = 1.0f;
   ProgressBarOrientation m_orientation = ProgressBarOrientation::Horizontal;
   Signal<>::ScopedConnection m_paletteConn;

@@ -1,4 +1,4 @@
-#include "launcher/wallpaper_provider.h"
+#include "launcher/live_wallpaper_provider.h"
 
 #include "config/config_service.h"
 #include "i18n/i18n.h"
@@ -23,12 +23,12 @@ namespace {
     std::string searchable;
   };
 
-  bool hasImageExtension(const std::filesystem::path& path) {
+  bool hasVideoExtension(const std::filesystem::path& path) {
     const auto ext = StringUtils::toLower(path.extension().string());
-    return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" || ext == ".bmp" || ext == ".gif";
+    return ext == ".mp4" || ext == ".webm" || ext == ".mkv" || ext == ".mov" || ext == ".gif";
   }
 
-  std::vector<WallpaperCandidate> collectWallpapers(const std::filesystem::path& directory) {
+  std::vector<WallpaperCandidate> collectLiveWallpapers(const std::filesystem::path& directory) {
     std::vector<WallpaperCandidate> candidates;
     if (directory.empty()) {
       return candidates;
@@ -48,7 +48,7 @@ namespace {
       }
 
       std::error_code typeEc;
-      if (!it->is_regular_file(typeEc) || typeEc || !hasImageExtension(it->path())) {
+      if (!it->is_regular_file(typeEc) || typeEc || !hasVideoExtension(it->path())) {
         continue;
       }
 
@@ -67,19 +67,19 @@ namespace {
 
 } // namespace
 
-WallpaperProvider::WallpaperProvider(ConfigService* config, WaylandConnection* wayland, Wallpaper* wallpaper)
+LiveWallpaperProvider::LiveWallpaperProvider(ConfigService* config, WaylandConnection* wayland, Wallpaper* wallpaper)
     : m_config(config), m_wayland(wayland), m_wallpaper(wallpaper) {}
 
-std::string WallpaperProvider::displayName() const { return i18n::tr("launcher.providers.wallpaper.title"); }
+std::string LiveWallpaperProvider::displayName() const { return "Live Wallpaper"; }
 
-std::vector<LauncherResult> WallpaperProvider::query(std::string_view text) const {
+std::vector<LauncherResult> LiveWallpaperProvider::query(std::string_view text) const {
   if (m_config == nullptr) {
     return {};
   }
 
   const std::string query = StringUtils::toLower(StringUtils::trim(text));
-  auto candidates = collectWallpapers(
-      wallpaper::resolveGlobalWallpaperDirectory(m_config->config().wallpaper, m_config->config().theme.mode)
+  auto candidates = collectLiveWallpapers(
+      wallpaper::resolveGlobalLiveWallpaperDirectory(m_config->config().wallpaper, m_config->config().theme.mode)
   );
   if (candidates.empty()) {
     return {};
@@ -108,7 +108,7 @@ std::vector<LauncherResult> WallpaperProvider::query(std::string_view text) cons
     result.id = candidate.path;
     result.title = candidate.name;
     result.subtitle = candidate.path;
-    result.glyphName = "wallpaper-selector";
+    result.glyphName = "smart_display";
     result.iconPath = candidate.path;
     result.score = score;
     results.push_back(std::move(result));
@@ -116,13 +116,9 @@ std::vector<LauncherResult> WallpaperProvider::query(std::string_view text) cons
   return results;
 }
 
-bool WallpaperProvider::activate(const LauncherResult& result) {
-  if (m_config == nullptr || result.id.empty()) {
+bool LiveWallpaperProvider::activate(const LauncherResult& result) {
+  if (m_wallpaper == nullptr || result.id.empty()) {
     return false;
-  }
-
-  if (m_wallpaper != nullptr) {
-    (void)m_wallpaper->clearVideoWallpaper(std::nullopt);
   }
   if (!result.providerId.empty() && result.providerId != id()) {
     return false;
@@ -130,18 +126,9 @@ bool WallpaperProvider::activate(const LauncherResult& result) {
 
   const std::filesystem::path path(result.id);
   std::error_code ec;
-  if (!hasImageExtension(path) || !std::filesystem::is_regular_file(path, ec) || ec) {
+  if (!hasVideoExtension(path) || !std::filesystem::is_regular_file(path, ec) || ec) {
     return false;
   }
 
-  ConfigService::WallpaperBatch batch(*m_config);
-  if (m_wayland != nullptr) {
-    for (const auto& out : m_wayland->outputs()) {
-      if (!out.connectorName.empty()) {
-        m_config->setWallpaperPath(out.connectorName, result.id);
-      }
-    }
-  }
-  m_config->setWallpaperPath(std::nullopt, result.id);
-  return true;
+  return m_wallpaper->applyVideoWallpaper(std::nullopt, result.id);
 }

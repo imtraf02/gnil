@@ -67,7 +67,6 @@ public:
   );
 
   void open(std::string context = "");
-  void openToBarWidget(std::string barName, std::string widgetName);
   void close();
   [[nodiscard]] bool isOpen() const noexcept { return m_surface != nullptr && m_surface->isRunning(); }
   [[nodiscard]] wl_surface* wlSurface() const noexcept {
@@ -130,7 +129,6 @@ private:
   void requestSceneRebuild();
   void
   requestContentRebuild(bool refreshRegistry = false, bool refreshFilterRow = false, bool rebuildEditorSheet = false);
-  void maybeOpenPendingWidgetInspector();
   void applyPendingContentScrollTarget(float margin);
   void scrollFocusedAreaIntoView(class InputArea* area);
   void scrollSidebarNodeIntoView(const Node* node);
@@ -152,12 +150,10 @@ private:
   void openNotificationFilterEntryEditor(std::size_t index);
   void openNotificationFilterCreateEditor();
   void openCalendarAccountEditor(std::optional<std::string> accountId);
-  void openWidgetInspectorEditor(std::vector<std::string> laneListPath, std::string widgetName);
   void openCapsuleGroupEditor(std::vector<std::string> laneListPath, std::string groupId);
   void openBarWidgetEditorSheet(
       std::string title, std::function<void(Flex&)> populate, std::function<void()> removeAction = nullptr
   );
-  void closeWidgetInspectorPopup();
   void refreshIdleLiveStatusText();
   void saveSupportReport();
   void saveConfigExport(settings::ConfigExportMode mode);
@@ -170,13 +166,6 @@ private:
       std::string oldName, std::string newName,
       std::vector<std::pair<std::vector<std::string>, ConfigOverrideValue>> referenceOverrides
   );
-  void createBar(std::string name);
-  void renameBar(std::string oldName, std::string newName);
-  void deleteBar(std::string name);
-  void moveBar(std::string name, int direction);
-  void createMonitorOverride(std::string barName, std::string match);
-  void renameMonitorOverride(std::string barName, std::string oldMatch, std::string newMatch);
-  void deleteMonitorOverride(std::string barName, std::string match);
   [[nodiscard]] float uiScale() const;
 
   [[nodiscard]] std::optional<LayerPopupParentContext> topmostPopupParentContext() const;
@@ -241,10 +230,6 @@ private:
   Node* m_pendingContentScrollTarget = nullptr;
   std::string m_searchQuery;
   Timer m_searchDebounceTimer;
-  // Set by openToBarWidget (e.g. middle-click on a bar widget); consumed once the window holds
-  // keyboard focus so the sheet's grab popup gets a serial the compositor accepts.
-  std::string m_pendingOpenWidgetInspectorName;
-  int m_pendingOpenWidgetInspectorFrames = 0;
   // When the editor sheet is opened programmatically (bar middle-click) there is no grab-valid serial,
   // so open it without an xdg_popup grab. Consumed by openBarWidgetEditorSheet.
   bool m_pendingEditorSheetNoGrab = false;
@@ -254,15 +239,6 @@ private:
   std::string m_pendingDeleteWidgetName;
   std::string m_pendingDeleteWidgetSettingPath;
   std::string m_renamingWidgetName;
-  std::string m_creatingBarName;
-  std::string m_renamingBarName;
-  std::string m_pendingDeleteBarName;
-  std::string m_creatingMonitorOverrideBarName;
-  std::string m_creatingMonitorOverrideMatch;
-  std::string m_renamingMonitorOverrideBarName;
-  std::string m_renamingMonitorOverrideMatch;
-  std::string m_pendingDeleteMonitorOverrideBarName;
-  std::string m_pendingDeleteMonitorOverrideMatch;
   std::string m_selectedBarName;
   std::string m_selectedMonitorOverride;
   std::string m_selectedSection;

@@ -85,7 +85,6 @@ namespace settings {
         .clearOverride = ctx.clearOverride,
         .renameWidgetInstance = ctx.renameWidgetInstance,
         .closeHostedEditor = ctx.closeHostedEditor,
-        .openWidgetInspector = ctx.openWidgetInspectorEditor,
         .openCapsuleGroupInspector = ctx.openCapsuleGroupEditor,
         .makeResetButton = [&factory](const std::vector<std::string>& path) { return factory.makeResetButton(path); },
         .makeRow = [&factory](
@@ -240,7 +239,7 @@ namespace settings {
 
       const bool selectFolder = setting.browseMode == TextSettingBrowseMode::SelectFolder;
       auto browse = ui::button({
-          .glyph = selectFolder ? "folder" : "file-text",
+          .glyph = selectFolder ? "folder" : "description",
           .glyphSize = Style::fontSizeBody * scale,
           .variant = ButtonVariant::Default,
           .minWidth = Style::controlHeight * scale,

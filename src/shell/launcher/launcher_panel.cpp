@@ -49,6 +49,7 @@ namespace {
   constexpr std::size_t kAppGridColumns = 5;
   constexpr std::string_view kApplicationsProviderId = "Applications";
   constexpr std::string_view kWallpaperProviderId = "Wallpaper";
+  constexpr std::string_view kLiveWallpaperProviderId = "LiveWallpaper";
   constexpr double kUsageScorePerCount = 0.1;
   constexpr double kTypedUsageScoreCap = 0.5;
   constexpr std::string_view kProviderOverviewProviderId = "__launcher_provider_overview__";
@@ -1004,6 +1005,26 @@ void LauncherPanel::create() {
       .configure = [](Segmented& segmented) { segmented.setAlign(FlexAlign::Center); },
   });
 
+  auto wallpaperModeTab = ui::segmented({
+      .out = &m_wallpaperModeTab,
+      .scale = scale,
+      .compact = true,
+      .surfaceOpacity = panelCardOpacity(),
+      .equalSegmentWidths = true,
+      .visible = false,
+      .participatesInLayout = false,
+      .configure = [this](Segmented& segmented) {
+        segmented.setAlign(FlexAlign::Center);
+        segmented.addOption("Images", "image");
+        segmented.addOption("Videos", "smart_display");
+        segmented.setSelectedIndex(0);
+        segmented.setOnChange([this](std::size_t /*idx*/) {
+          m_selectedIndex = 0;
+          reapplyCurrentQuery();
+        });
+      },
+  });
+
   auto body = ui::column({
       .out = &m_body,
       .align = FlexAlign::Stretch,
@@ -1102,6 +1123,7 @@ void LauncherPanel::create() {
   // Caelestia's launcher grows upward from the search field. Results and
   // provider controls therefore live above the persistent bottom input.
   container->addChild(std::move(categoryFilter));
+  container->addChild(std::move(wallpaperModeTab));
   container->addChild(std::move(input));
 
   setRoot(std::move(container));
@@ -1129,7 +1151,7 @@ bool LauncherPanel::shouldUseAppGrid() const {
   if (m_results.empty()) {
     return false;
   }
-  if (isWallpaperBrowse()) {
+  if (isWallpaperBrowse() || isLiveWallpaperBrowse()) {
     return true;
   }
   if (m_config == nullptr || !m_config->config().shell.launcher.appGrid || !m_launcherShowIcons) {
@@ -1146,8 +1168,20 @@ bool LauncherPanel::isWallpaperBrowse() const {
   });
 }
 
+bool LauncherPanel::isLiveWallpaperBrowse() const {
+  return !m_results.empty() && std::ranges::all_of(m_results, [](const LauncherResult& result) {
+    return result.providerId == kLiveWallpaperProviderId;
+  });
+}
+
 LauncherPanel::Presentation LauncherPanel::currentPresentation() const {
+  if (isLiveWallpaperBrowse()) {
+    return Presentation::LiveWallpaper;
+  }
   if (isWallpaperBrowse() || std::string_view(m_query).starts_with("/wall")) {
+    if (m_wallpaperModeTab != nullptr && m_wallpaperModeTab->visible() && m_wallpaperModeTab->selectedIndex() == 1) {
+      return Presentation::LiveWallpaper;
+    }
     return Presentation::Wallpaper;
   }
   if (std::string_view(m_query).starts_with("/emo")
@@ -1180,6 +1214,7 @@ void LauncherPanel::syncDynamicVisualSize(bool animate) {
   };
   switch (next) {
   case Presentation::Wallpaper:
+  case Presentation::LiveWallpaper:
     // A wide, shallow single-row carousel, matching Caelestia's wallpaper mode.
     width = 920.0f;
     height = 430.0f;
@@ -1356,6 +1391,9 @@ void LauncherPanel::onPanelCardOpacityChanged(float opacity) {
   if (m_categoryFilter != nullptr) {
     m_categoryFilter->setSurfaceOpacity(opacity);
   }
+  if (m_wallpaperModeTab != nullptr) {
+    m_wallpaperModeTab->setSurfaceOpacity(opacity);
+  }
   if (m_detailScroll != nullptr) {
     m_detailScroll->setCardStyle(contentScale(), opacity, panelBordersEnabled());
   }
@@ -1447,6 +1485,7 @@ void LauncherPanel::onClose() {
   m_container = nullptr;
   m_input = nullptr;
   m_categoryFilter = nullptr;
+  m_wallpaperModeTab = nullptr;
   m_body = nullptr;
   m_grid = nullptr;
   m_wallpaperCarousel = nullptr;
@@ -1600,6 +1639,23 @@ void LauncherPanel::onInputChanged(const std::string& text) {
     // Trim leading space after prefix
     if (activeProvider != nullptr && !queryText.empty() && queryText.front() == ' ') {
       queryText = queryText.substr(1);
+    }
+
+    if (activeProvider != nullptr && activeProvider->id() == kWallpaperProviderId) {
+      if (m_wallpaperModeTab != nullptr && m_wallpaperModeTab->selectedIndex() == 1) {
+        for (auto& provider : m_providers) {
+          if (provider->id() == kLiveWallpaperProviderId) {
+            activeProvider = provider.get();
+            break;
+          }
+        }
+      }
+    }
+
+    const bool isWallpaper = activeProvider != nullptr && (activeProvider->id() == kWallpaperProviderId || activeProvider->id() == kLiveWallpaperProviderId);
+    if (m_wallpaperModeTab != nullptr) {
+      m_wallpaperModeTab->setVisible(isWallpaper);
+      m_wallpaperModeTab->setParticipatesInLayout(isWallpaper);
     }
 
     const bool typedQuery = !queryText.empty();

@@ -43,6 +43,7 @@
 #include "launcher/emoji_provider.h"
 #include "launcher/math_provider.h"
 #include "launcher/session_provider.h"
+#include "launcher/live_wallpaper_provider.h"
 #include "launcher/wallpaper_provider.h"
 #include "launcher/window_provider.h"
 #include "notification/notifications.h"
@@ -474,7 +475,8 @@ void Application::initPanelManagerAndPanels() {
   {
     auto launcherPanel = std::make_unique<LauncherPanel>(&m_configService, &m_asyncTextureCache, &m_wallpaper);
     launcherPanel->addProvider(std::make_unique<AppProvider>(&m_configService, &m_compositorPlatform));
-    launcherPanel->addProvider(std::make_unique<WallpaperProvider>(&m_configService, &m_wayland));
+    launcherPanel->addProvider(std::make_unique<WallpaperProvider>(&m_configService, &m_wayland, &m_wallpaper));
+    launcherPanel->addProvider(std::make_unique<LiveWallpaperProvider>(&m_configService, &m_wayland, &m_wallpaper));
     launcherPanel->addProvider(std::make_unique<WindowProvider>(&m_compositorPlatform));
     launcherPanel->addProvider(std::make_unique<SessionProvider>(&m_configService, &m_sessionActionRunner));
     launcherPanel->addProvider(std::make_unique<MathProvider>(&m_clipboardService, &m_configService, &m_httpClient));
@@ -704,11 +706,11 @@ void Application::initBarAndLayout() {
       .screenshots = &m_screenshotService,
   });
   m_idleInhibitor.setAnchorSurfacesProvider([this]() { return m_bar.caffeineAnchorSurfaces(); });
-  m_bar.setOpenWidgetSettingsCallback([this](std::string barName, std::string widgetName) {
+  m_bar.setOpenWidgetSettingsCallback([this](std::string barName, std::string /*widgetName*/) {
     if (m_panelManager.isOpen()) {
       m_panelManager.closePanel();
     }
-    m_settingsWindow.openToBarWidget(std::move(barName), std::move(widgetName));
+    m_settingsWindow.open(std::string("bar"));
   });
   m_panelManager.setChromePanelStateCallback(
       [this](wl_output* output, std::string_view barName, std::optional<ChromePanelState> state) {

@@ -1344,7 +1344,17 @@ void SettingsWindow::openBarWidgetEditorSheet(
       m_editorSheetPopup->rebuildBody();
     }
   };
-  sctx.closeHostedEditor = [this]() { DeferredCall::callLater([this]() { closeWidgetInspectorPopup(); }); };
+  sctx.closeHostedEditor = [this]() {
+    DeferredCall::callLater([this]() {
+      if (m_editorSheetPopup != nullptr) {
+        m_editorSheetPopup->close();
+      }
+      m_editorSheetFactory.reset();
+      m_editingWidgetName.clear();
+      m_editingCapsuleGroupId.clear();
+      requestContentRebuild();
+    });
+  };
   // A rename changes the edited widget's id: apply it, then retitle and rebuild the sheet.
   sctx.renameWidgetInstance =
       [this](
@@ -1385,31 +1395,6 @@ void SettingsWindow::openBarWidgetEditorSheet(
   );
 }
 
-void SettingsWindow::openWidgetInspectorEditor(std::vector<std::string> laneListPath, std::string widgetName) {
-  DeferredCall::callLater([this, laneListPath = std::move(laneListPath), widgetName = std::move(widgetName)]() mutable {
-    m_editingWidgetName = widgetName;
-    m_editingCapsuleGroupId.clear();
-    m_renamingWidgetName.clear();
-    m_pendingDeleteWidgetName.clear();
-    m_pendingDeleteWidgetSettingPath.clear();
-    m_editorSheetListPath = std::move(laneListPath);
-    std::string title = widgetName;
-    if (m_config != nullptr) {
-      const std::string display = settings::widgetReferenceInfo(m_config->config(), widgetName).title;
-      if (!display.empty()) {
-        title = display;
-      }
-    }
-    openBarWidgetEditorSheet(std::move(title), [this](Flex& body) {
-      if (m_editorSheetFactory == nullptr) {
-        return;
-      }
-      auto ctx = settings::makeBarWidgetEditorContext(*m_editorSheetFactory);
-      settings::buildWidgetInspectorBody(body, m_editorSheetListPath, ctx);
-    });
-  });
-}
-
 void SettingsWindow::openCapsuleGroupEditor(std::vector<std::string> laneListPath, std::string groupId) {
   DeferredCall::callLater([this, laneListPath = std::move(laneListPath), groupId = std::move(groupId)]() mutable {
     m_editingCapsuleGroupId = std::move(groupId);
@@ -1426,16 +1411,6 @@ void SettingsWindow::openCapsuleGroupEditor(std::vector<std::string> laneListPat
       settings::buildCapsuleGroupBody(body, m_editorSheetListPath, ctx);
     });
   });
-}
-
-void SettingsWindow::closeWidgetInspectorPopup() {
-  if (m_editorSheetPopup != nullptr) {
-    m_editorSheetPopup->close();
-  }
-  m_editorSheetFactory.reset();
-  m_editingWidgetName.clear();
-  m_editingCapsuleGroupId.clear();
-  requestContentRebuild();
 }
 
 void SettingsWindow::saveSupportReport() {

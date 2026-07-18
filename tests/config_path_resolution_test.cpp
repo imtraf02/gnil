@@ -80,10 +80,10 @@ int main() {
   expectKnown({"calendar", "refresh_minutes"});
   expectKnown({"calendar", "show_events_card"});
   expectKnown({"calendar", "account", "icloud", "provider"});
-  expectKnown({"control_center", "calendar", "show_events_card"});
+  expectUnknown({"control_center", "calendar", "show_events_card"});
   expectKnown({"nightlight", "temperature_day"});
   expectKnown({"keybinds", "validate"});
-  expectKnown({"control_center", "sidebar"});
+  expectUnknown({"control_center", "sidebar"});
   expectKnown({"hooks", "wallpaper_changed"});
   // Bar: base field, container levels, and a resolved monitor-override field.
   expectKnown({"bar", "default", "thickness"});

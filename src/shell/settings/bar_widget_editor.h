@@ -44,7 +44,6 @@ namespace settings {
     std::function<void(std::string, std::string, std::vector<std::pair<std::vector<std::string>, ConfigOverrideValue>>)>
         renameWidgetInstance;
     std::function<void()> closeHostedEditor;
-    std::function<void(std::vector<std::string> laneListPath, std::string widgetName)> openWidgetInspector;
     std::function<void(std::vector<std::string> laneListPath, std::string groupId)> openCapsuleGroupInspector;
     std::function<std::unique_ptr<Button>(const std::vector<std::string>&)> makeResetButton;
     std::function<void(Flex&, const SettingEntry&, std::unique_ptr<Node>)> makeRow;
@@ -72,10 +71,6 @@ namespace settings {
   // context references `factory` and `factory.context()`, so `factory` must outlive it.
   [[nodiscard]] BarWidgetEditorContext makeBarWidgetEditorContext(SettingsControlFactory& factory);
 
-  // Builds the bar-widget settings inspector for `ctx.editingWidgetName` into `body`. `laneListPath`
-  // is the first-lane bar-widget list path (e.g. {"bar", name, "start"}) used to resolve lane moves.
-  void
-  buildWidgetInspectorBody(Flex& body, const std::vector<std::string>& laneListPath, const BarWidgetEditorContext& ctx);
   // Builds the capsule-group style editor for `ctx.editingCapsuleGroupId` into `body`. `laneListPath`
   // identifies the owning bar (path[1]).
   void

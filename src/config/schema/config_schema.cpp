@@ -1178,6 +1178,9 @@ namespace gnil::config::schema {
         pathStringField(&WallpaperConfig::directory, "directory"),
         pathStringField(&WallpaperConfig::directoryLight, "directory_light"),
         pathStringField(&WallpaperConfig::directoryDark, "directory_dark"),
+        pathStringField(&WallpaperConfig::liveWallpaperDirectory, "live_wallpaper_directory"),
+        pathStringField(&WallpaperConfig::liveWallpaperDirectoryLight, "live_wallpaper_directory_light"),
+        pathStringField(&WallpaperConfig::liveWallpaperDirectoryDark, "live_wallpaper_directory_dark"),
         field(&WallpaperConfig::perMonitorDirectories, "per_monitor_directories"),
         subTable(&WallpaperConfig::automation, "automation", wallpaperAutomationSchema()),
         namedMap<WallpaperConfig, WallpaperMonitorOverride>(

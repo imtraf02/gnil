@@ -129,6 +129,10 @@ void Flex::setSize(float width, float height) {
     m_background->setPosition(0.0f, 0.0f);
     m_background->setFrameSize(width, height);
   }
+  if (m_shadow != nullptr) {
+    m_shadow->setPosition(m_shadowOffsetX, m_shadowOffsetY);
+    m_shadow->setFrameSize(width, height);
+  }
 }
 
 void Flex::setFrameSize(float width, float height) {
@@ -140,6 +144,10 @@ void Flex::setFrameSize(float width, float height) {
   if (m_background != nullptr) {
     m_background->setPosition(0.0f, 0.0f);
     m_background->setFrameSize(width, height);
+  }
+  if (m_shadow != nullptr) {
+    m_shadow->setPosition(m_shadowOffsetX, m_shadowOffsetY);
+    m_shadow->setFrameSize(width, height);
   }
 }
 
@@ -245,15 +253,49 @@ void Flex::clearBorder() {
   }
 }
 
-void Flex::applyPalette() {
-  if (m_background == nullptr) {
-    return;
+void Flex::setShadow(const ColorSpec& color, float radius, float offsetX, float offsetY) {
+  m_shadowColor = color;
+  m_shadowRadius = radius;
+  m_shadowOffsetX = offsetX;
+  m_shadowOffsetY = offsetY;
+  ensureShadow();
+  applyPalette();
+  markLayoutDirty();
+}
+
+void Flex::setShadow(const Color& color, float radius, float offsetX, float offsetY) {
+  setShadow(fixedColorSpec(color), radius, offsetX, offsetY);
+}
+
+void Flex::clearShadow() {
+  m_shadowColor = clearColorSpec();
+  if (m_shadow != nullptr) {
+    auto style = m_shadow->style();
+    style.fill = Color{0.0f, 0.0f, 0.0f, 0.0f};
+    style.border = Color{0.0f, 0.0f, 0.0f, 0.0f};
+    style.softness = 0.0f;
+    m_shadow->setStyle(style);
+    applyPalette();
   }
-  auto style = m_background->style();
-  style.fill = resolveColorSpec(m_fill);
-  style.border = resolveColorSpec(m_border);
-  style.fillMode = FillMode::Solid;
-  m_background->setStyle(style);
+}
+
+void Flex::applyPalette() {
+  if (m_background != nullptr) {
+    auto style = m_background->style();
+    style.fill = resolveColorSpec(m_fill);
+    style.border = resolveColorSpec(m_border);
+    style.fillMode = FillMode::Solid;
+    m_background->setStyle(style);
+  }
+  if (m_shadow != nullptr) {
+    auto style = m_shadow->style();
+    style.fill = resolveColorSpec(m_shadowColor);
+    style.border = resolveColorSpec(m_shadowColor);
+    style.fillMode = FillMode::Solid;
+    style.softness = m_shadowRadius;
+    style.radius = m_background != nullptr ? m_background->style().radius : 0.0f;
+    m_shadow->setStyle(style);
+  }
 }
 
 void Flex::setSoftness(float softness) {
@@ -378,6 +420,28 @@ void Flex::ensureBackground() {
   m_background->setZIndex(-1);
   m_background->setParticipatesInLayout(false);
   m_background->setFrameSize(width(), height());
+  applyPalette();
+}
+
+void Flex::ensureShadow() {
+  if (m_shadow != nullptr) {
+    return;
+  }
+  auto rect = std::make_unique<RectNode>();
+  rect->setStyle(
+      RoundedRectStyle{
+          .fill = rgba(0, 0, 0, 0),
+          .border = rgba(0, 0, 0, 0),
+          .fillMode = FillMode::Solid,
+          .radius = 0.0f,
+          .softness = 0.0f,
+          .borderWidth = 0.0f,
+      }
+  );
+  m_shadow = static_cast<RectNode*>(addChild(std::move(rect)));
+  m_shadow->setZIndex(-2);
+  m_shadow->setParticipatesInLayout(false);
+  m_shadow->setFrameSize(width(), height());
   applyPalette();
 }
 
@@ -730,6 +794,10 @@ LayoutSize Flex::runLayout(
   if (m_background != nullptr) {
     m_background->setPosition(0.0f, 0.0f);
     m_background->setSize(width(), height());
+  }
+  if (m_shadow != nullptr) {
+    m_shadow->setPosition(m_shadowOffsetX, m_shadowOffsetY);
+    m_shadow->setSize(width(), height());
   }
 
   return LayoutSize{.width = width(), .height = height()};

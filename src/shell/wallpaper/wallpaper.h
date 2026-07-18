@@ -77,6 +77,7 @@ public:
   // previews while their UI is closed.
   [[nodiscard]] Signal<>& changed() noexcept { return m_changed; }
   [[nodiscard]] Signal<>& livePaletteChanged() noexcept { return m_livePaletteChanged; }
+  [[nodiscard]] std::string liveWallpaperFallbackFrame() const;
   [[nodiscard]] std::optional<gnil::theme::LiveWallpaperPaletteSource>
   livePaletteSource(std::string_view outputSelector);
 

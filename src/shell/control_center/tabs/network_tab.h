@@ -58,6 +58,7 @@ private:
   Flex* m_currentCard = nullptr;
   Label* m_currentTitle = nullptr;
   Label* m_currentDetail = nullptr;
+  Flex* m_connectedBadge = nullptr;
   Flex* m_passwordCard = nullptr;
   Label* m_passwordTitle = nullptr;
   Input* m_passwordInput = nullptr;

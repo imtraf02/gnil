@@ -43,3 +43,16 @@ std::string wallpaper::resolveGlobalWallpaperDirectory(const WallpaperConfig& co
   }
   return FileUtils::expandUserPath(std::string(kDefaultWallpaperDirectory)).string();
 }
+
+std::string wallpaper::resolveGlobalLiveWallpaperDirectory(const WallpaperConfig& config, ThemeMode mode) {
+  if (mode == ThemeMode::Light && !config.liveWallpaperDirectoryLight.empty()) {
+    return config.liveWallpaperDirectoryLight;
+  }
+  if (mode == ThemeMode::Dark && !config.liveWallpaperDirectoryDark.empty()) {
+    return config.liveWallpaperDirectoryDark;
+  }
+  if (!config.liveWallpaperDirectory.empty()) {
+    return config.liveWallpaperDirectory;
+  }
+  return FileUtils::expandUserPath(std::string(kDefaultLiveWallpaperDirectory)).string();
+}

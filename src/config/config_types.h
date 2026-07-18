@@ -440,6 +440,9 @@ struct WallpaperConfig {
   std::string directory;      // empty = ~/Pictures/Wallpapers
   std::string directoryLight; // empty = directory
   std::string directoryDark;  // empty = directory
+  std::string liveWallpaperDirectory;      // empty = ~/Videos/LiveWallpapers
+  std::string liveWallpaperDirectoryLight; // empty = liveWallpaperDirectory
+  std::string liveWallpaperDirectoryDark;  // empty = liveWallpaperDirectory
   bool perMonitorDirectories = false;
   WallpaperAutomationConfig automation;
   std::vector<WallpaperMonitorOverride> monitorOverrides;

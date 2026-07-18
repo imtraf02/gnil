@@ -183,6 +183,22 @@ namespace {
     return !relText.starts_with("..");
   }
 
+  [[nodiscard]] bool hasImageExtension(const std::filesystem::path& p) {
+    auto ext = p.extension().string();
+    for (char& c : ext) {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" || ext == ".bmp" || ext == ".gif";
+  }
+
+  [[nodiscard]] bool hasVideoExtension(const std::filesystem::path& p) {
+    auto ext = p.extension().string();
+    for (char& c : ext) {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return ext == ".mp4" || ext == ".webm" || ext == ".mkv" || ext == ".mov" || ext == ".gif";
+  }
+
   [[nodiscard]] int caseInsensitiveNameOrder(std::string_view a, std::string_view b) {
     for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) {
       const auto ac = static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(a[i])));
@@ -392,6 +408,31 @@ void WallpaperPanel::create() {
       .gap = Style::spaceSm * scale,
   });
 
+  auto browseModeTabs = ui::segmented({
+      .out = &m_browseModeTabs,
+      .scale = scale,
+      .compact = true,
+      .surfaceOpacity = panelCardOpacity(),
+      .equalSegmentWidths = true,
+      .visible = true,
+      .participatesInLayout = true,
+      .configure = [this](Segmented& segmented) {
+        segmented.setAlign(FlexAlign::Center);
+        segmented.addOption("Images", "image");
+        segmented.addOption("Videos", "smart_display");
+        segmented.setSelectedIndex(0);
+        segmented.setOnChange([this](std::size_t idx) {
+          m_browseMode = (idx == 0) ? BrowseMode::Images : BrowseMode::LiveWallpapers;
+          m_selectedVisibleIndex = kNoVisibleSelection;
+          m_navStack.clear();
+          refreshVisibleEntries();
+          rebindGrid(true);
+        });
+      },
+  });
+
+  root->addChild(std::move(browseModeTabs));
+
   // ── Body: virtualized scrolling grid ──────────────────────────────────
   m_adapter = std::make_unique<WallpaperGridAdapter>(scale);
   m_adapter->setThumbnailService(m_thumbnails);
@@ -570,6 +611,9 @@ void WallpaperPanel::onPanelCardOpacityChanged(float opacity) {
   if (m_favoriteThemeSegmented != nullptr) {
     m_favoriteThemeSegmented->setSurfaceOpacity(opacity);
   }
+  if (m_browseModeTabs != nullptr) {
+    m_browseModeTabs->setSurfaceOpacity(opacity);
+  }
   if (m_favoritePaletteSourceSegmented != nullptr) {
     m_favoritePaletteSourceSegmented->setSurfaceOpacity(opacity);
   }
@@ -649,6 +693,8 @@ void WallpaperPanel::onClose() {
   m_colorButton = nullptr;
   m_closeButton = nullptr;
   m_favoriteThemeSegmented = nullptr;
+  m_browseModeTabs = nullptr;
+  m_browseMode = BrowseMode::Images;
   m_favoritePaletteSourceSegmented = nullptr;
   m_favoritePaletteDetailSelect = nullptr;
   m_grid = nullptr;
@@ -756,6 +802,10 @@ std::filesystem::path WallpaperPanel::rootDirectoryForSelection() const {
   }
   const auto& wp = m_config->config().wallpaper;
   const ThemeMode mode = m_config->config().theme.mode;
+
+  if (m_browseMode == BrowseMode::LiveWallpapers) {
+    return std::filesystem::path(wallpaper::resolveGlobalLiveWallpaperDirectory(wp, mode));
+  }
 
   const auto& choice = m_monitorChoices[m_selectedMonitorIndex];
   if (choice.connector.empty() || !wp.perMonitorDirectories) {
@@ -870,6 +920,16 @@ void WallpaperPanel::appendFilteredFavoriteEntries(
   for (const auto& favorite : m_config->wallpaperFavorites()) {
     if (!favoriteVisibleInBrowseContext(favorite.path, activeDir, rootDir, m_flatten)) {
       continue;
+    }
+
+    if (m_browseMode == BrowseMode::LiveWallpapers) {
+      if (!hasVideoExtension(favorite.path)) {
+        continue;
+      }
+    } else {
+      if (!favorite.path.starts_with("color:") && !hasImageExtension(favorite.path)) {
+        continue;
+      }
     }
 
     const std::string displayName = displayNameForWallpaperPath(favorite.path);
@@ -1103,6 +1163,15 @@ void WallpaperPanel::applyFilter() {
         const std::string normalized = FileUtils::normalizeWallpaperPath(entry.absPath.string());
         if (favoritePaths.contains(normalized)) {
           continue;
+        }
+        if (m_browseMode == BrowseMode::LiveWallpapers) {
+          if (!hasVideoExtension(entry.absPath)) {
+            continue;
+          }
+        } else {
+          if (!hasImageExtension(entry.absPath)) {
+            continue;
+          }
         }
       }
       if (filterActive && !StringUtils::toLower(entry.name).contains(needle)) {
@@ -1587,7 +1656,17 @@ void WallpaperPanel::applyWallpaperFromEntry(const WallpaperEntry& entry) {
   if (m_wallpaper != nullptr) {
     m_wallpaper->commitPreview();
   }
-  applyWallpaperPath(path, favoriteThemeToApply(path));
+
+  if (m_browseMode == BrowseMode::LiveWallpapers) {
+    const auto& choice = m_monitorChoices[m_selectedMonitorIndex];
+    const std::optional<std::string> connector =
+        choice.connector.empty() ? std::optional<std::string>{} : std::optional<std::string>{choice.connector};
+    if (m_wallpaper != nullptr) {
+      m_wallpaper->applyVideoWallpaper(connector, path);
+    }
+  } else {
+    applyWallpaperPath(path, favoriteThemeToApply(path));
+  }
   PanelManager::instance().closePanel();
   kLog.info(
       "applied wallpaper {} to {}", path,

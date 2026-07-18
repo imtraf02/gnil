@@ -37,11 +37,11 @@ namespace settings {
     }
 
     constexpr std::array<SettingsSectionDescriptor, 20> kSettingsSections{{
-        {SettingsSection::Appearance, "appearance", "adjustments-horizontal"},
+        {SettingsSection::Appearance, "appearance", "tune"},
         {SettingsSection::Wallpaper, "wallpaper", "paint"},
         {SettingsSection::Desktop, "desktop", "layout-board"},
-        {SettingsSection::Dock, "dock", "layout-bottombar-inactive"},
-        {SettingsSection::Panels, "panels", "layout-bottombar"},
+        {SettingsSection::Dock, "dock", "dock_to_bottom"},
+        {SettingsSection::Panels, "panels", "dock_to_bottom"},
         {SettingsSection::Launcher, "launcher", "rocket"},
         {SettingsSection::ControlCenter, "control-center", "adjustments"},
         {SettingsSection::Notifications, "notifications", "bell"},
@@ -330,6 +330,89 @@ namespace settings {
 
   std::span<const SettingsSectionDescriptor> settingsSectionDescriptors() { return kSettingsSections; }
 
+  namespace {
+    const std::array<ParentCategoryDescriptor, 5> kParentCategories{{
+        {
+            "group_system",
+            "settings.navigation.parents.system.title",
+            "settings.navigation.parents.system.subtitle",
+            "settings",
+            {
+                SettingsSection::System,
+                SettingsSection::Power,
+                SettingsSection::Security,
+                SettingsSection::Niri,
+                SettingsSection::Shell,
+                SettingsSection::Osd,
+                SettingsSection::Keybinds,
+                SettingsSection::Hooks
+            }
+        },
+        {
+            "group_personalization",
+            "settings.navigation.parents.personalization.title",
+            "settings.navigation.parents.personalization.subtitle",
+            "palette",
+            {
+                SettingsSection::Appearance,
+                SettingsSection::Wallpaper,
+                SettingsSection::Desktop,
+                SettingsSection::Dock
+            }
+        },
+        {
+            "group_layout",
+            "settings.navigation.parents.layout.title",
+            "settings.navigation.parents.layout.subtitle",
+            "dashboard",
+            {
+                SettingsSection::Bar,
+                SettingsSection::Panels,
+                SettingsSection::Launcher,
+                SettingsSection::ControlCenter
+            }
+        },
+        {
+            "group_services",
+            "settings.navigation.parents.services.title",
+            "settings.navigation.parents.services.subtitle",
+            "public",
+            {
+                SettingsSection::Services,
+                SettingsSection::Location
+            }
+        },
+        {
+            "group_notifications",
+            "settings.navigation.parents.notifications.title",
+            "settings.navigation.parents.notifications.subtitle",
+            "bell",
+            {
+                SettingsSection::Notifications
+            }
+        }
+    }};
+  } // namespace
+
+  std::span<const ParentCategoryDescriptor> parentCategories() { return kParentCategories; }
+
+  std::optional<ParentCategoryDescriptor> findParentCategory(std::string_view id) {
+    const auto it = std::ranges::find(kParentCategories, id, &ParentCategoryDescriptor::id);
+    if (it == kParentCategories.end()) {
+      return std::nullopt;
+    }
+    return *it;
+  }
+
+  std::optional<ParentCategoryDescriptor> findParentForSection(SettingsSection section) {
+    for (const auto& parent : kParentCategories) {
+      if (std::ranges::contains(parent.subSections, section)) {
+        return parent;
+      }
+    }
+    return std::nullopt;
+  }
+
   std::string_view settingsSectionId(SettingsSection section) { return descriptorFor(section).id; }
 
   std::string settingsSectionLabelKey(SettingsSection section) {
@@ -511,20 +594,8 @@ namespace settings {
       ));
     }
 
-    entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "source", "Wallpaper directory", "Directory scanned by both wallpaper pickers.",
-        {"wallpaper", "directory"},
-        TextSetting{
-            .value = cfg.wallpaper.directory,
-            .placeholder = "~/Pictures/Wallpapers",
-            .browseMode = TextSettingBrowseMode::SelectFolder,
-        },
-        "wallpaper folder"
-    ));
-    entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "source", "Scan subdirectories", "Include wallpapers in nested directories.",
-        {"wallpaper", "automation", "recursive"}, ToggleSetting{cfg.wallpaper.automation.recursive}, "recursive"
-    ));
+
+
     entries.push_back(makeEntry(
         SettingsSection::Wallpaper, "transition", "Transition duration", "Duration of a committed wallpaper change.",
         {"wallpaper", "transition_duration"},
@@ -534,6 +605,77 @@ namespace settings {
         SettingsSection::Wallpaper, "transition", "Edge softness", "Softness at the transition boundary.",
         {"wallpaper", "edge_smoothness"}, SliderSetting{cfg.wallpaper.edgeSmoothness, 0.0, 1.0, 0.01, false},
         "animation edge"
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.directory.label"),
+        tr("settings.schema.wallpaper.directory.description"), {"wallpaper", "directory"},
+        TextSetting{
+            .value = cfg.wallpaper.directory,
+            .placeholder = std::string(wallpaper::kDefaultWallpaperDirectory),
+            .browseMode = TextSettingBrowseMode::SelectFolder,
+            .browseFileExtensions = {}
+        },
+        "folder path"
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.directory-light.label"),
+        tr("settings.schema.wallpaper.directory-light.description"), {"wallpaper", "directory_light"},
+        TextSetting{
+            .value = cfg.wallpaper.directoryLight,
+            .placeholder = tr("settings.schema.wallpaper.directory-light.placeholder"),
+            .browseMode = TextSettingBrowseMode::SelectFolder,
+            .browseFileExtensions = {}
+        },
+        "folder path light theme", true
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.directory-dark.label"),
+        tr("settings.schema.wallpaper.directory-dark.description"), {"wallpaper", "directory_dark"},
+        TextSetting{
+            .value = cfg.wallpaper.directoryDark,
+            .placeholder = tr("settings.schema.wallpaper.directory-dark.placeholder"),
+            .browseMode = TextSettingBrowseMode::SelectFolder,
+            .browseFileExtensions = {}
+        },
+        "folder path dark theme", true
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory.label"),
+        tr("settings.schema.wallpaper.live-wallpaper-directory.description"), {"wallpaper", "live_wallpaper_directory"},
+        TextSetting{
+            .value = cfg.wallpaper.liveWallpaperDirectory,
+            .placeholder = std::string(wallpaper::kDefaultLiveWallpaperDirectory),
+            .browseMode = TextSettingBrowseMode::SelectFolder,
+            .browseFileExtensions = {}
+        },
+        "live wallpaper folder path"
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory-light.label"),
+        tr("settings.schema.wallpaper.live-wallpaper-directory-light.description"), {"wallpaper", "live_wallpaper_directory_light"},
+        TextSetting{
+            .value = cfg.wallpaper.liveWallpaperDirectoryLight,
+            .placeholder = tr("settings.schema.wallpaper.live-wallpaper-directory-light.placeholder"),
+            .browseMode = TextSettingBrowseMode::SelectFolder,
+            .browseFileExtensions = {}
+        },
+        "live wallpaper folder path light theme", true
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory-dark.label"),
+        tr("settings.schema.wallpaper.live-wallpaper-directory-dark.description"), {"wallpaper", "live_wallpaper_directory_dark"},
+        TextSetting{
+            .value = cfg.wallpaper.liveWallpaperDirectoryDark,
+            .placeholder = tr("settings.schema.wallpaper.live-wallpaper-directory-dark.placeholder"),
+            .browseMode = TextSettingBrowseMode::SelectFolder,
+            .browseFileExtensions = {}
+        },
+        "live wallpaper folder path dark theme", true
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.per-monitor-directories.label"),
+        tr("settings.schema.wallpaper.per-monitor-directories.description"), {"wallpaper", "per_monitor_directories"},
+        ToggleSetting{cfg.wallpaper.perMonitorDirectories}, "per display folder"
     ));
     const auto allVideo = [&cfg]() {
       VideoWallpaperOutput result;
@@ -780,6 +922,39 @@ namespace settings {
             .browseFileExtensions = {}
         },
         "folder path dark theme", true
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory.label"),
+        tr("settings.schema.wallpaper.live-wallpaper-directory.description"), {"wallpaper", "live_wallpaper_directory"},
+        TextSetting{
+            .value = cfg.wallpaper.liveWallpaperDirectory,
+            .placeholder = std::string(wallpaper::kDefaultLiveWallpaperDirectory),
+            .browseMode = TextSettingBrowseMode::SelectFolder,
+            .browseFileExtensions = {}
+        },
+        "live wallpaper folder path"
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory-light.label"),
+        tr("settings.schema.wallpaper.live-wallpaper-directory-light.description"), {"wallpaper", "live_wallpaper_directory_light"},
+        TextSetting{
+            .value = cfg.wallpaper.liveWallpaperDirectoryLight,
+            .placeholder = tr("settings.schema.wallpaper.live-wallpaper-directory-light.placeholder"),
+            .browseMode = TextSettingBrowseMode::SelectFolder,
+            .browseFileExtensions = {}
+        },
+        "live wallpaper folder path light theme", true
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory-dark.label"),
+        tr("settings.schema.wallpaper.live-wallpaper-directory-dark.description"), {"wallpaper", "live_wallpaper_directory_dark"},
+        TextSetting{
+            .value = cfg.wallpaper.liveWallpaperDirectoryDark,
+            .placeholder = tr("settings.schema.wallpaper.live-wallpaper-directory-dark.placeholder"),
+            .browseMode = TextSettingBrowseMode::SelectFolder,
+            .browseFileExtensions = {}
+        },
+        "live wallpaper folder path dark theme", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.per-monitor-directories.label"),

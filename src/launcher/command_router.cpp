@@ -8,7 +8,7 @@ namespace launcher_command {
   namespace {
 
     constexpr std::array<Action, 16> kActions = {{
-        {ActionId::Calculator, "Calculator", "calc", "calculator"},
+        {ActionId::Calculator, "Calculator", "calc", "calculate"},
         {ActionId::Scheme, "Scheme", "scheme", "palette"},
         {ActionId::Wallpaper, "Wallpaper", "wallpaper", "wallpaper"},
         {ActionId::Variant, "Variant", "variant", "colors"},

@@ -872,8 +872,8 @@ namespace {
       setPadding(Style::spaceSm * scale, Style::spaceMd * scale);
       setMinHeight((Style::controlHeightLg + Style::spaceSm) * scale);
       setRadius(Style::scaledRadiusMd(scale));
-      setFill(colorSpecFromRole(ColorRole::Surface));
-      clearBorder();
+      setFill(colorSpecFromRole(ColorRole::SurfaceVariant, 0.35f));
+      setBorder(colorSpecFromRole(ColorRole::Outline, 0.4f), 1.0f * scale);
 
       constexpr float kIconSizeSm = 28.0f;
       constexpr float kCompactSliderControlHeight = 20.0f;
@@ -1769,7 +1769,7 @@ void AudioTab::doUpdate(Renderer& renderer) {
       std::clamp(showPendingSource ? m_pendingSourceVolume : sourceVolume, 0.0f, sliderMax);
 
   if (m_outputDeviceVolume.slider != nullptr) {
-    m_outputDeviceVolume.slider->setEnabled(sink != nullptr);
+    m_outputDeviceVolume.slider->setEnabled(sink != nullptr && !sink->muted);
     if (!m_outputDeviceVolume.slider->dragging()
         && std::abs(displayedSinkVolume - m_lastSinkVolume) >= kVolumeSyncEpsilon) {
       m_outputDeviceVolume.syncing = true;
@@ -1789,7 +1789,7 @@ void AudioTab::doUpdate(Renderer& renderer) {
   }
 
   if (m_inputDeviceVolume.slider != nullptr) {
-    m_inputDeviceVolume.slider->setEnabled(source != nullptr);
+    m_inputDeviceVolume.slider->setEnabled(source != nullptr && !source->muted);
     if (!m_inputDeviceVolume.slider->dragging()
         && std::abs(displayedSourceVolume - m_lastSourceVolume) >= kVolumeSyncEpsilon) {
       m_inputDeviceVolume.syncing = true;
@@ -1999,7 +1999,7 @@ void AudioTab::rebuildProgramVolumes(Renderer& renderer) {
           [this, sinkId = sink.id](float value) { queueProgramSinkVolume(sinkId, value); },
           [this]() { flushPendingProgramVolumes(true); }
       );
-      row->syncFromNode(sink, player, false, sliderMax, true, players.size());
+      row->syncFromNode(sink, player, false, sliderMax, !sink.muted, players.size());
       m_programRows.push_back(row.get());
       m_programList->addChild(std::move(row));
     }
@@ -2036,7 +2036,7 @@ void AudioTab::syncProgramVolumeRows() {
       continue;
     }
     const MprisPlayerInfo* player = findMatchingPlayer(players, *it->second, it->second->applicationName);
-    row->syncFromNode(*it->second, player, false, sliderMax, true, players.size());
+    row->syncFromNode(*it->second, player, false, sliderMax, !it->second->muted, players.size());
   }
 }
 

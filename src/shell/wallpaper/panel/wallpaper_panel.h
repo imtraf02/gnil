@@ -39,6 +39,11 @@ public:
     DateDesc,
   };
 
+  enum class BrowseMode : std::uint8_t {
+    Images,
+    LiveWallpapers,
+  };
+
   WallpaperPanel(
       WaylandConnection* wayland, ConfigService* config, ThumbnailService* thumbnails, WallpaperScanner* scanner,
       Wallpaper* wallpaper
@@ -132,6 +137,8 @@ private:
   Label* m_title = nullptr;
   Button* m_backButton = nullptr;
   Segmented* m_favoriteThemeSegmented = nullptr;
+  Segmented* m_browseModeTabs = nullptr;
+  BrowseMode m_browseMode = BrowseMode::Images;
   Segmented* m_favoritePaletteSourceSegmented = nullptr;
   Select* m_favoritePaletteDetailSelect = nullptr;
   Select* m_monitorSelect = nullptr;

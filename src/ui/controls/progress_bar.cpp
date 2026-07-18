@@ -32,12 +32,23 @@ void ProgressBar::setFill(const ColorSpec& color) { setFillColor(color); }
 
 void ProgressBar::setFillColor(const ColorSpec& color) {
   m_fillColor = color;
+  m_fillColor2 = std::nullopt;
   applyPalette();
 }
 
 void ProgressBar::setFill(const Color& color) { setFillColor(color); }
 
 void ProgressBar::setFillColor(const Color& color) { setFillColor(fixedColorSpec(color)); }
+
+void ProgressBar::setFillGradient(const ColorSpec& color1, const ColorSpec& color2) {
+  m_fillColor = color1;
+  m_fillColor2 = color2;
+  applyPalette();
+}
+
+void ProgressBar::setFillGradient(const Color& color1, const Color& color2) {
+  setFillGradient(fixedColorSpec(color1), fixedColorSpec(color2));
+}
 
 void ProgressBar::setTrack(const ColorSpec& color) { setTrackColor(color); }
 
@@ -90,8 +101,19 @@ void ProgressBar::applyPalette() {
   m_track->setStyle(trackStyle);
 
   auto fillStyle = m_fill->style();
-  fillStyle.fill = resolveColorSpec(m_fillColor);
-  fillStyle.fillMode = FillMode::Solid;
+  if (m_fillColor2.has_value()) {
+    fillStyle.fillMode = FillMode::LinearGradient;
+    fillStyle.gradientDirection = (m_orientation == ProgressBarOrientation::Vertical) ? GradientDirection::Vertical : GradientDirection::Horizontal;
+    fillStyle.gradientStops = {
+        GradientStop{0.0f, resolveColorSpec(m_fillColor)},
+        GradientStop{1.0f, resolveColorSpec(*m_fillColor2)},
+        GradientStop{1.0f, resolveColorSpec(*m_fillColor2)},
+        GradientStop{1.0f, resolveColorSpec(*m_fillColor2)},
+    };
+  } else {
+    fillStyle.fill = resolveColorSpec(m_fillColor);
+    fillStyle.fillMode = FillMode::Solid;
+  }
   m_fill->setStyle(fillStyle);
 }
 

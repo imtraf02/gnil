@@ -53,6 +53,14 @@ namespace settings {
     bool alwaysShow = false;
   };
 
+  struct ParentCategoryDescriptor {
+    std::string_view id;
+    std::string_view labelKey;
+    std::string_view subtitleKey;
+    std::string_view glyph;
+    std::vector<SettingsSection> subSections;
+  };
+
   struct ToggleSetting {
     bool checked = false;
     bool enabled = true; // false renders the toggle in a disabled/non-interactive state
@@ -302,6 +310,9 @@ namespace settings {
   [[nodiscard]] std::string settingsSectionLabelKey(SettingsSection section);
   [[nodiscard]] std::string_view sectionGlyph(SettingsSection section);
   [[nodiscard]] std::optional<SettingsSection> settingsSectionFromId(std::string_view id);
+  [[nodiscard]] std::span<const ParentCategoryDescriptor> parentCategories();
+  [[nodiscard]] std::optional<ParentCategoryDescriptor> findParentCategory(std::string_view id);
+  [[nodiscard]] std::optional<ParentCategoryDescriptor> findParentForSection(SettingsSection section);
 
   // Returns a permutation of [0, count) that coalesces items sharing a group key so a group renders
   // exactly once, regardless of the order items were declared in. The first-appearance order of group

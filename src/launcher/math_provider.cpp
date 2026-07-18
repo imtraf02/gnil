@@ -130,7 +130,7 @@ std::vector<LauncherResult> MathProvider::query(std::string_view text) const {
   r.id = "math";
   r.title = "= " + output;
   r.subtitle = std::string(text);
-  r.glyphName = "calculator";
+  r.glyphName = "calculate";
   r.score = 10000;
 
   return {std::move(r)};

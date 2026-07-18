@@ -22,6 +22,18 @@ namespace {
     return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" || ext == ".bmp" || ext == ".gif";
   }
 
+  bool hasVideoExtension(const std::filesystem::path& p) {
+    auto ext = p.extension().string();
+    for (char& c : ext) {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return ext == ".mp4" || ext == ".webm" || ext == ".mkv" || ext == ".mov" || ext == ".gif";
+  }
+
+  bool hasWallpaperExtension(const std::filesystem::path& p) {
+    return hasImageExtension(p) || hasVideoExtension(p);
+  }
+
   // Pull the entry's modification time from the cached directory_entry metadata
   // so date sorting later never has to stat again.
   void cacheMtime(const std::filesystem::directory_entry& entry, WallpaperEntry& out) {
@@ -54,7 +66,7 @@ namespace {
       if (!entry.is_regular_file(typeEc) || typeEc) {
         continue;
       }
-      if (!hasImageExtension(entry.path())) {
+      if (!hasWallpaperExtension(entry.path())) {
         continue;
       }
       WallpaperEntry e;
@@ -86,7 +98,7 @@ namespace {
         out.push_back(std::move(e));
         continue;
       }
-      if (entry.is_regular_file(typeEc) && !typeEc && hasImageExtension(entry.path())) {
+      if (entry.is_regular_file(typeEc) && !typeEc && hasWallpaperExtension(entry.path())) {
         WallpaperEntry e;
         e.name = entry.path().filename().string();
         e.absPath = entry.path();

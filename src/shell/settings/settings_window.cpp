@@ -48,10 +48,6 @@ namespace {
   constexpr float kWindowMinWidth = 800.0f;
   constexpr float kWindowMinHeight = 500.0f;
 
-  // How many frames to wait for the settings window to gain keyboard focus before opening a pending
-  // widget-inspector sheet anyway (bounded so a never-focused window can't spin redraws forever).
-  constexpr int kPendingWidgetInspectorFrameBudget = 240;
-
   // Build the {"bar", name, <lane>} path the widget inspector expects, resolving which lane the widget
   // currently lives in (the inspector keys off the bar name at index 1 and the lane at the tail).
   std::vector<std::string>
@@ -458,25 +454,6 @@ void SettingsWindow::open(std::string context) {
   m_lastSceneHeight = 0;
 }
 
-void SettingsWindow::openToBarWidget(std::string barName, std::string widgetName) {
-  clearTransientSettingsState();
-  clearStatusMessage();
-  m_searchQuery.clear();
-  m_selectedSection = "bar";
-  m_selectedBarName = std::move(barName);
-  m_selectedMonitorOverride.clear();
-  m_pendingOpenWidgetInspectorName = std::move(widgetName);
-  m_pendingOpenWidgetInspectorFrames = kPendingWidgetInspectorFrameBudget;
-  m_contentScrollState.offset = 0.0f;
-  m_sidebarScrollState.offset = 0.0f;
-
-  const bool wasOpen = isOpen();
-  open();
-  if (wasOpen && isOpen()) {
-    requestSceneRebuild();
-  }
-}
-
 void SettingsWindow::close() {
   if (!isOpen()) {
     return;
@@ -552,21 +529,11 @@ void SettingsWindow::destroyWindow() {
   m_pendingContentScrollTarget = nullptr;
   m_statusMessage.clear();
   m_statusIsError = false;
-  m_creatingBarName.clear();
-  m_renamingBarName.clear();
-  m_pendingDeleteBarName.clear();
-  m_creatingMonitorOverrideBarName.clear();
-  m_creatingMonitorOverrideMatch.clear();
-  m_renamingMonitorOverrideBarName.clear();
-  m_renamingMonitorOverrideMatch.clear();
-  m_pendingDeleteMonitorOverrideBarName.clear();
-  m_pendingDeleteMonitorOverrideMatch.clear();
   m_pendingResetPageScope.clear();
   m_searchQuery.clear();
   m_selectedSection.clear();
   m_selectedBarName.clear();
   m_selectedMonitorOverride.clear();
-  m_pendingOpenWidgetInspectorName.clear();
   m_editingWidgetName.clear();
   m_editingCapsuleGroupId.clear();
   m_selectedLaneWidgets.clear();
@@ -676,34 +643,7 @@ void SettingsWindow::prepareFrame(bool /*needsUpdate*/, bool needsLayout) {
     m_lastSceneHeight = height;
   }
 
-  maybeOpenPendingWidgetInspector();
   logSettingsProfile("prepareFrame total", totalProfileWatch);
-}
-
-void SettingsWindow::maybeOpenPendingWidgetInspector() {
-  if (m_pendingOpenWidgetInspectorName.empty() || m_surface == nullptr || m_wayland == nullptr || m_config == nullptr) {
-    return;
-  }
-  // A grab popup needs an input serial this window owns. Right after a bar middle-click the latest
-  // serial still belongs to the bar surface; wait until this window holds keyboard focus (whose enter
-  // refreshes the serial) so the compositor accepts the sheet's grab instead of dismissing it.
-  const bool focused = m_wayland->lastKeyboardSurface() == m_surface->wlSurface();
-  if (!focused && m_pendingOpenWidgetInspectorFrames > 0) {
-    --m_pendingOpenWidgetInspectorFrames;
-    m_surface->requestRedraw();
-    return;
-  }
-  std::string widgetName = std::move(m_pendingOpenWidgetInspectorName);
-  m_pendingOpenWidgetInspectorName.clear();
-  // A bar middle-click gives us no press serial the settings surface owns, so the compositor rejects
-  // an xdg_popup grab. Open the sheet without a grab — the window holds keyboard focus and routes
-  // input to it, and an outside click still dismisses it (handled in onPointerEvent).
-  m_pendingEditorSheetNoGrab = true;
-  // The inspector takes a per-lane path {"bar", name, <lane>} (same shape the lane-card gear passes);
-  // resolve which lane this widget lives in so it isn't a 2-element path that mislocates the bar name.
-  openWidgetInspectorEditor(
-      barWidgetLanePath(m_config->config(), m_selectedBarName, widgetName), std::move(widgetName)
-  );
 }
 
 void SettingsWindow::requestSceneRebuild() {
@@ -755,22 +695,12 @@ void SettingsWindow::clearStatusMessage() {
 }
 
 void SettingsWindow::clearTransientSettingsState() {
-  m_pendingOpenWidgetInspectorName.clear();
   m_editingWidgetName.clear();
   m_editingCapsuleGroupId.clear();
   m_selectedLaneWidgets.clear();
   m_renamingWidgetName.clear();
   m_pendingDeleteWidgetName.clear();
   m_pendingDeleteWidgetSettingPath.clear();
-  m_creatingBarName.clear();
-  m_renamingBarName.clear();
-  m_pendingDeleteBarName.clear();
-  m_creatingMonitorOverrideBarName.clear();
-  m_creatingMonitorOverrideMatch.clear();
-  m_renamingMonitorOverrideBarName.clear();
-  m_renamingMonitorOverrideMatch.clear();
-  m_pendingDeleteMonitorOverrideBarName.clear();
-  m_pendingDeleteMonitorOverrideMatch.clear();
   m_pendingResetPageScope.clear();
   if (m_widgetAddPopup != nullptr && m_widgetAddPopup->isOpen()) {
     m_widgetAddPopup->close();
@@ -1001,28 +931,13 @@ void SettingsWindow::onKeyboardEvent(const KeyboardEvent& event) {
         || !m_selectedLaneWidgets.empty()
         || !m_renamingWidgetName.empty()
         || !m_pendingDeleteWidgetName.empty()
-        || !m_pendingDeleteWidgetSettingPath.empty()
-        || !m_creatingBarName.empty()
-        || !m_renamingBarName.empty()
-        || !m_pendingDeleteBarName.empty()
-        || !m_creatingMonitorOverrideBarName.empty()
-        || !m_renamingMonitorOverrideBarName.empty()
-        || !m_pendingDeleteMonitorOverrideBarName.empty()) {
+        || !m_pendingDeleteWidgetSettingPath.empty()) {
       m_editingWidgetName.clear();
       m_editingCapsuleGroupId.clear();
       m_selectedLaneWidgets.clear();
       m_renamingWidgetName.clear();
       m_pendingDeleteWidgetName.clear();
       m_pendingDeleteWidgetSettingPath.clear();
-      m_creatingBarName.clear();
-      m_renamingBarName.clear();
-      m_pendingDeleteBarName.clear();
-      m_creatingMonitorOverrideBarName.clear();
-      m_creatingMonitorOverrideMatch.clear();
-      m_renamingMonitorOverrideBarName.clear();
-      m_renamingMonitorOverrideMatch.clear();
-      m_pendingDeleteMonitorOverrideBarName.clear();
-      m_pendingDeleteMonitorOverrideMatch.clear();
       requestRebuild();
       return;
     }

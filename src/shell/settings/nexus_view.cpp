@@ -1879,13 +1879,6 @@ void NexusView::addConfigPage() {
         showError("");
         requestContentRefresh();
       },
-      .openWidgetInspectorEditor = [this](std::vector<std::string>, std::string) {
-        m_route.setPage(NexusPage::Panels);
-        m_route.setSelectedControl("bar");
-        if (m_requestPip) {
-          m_requestPip();
-        }
-      },
       .openCapsuleGroupEditor = [this](std::vector<std::string>, std::string) {
         m_route.setPage(NexusPage::Panels);
         m_route.setSelectedControl("bar");

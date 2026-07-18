@@ -6,6 +6,7 @@
 #include "render/core/renderer.h"
 #include "time/time_format.h"
 #include "ui/builders.h"
+#include "ui/controls/button.h"
 #include "ui/palette.h"
 
 #include <algorithm>
@@ -37,6 +38,26 @@ namespace {
       return info.vendor;
     }
     return i18n::tr("control-center.power.unknown-device");
+  }
+
+  void applyProfileButtonPalette(Button* btn, std::string_view profile) {
+    if (btn == nullptr) {
+      return;
+    }
+    ColorRole role = ColorRole::Primary;
+    if (profile == "performance") {
+      role = ColorRole::Error;
+    } else if (profile == "power-saver") {
+      role = ColorRole::Tertiary;
+    }
+    auto palette = Button::defaultPalette(ButtonVariant::TabActive);
+    palette.normal.bg = colorSpecFromRole(role);
+    palette.normal.label = colorSpecFromRole(ColorRole::OnPrimary);
+    palette.hover.bg = colorSpecFromRole(role, 0.9f);
+    palette.hover.label = colorSpecFromRole(ColorRole::OnPrimary);
+    palette.pressed.bg = colorSpecFromRole(role, 0.8f);
+    palette.pressed.label = colorSpecFromRole(ColorRole::OnPrimary);
+    btn->setCustomPalette(palette);
   }
 
 } // namespace
@@ -362,7 +383,14 @@ void PowerTab::syncBatteryStatus() {
   if (m_levelBar != nullptr) {
     m_levelBar->setProgress(static_cast<float>(std::clamp(state.percentage / 100.0, 0.0, 1.0)));
     const bool low = state.state == BatteryState::Discharging && state.percentage <= 20.0;
-    m_levelBar->setFill(colorSpecFromRole(low ? ColorRole::Error : ColorRole::Primary));
+    const bool charging = state.state == BatteryState::Charging || state.state == BatteryState::PendingCharge;
+    if (low) {
+      m_levelBar->setFillGradient(colorSpecFromRole(ColorRole::Error), fixedColorSpec(rgba(0.95f, 0.35f, 0.1f, 1.0f)));
+    } else if (charging) {
+      m_levelBar->setFillGradient(colorSpecFromRole(ColorRole::Tertiary), colorSpecFromRole(ColorRole::Primary));
+    } else {
+      m_levelBar->setFillGradient(colorSpecFromRole(ColorRole::Primary), colorSpecFromRole(ColorRole::Secondary));
+    }
   }
 
   const bool charging = state.state == BatteryState::Charging || state.state == BatteryState::PendingCharge;
@@ -402,6 +430,15 @@ void PowerTab::syncPowerProfiles() {
       m_syncingProfiles = true;
       m_profiles->setSelectedIndex(index);
       m_syncingProfiles = false;
+    }
+    for (std::size_t i = 0; i < m_profileOrder.size(); ++i) {
+      if (auto* btn = m_profiles->optionButton(i)) {
+        if (i == index) {
+          applyProfileButtonPalette(btn, m_profileOrder[i]);
+        } else {
+          btn->setCustomPalette(Button::defaultPalette(ButtonVariant::Tab));
+        }
+      }
     }
   }
 
@@ -481,12 +518,22 @@ void PowerTab::rebuildPeripherals() {
               .ellipsize = TextEllipsize::End,
               .flexGrow = 1.0f,
           }),
+          ui::progressBar({
+              .out = &entry.bar,
+              .fill = colorSpecFromRole(ColorRole::Primary),
+              .track = colorSpecFromRole(ColorRole::Surface),
+              .radius = Style::sliderTrackHeight * scale * 0.4f * 0.5f,
+              .progress = 0.0f,
+              .width = 60.0f * scale,
+              .height = Style::sliderTrackHeight * scale * 0.4f,
+          }),
           ui::label({
               .out = &entry.pctLabel,
               .text = "",
               .fontSize = Style::fontSizeCaption * scale,
               .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
               .minWidth = Style::controlHeightSm * scale,
+              .textAlign = TextAlign::End,
           })
       );
       m_peripheralsList->addChild(std::move(row));
@@ -497,8 +544,14 @@ void PowerTab::rebuildPeripherals() {
   m_peripheralsCard->setVisible(!peripherals.empty());
 
   for (std::size_t i = 0; i < m_peripheralRows.size() && i < peripherals.size(); ++i) {
+    const auto pct = peripherals[i].state.percentage;
     if (m_peripheralRows[i].pctLabel != nullptr) {
-      m_peripheralRows[i].pctLabel->setText(std::format("{:.0f}%", peripherals[i].state.percentage));
+      m_peripheralRows[i].pctLabel->setText(std::format("{:.0f}%", pct));
+    }
+    if (m_peripheralRows[i].bar != nullptr) {
+      m_peripheralRows[i].bar->setProgress(static_cast<float>(pct / 100.0));
+      const bool low = pct <= 20.0;
+      m_peripheralRows[i].bar->setFill(colorSpecFromRole(low ? ColorRole::Error : ColorRole::Primary));
     }
   }
 }

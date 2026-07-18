@@ -59,6 +59,9 @@ public:
   // Explicit fixed color.
   void setBorder(const Color& color, float width);
   void clearBorder();
+  void setShadow(const ColorSpec& color, float radius, float offsetX, float offsetY);
+  void setShadow(const Color& color, float radius, float offsetX, float offsetY);
+  void clearShadow();
   void setSoftness(float softness);
 
   // Default app card chrome: filled surface variant with a soft outline.
@@ -124,14 +127,20 @@ public:
 
 private:
   void ensureBackground();
+  void ensureShadow();
   void applyPalette();
   LayoutSize runLayout(
       Renderer& renderer, const LayoutConstraints& constraints, bool arrangeChildren, bool ignoreExplicitSize = false
   );
 
   RectNode* m_background = nullptr;
+  RectNode* m_shadow = nullptr;
   ColorSpec m_fill = clearColorSpec();
   ColorSpec m_border = clearColorSpec();
+  ColorSpec m_shadowColor = clearColorSpec();
+  float m_shadowRadius = 0.0f;
+  float m_shadowOffsetX = 0.0f;
+  float m_shadowOffsetY = 0.0f;
   Signal<>::ScopedConnection m_paletteConn;
   FlexDirection m_direction = FlexDirection::Horizontal;
   bool m_wrap = false;

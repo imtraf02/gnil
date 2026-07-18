@@ -1,6 +1,7 @@
 #include "render/core/thumbnail_service.h"
 
 #include "core/log.h"
+#include "core/process/process.h"
 #include "render/core/image_decoder.h"
 #include "render/core/texture_manager.h"
 #include "util/file_utils.h"
@@ -539,7 +540,56 @@ void ThumbnailService::workerLoop() {
       }
     }
 
-    auto bytes = FileUtils::readBinaryFile(path);
+    bool isVideo = false;
+    {
+      const std::string ext = std::filesystem::path(path).extension().string();
+      std::string lowerExt;
+      lowerExt.reserve(ext.size());
+      for (char ch : ext) {
+        lowerExt.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+      }
+      isVideo = (lowerExt == ".mp4" || lowerExt == ".webm" || lowerExt == ".mkv" || lowerExt == ".mov");
+    }
+
+    std::vector<std::uint8_t> bytes;
+    std::filesystem::path tempPngPath;
+    std::filesystem::path tempDir;
+
+    if (isVideo) {
+      if (process::commandExists("mpv")) {
+        const std::string hashStr = hex64(fnv1a64(path));
+        tempDir = thumbnailCacheDir() / ("tmp-" + hashStr);
+        std::error_code ec;
+        std::filesystem::create_directories(tempDir, ec);
+        if (!ec) {
+          std::vector<std::string> args = {
+              "mpv",
+              "--no-config",
+              "--no-audio",
+              "--really-quiet",
+              "--start=37.5%",
+              "--frames=1",
+              "--vo=image",
+              "--vo-image-format=png",
+              "--vo-image-outdir=" + tempDir.string(),
+              path
+          };
+          process::RunResult runResult = process::runSync(args);
+          if (runResult.exitCode == 0) {
+            tempPngPath = tempDir / "00000001.png";
+            bytes = FileUtils::readBinaryFile(tempPngPath.string());
+          }
+        }
+      }
+    } else {
+      bytes = FileUtils::readBinaryFile(path);
+    }
+
+    if (!tempDir.empty()) {
+      std::error_code removeEc;
+      std::filesystem::remove_all(tempDir, removeEc);
+    }
+
     if (bytes.empty()) {
       result.failed = true;
       pushResult(std::move(result));

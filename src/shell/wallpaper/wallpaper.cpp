@@ -1014,7 +1014,7 @@ Wallpaper::selectLiveWallpaperVideo(std::string_view outputSelector) const {
 }
 
 void Wallpaper::syncLiveWallpaperPalette() {
-  if (m_config == nullptr || m_config->config().theme.source != PaletteSource::Wallpaper) {
+  if (m_config == nullptr) {
     return;
   }
   const std::string previousIdentity = m_livePaletteSource.has_value() ? m_livePaletteSource->identity : std::string{};
@@ -1032,6 +1032,16 @@ Wallpaper::livePaletteSource(std::string_view outputSelector) {
     return m_livePaletteSource;
   }
   return std::nullopt;
+}
+
+std::string Wallpaper::liveWallpaperFallbackFrame() const {
+  if (!m_livePaletteSource.has_value() || m_livePaletteSource->framePaths.empty()) {
+    return {};
+  }
+  if (m_livePaletteSource->framePaths.size() > 1) {
+    return m_livePaletteSource->framePaths[1];
+  }
+  return m_livePaletteSource->framePaths[0];
 }
 
 void Wallpaper::ensureLiveWallpaperPalette(std::string_view outputSelector) {
@@ -1185,6 +1195,12 @@ void Wallpaper::completeLivePaletteExtraction(
       .identity = std::move(identity),
       .framePaths = std::move(framePaths),
   };
+
+  if (m_config != nullptr && !m_livePaletteSource->framePaths.empty()) {
+    const std::string fallbackFrame = m_livePaletteSource->framePaths.size() > 1 ? m_livePaletteSource->framePaths[1] : m_livePaletteSource->framePaths[0];
+    m_config->setWallpaperPath(std::nullopt, fallbackFrame);
+  }
+
   m_livePaletteChanged.emit();
 }
 

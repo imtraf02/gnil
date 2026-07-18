@@ -73,7 +73,6 @@ namespace settings {
     std::function<void()> openIdleBehaviorCreateEditor;
     std::function<void(std::size_t)> openNotificationFilterEntryEditor;
     std::function<void()> openNotificationFilterCreateEditor;
-    std::function<void(std::vector<std::string> laneListPath, std::string widgetName)> openWidgetInspectorEditor;
     std::function<void(std::vector<std::string> laneListPath, std::string groupId)> openCapsuleGroupEditor;
 
     std::function<void(Label*)> registerIdleLiveStatusLabel;

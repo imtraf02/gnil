@@ -66,6 +66,9 @@ overview_enabled = true
 directory = ""
 directory_light = ""
 directory_dark = ""
+live_wallpaper_directory = ""
+live_wallpaper_directory_light = ""
+live_wallpaper_directory_dark = ""
 per_monitor_directories = false
 recursive = false
 set_for_all_monitors = true
@@ -276,6 +279,9 @@ height = 720.0
       copyNode(document, {"settings", "wallpaper", "directory"}, runtime, {"wallpaper"}, "directory");
       copyNode(document, {"settings", "wallpaper", "directory_light"}, runtime, {"wallpaper"}, "directory_light");
       copyNode(document, {"settings", "wallpaper", "directory_dark"}, runtime, {"wallpaper"}, "directory_dark");
+      copyNode(document, {"settings", "wallpaper", "live_wallpaper_directory"}, runtime, {"wallpaper"}, "live_wallpaper_directory");
+      copyNode(document, {"settings", "wallpaper", "live_wallpaper_directory_light"}, runtime, {"wallpaper"}, "live_wallpaper_directory_light");
+      copyNode(document, {"settings", "wallpaper", "live_wallpaper_directory_dark"}, runtime, {"wallpaper"}, "live_wallpaper_directory_dark");
       copyNode(document, {"settings", "wallpaper", "per_monitor_directories"}, runtime, {"wallpaper"}, "per_monitor_directories");
       copyNode(document, {"settings", "wallpaper", "fill_mode"}, runtime, {"wallpaper"}, "fill_mode");
       copyNode(document, {"settings", "wallpaper", "fill_color"}, runtime, {"wallpaper"}, "fill_color");
@@ -338,6 +344,26 @@ height = 720.0
       copyNode(document, {"settings", "system_monitor", "memory_poll_seconds"}, runtime, {"system", "monitor"}, "memory_poll_seconds");
       copyNode(document, {"settings", "system_monitor", "network_poll_seconds"}, runtime, {"system", "monitor"}, "network_poll_seconds");
       copyNode(document, {"settings", "system_monitor", "disk_poll_seconds"}, runtime, {"system", "monitor"}, "disk_poll_seconds");
+
+      copyNode(document, {"settings", "bar", "enabled"}, runtime, {"bar", "default"}, "enabled");
+      copyNode(document, {"settings", "bar", "show_on_workspace_switch"}, runtime, {"bar", "default"}, "show_on_workspace_switch");
+      copyNode(document, {"settings", "bar", "layer"}, runtime, {"bar", "default"}, "layer");
+      copyNode(document, {"settings", "bar", "scale"}, runtime, {"bar", "default"}, "scale");
+      copyNode(document, {"settings", "bar", "font_family"}, runtime, {"bar", "default"}, "font_family");
+      copyNode(document, {"settings", "bar", "font_weight"}, runtime, {"bar", "default"}, "font_weight");
+      copyNode(document, {"settings", "bar", "color"}, runtime, {"bar", "default"}, "color");
+      copyNode(document, {"settings", "bar", "icon_color"}, runtime, {"bar", "default"}, "icon_color");
+      copyNode(document, {"settings", "bar", "hover_highlight"}, runtime, {"bar", "default"}, "hover_highlight");
+      copyNode(document, {"settings", "bar", "capsule"}, runtime, {"bar", "default"}, "capsule");
+      copyNode(document, {"settings", "bar", "capsule_thickness"}, runtime, {"bar", "default"}, "capsule_thickness");
+      copyNode(document, {"settings", "bar", "capsule_radius"}, runtime, {"bar", "default"}, "capsule_radius");
+      copyNode(document, {"settings", "bar", "capsule_fill"}, runtime, {"bar", "default"}, "capsule_fill");
+      copyNode(document, {"settings", "bar", "capsule_foreground"}, runtime, {"bar", "default"}, "capsule_foreground");
+      copyNode(document, {"settings", "bar", "capsule_border"}, runtime, {"bar", "default"}, "capsule_border");
+      copyNode(document, {"settings", "bar", "capsule_padding"}, runtime, {"bar", "default"}, "capsule_padding");
+      copyNode(document, {"settings", "bar", "capsule_opacity"}, runtime, {"bar", "default"}, "capsule_opacity");
+      copyNode(document, {"settings", "bar", "capsule_group"}, runtime, {"bar", "default"}, "capsule_group");
+      copyNode(document, {"settings", "bar", "dead_zone"}, runtime, {"bar", "default"}, "dead_zone");
     }
 
     void copyCommonFromRuntime(const toml::table& runtime, toml::table& document) {
@@ -350,6 +376,9 @@ height = 720.0
       copyNode(runtime, {"wallpaper", "directory"}, document, {"settings", "wallpaper"}, "directory");
       copyNode(runtime, {"wallpaper", "directory_light"}, document, {"settings", "wallpaper"}, "directory_light");
       copyNode(runtime, {"wallpaper", "directory_dark"}, document, {"settings", "wallpaper"}, "directory_dark");
+      copyNode(runtime, {"wallpaper", "live_wallpaper_directory"}, document, {"settings", "wallpaper"}, "live_wallpaper_directory");
+      copyNode(runtime, {"wallpaper", "live_wallpaper_directory_light"}, document, {"settings", "wallpaper"}, "live_wallpaper_directory_light");
+      copyNode(runtime, {"wallpaper", "live_wallpaper_directory_dark"}, document, {"settings", "wallpaper"}, "live_wallpaper_directory_dark");
       copyNode(runtime, {"wallpaper", "per_monitor_directories"}, document, {"settings", "wallpaper"}, "per_monitor_directories");
       copyNode(runtime, {"wallpaper", "fill_mode"}, document, {"settings", "wallpaper"}, "fill_mode");
       copyNode(runtime, {"wallpaper", "fill_color"}, document, {"settings", "wallpaper"}, "fill_color");
@@ -409,6 +438,26 @@ height = 720.0
       copyNode(runtime, {"system", "monitor", "memory_poll_seconds"}, document, {"settings", "system_monitor"}, "memory_poll_seconds");
       copyNode(runtime, {"system", "monitor", "network_poll_seconds"}, document, {"settings", "system_monitor"}, "network_poll_seconds");
       copyNode(runtime, {"system", "monitor", "disk_poll_seconds"}, document, {"settings", "system_monitor"}, "disk_poll_seconds");
+
+      copyNode(runtime, {"bar", "default", "enabled"}, document, {"settings", "bar"}, "enabled");
+      copyNode(runtime, {"bar", "default", "show_on_workspace_switch"}, document, {"settings", "bar"}, "show_on_workspace_switch");
+      copyNode(runtime, {"bar", "default", "layer"}, document, {"settings", "bar"}, "layer");
+      copyNode(runtime, {"bar", "default", "scale"}, document, {"settings", "bar"}, "scale");
+      copyNode(runtime, {"bar", "default", "font_family"}, document, {"settings", "bar"}, "font_family");
+      copyNode(runtime, {"bar", "default", "font_weight"}, document, {"settings", "bar"}, "font_weight");
+      copyNode(runtime, {"bar", "default", "color"}, document, {"settings", "bar"}, "color");
+      copyNode(runtime, {"bar", "default", "icon_color"}, document, {"settings", "bar"}, "icon_color");
+      copyNode(runtime, {"bar", "default", "hover_highlight"}, document, {"settings", "bar"}, "hover_highlight");
+      copyNode(runtime, {"bar", "default", "capsule"}, document, {"settings", "bar"}, "capsule");
+      copyNode(runtime, {"bar", "default", "capsule_thickness"}, document, {"settings", "bar"}, "capsule_thickness");
+      copyNode(runtime, {"bar", "default", "capsule_radius"}, document, {"settings", "bar"}, "capsule_radius");
+      copyNode(runtime, {"bar", "default", "capsule_fill"}, document, {"settings", "bar"}, "capsule_fill");
+      copyNode(runtime, {"bar", "default", "capsule_foreground"}, document, {"settings", "bar"}, "capsule_foreground");
+      copyNode(runtime, {"bar", "default", "capsule_border"}, document, {"settings", "bar"}, "capsule_border");
+      copyNode(runtime, {"bar", "default", "capsule_padding"}, document, {"settings", "bar"}, "capsule_padding");
+      copyNode(runtime, {"bar", "default", "capsule_opacity"}, document, {"settings", "bar"}, "capsule_opacity");
+      copyNode(runtime, {"bar", "default", "capsule_group"}, document, {"settings", "bar"}, "capsule_group");
+      copyNode(runtime, {"bar", "default", "dead_zone"}, document, {"settings", "bar"}, "dead_zone");
     }
 
     std::vector<std::string> stringArrayAt(const toml::table& root, Path path) {

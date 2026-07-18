@@ -13,6 +13,7 @@
 #include "shell/control_center/tab.h"
 #include "shell/panel/panel_manager.h"
 #include "ui/builders.h"
+#include "ui/controls/button.h"
 #include "ui/controls/context_menu.h"
 #include "ui/controls/context_menu_popup.h"
 #include "ui/visuals/audio_visualizer.h"
@@ -67,6 +68,18 @@ namespace {
 
   ButtonVariant toggleVariant(bool active) { return active ? ButtonVariant::Primary : ButtonVariant::Ghost; }
   constexpr int kVisualizerBandCount = 32;
+
+  Color trackDominantColor(std::string_view title, std::string_view artist) {
+    if (title.empty()) {
+      return colorForRole(ColorRole::Primary);
+    }
+    std::size_t hash = std::hash<std::string_view>{}(title);
+    if (!artist.empty()) {
+      hash ^= std::hash<std::string_view>{}(artist) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    }
+    const float hue = static_cast<float>(hash % 360);
+    return hsl(hue, 0.8f, 0.6f, 1.0f);
+  }
 
 } // namespace
 
@@ -886,6 +899,36 @@ void MediaTab::refresh(Renderer& renderer) {
       m_trackAlbum->setVisible(!player.album.empty());
     }
 
+    if (!player.title.empty()) {
+      const Color glowColor = trackDominantColor(player.title, joinArtists(player.artists));
+      if (m_artworkRow != nullptr) {
+        m_artworkRow->setShadow(glowColor, 24.0f * contentScale(), 0.0f, 6.0f * contentScale());
+      }
+      if (m_visualizerSpectrum != nullptr) {
+        m_visualizerSpectrum->setGradient(glowColor, colorForRole(ColorRole::Secondary));
+      }
+      if (m_playPauseButton != nullptr) {
+        auto palette = Button::defaultPalette(ButtonVariant::Primary);
+        palette.normal.bg = fixedColorSpec(glowColor);
+        palette.normal.label = fixedColorSpec(readableTextColorForBackground(glowColor));
+        palette.hover.bg = fixedColorSpec(brighten(glowColor, 0.9f));
+        palette.hover.label = palette.normal.label;
+        palette.pressed.bg = fixedColorSpec(brighten(glowColor, 0.8f));
+        palette.pressed.label = palette.normal.label;
+        m_playPauseButton->setCustomPalette(palette);
+      }
+    } else {
+      if (m_artworkRow != nullptr) {
+        m_artworkRow->clearShadow();
+      }
+      if (m_visualizerSpectrum != nullptr) {
+        m_visualizerSpectrum->setGradient(colorForRole(ColorRole::Secondary), colorForRole(ColorRole::Tertiary));
+      }
+      if (m_playPauseButton != nullptr) {
+        m_playPauseButton->setVariant(ButtonVariant::Primary);
+      }
+    }
+
     const std::string resolvedArtUrl = effectiveArtUrl(player);
     const std::string artPath = resolveArtworkSource(
         m_httpClient, m_pendingArtDownloads, resolvedArtUrl,
@@ -980,6 +1023,15 @@ void MediaTab::refresh(Renderer& renderer) {
   }
   clearArt(renderer);
   m_lastArtPath.clear();
+  if (m_artworkRow != nullptr) {
+    m_artworkRow->clearShadow();
+  }
+  if (m_visualizerSpectrum != nullptr) {
+    m_visualizerSpectrum->setGradient(colorForRole(ColorRole::Secondary), colorForRole(ColorRole::Tertiary));
+  }
+  if (m_playPauseButton != nullptr) {
+    m_playPauseButton->setVariant(ButtonVariant::Primary);
+  }
   m_syncingProgress = true;
   m_progressSlider->setEnabled(false);
   m_progressSlider->setRange(0.0f, 100.0f);

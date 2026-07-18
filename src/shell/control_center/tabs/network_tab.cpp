@@ -100,26 +100,33 @@ public:
         })
     );
 
-    addChild(
+    auto titleBox = ui::row({
+        .align = FlexAlign::Center,
+        .gap = Style::spaceXs * scale,
+        .flexGrow = 1.0f,
+    });
+
+    titleBox->addChild(
         ui::label({
             .out = &m_title,
             .text = m_ap.ssid,
             .fontSize = Style::fontSizeBody * scale,
             .fontWeight = m_ap.active ? FontWeight::Bold : FontWeight::Normal,
             .color = colorSpecFromRole(ColorRole::OnSurface),
-            .flexGrow = 1.0f,
         })
     );
 
     if (m_ap.secured) {
-      addChild(
+      titleBox->addChild(
           ui::glyph({
               .glyph = "lock",
-              .glyphSize = Style::baseGlyphSize * scale,
-              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+              .glyphSize = (Style::baseGlyphSize - 4.0f) * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.7f),
           })
       );
     }
+
+    addChild(std::move(titleBox));
 
     addChild(
         ui::label({
@@ -134,7 +141,7 @@ public:
     auto action = ui::button({
         .out = &m_actionButton,
         .glyphSize = Style::baseGlyphSize * scale,
-        .variant = ButtonVariant::Ghost,
+        .variant = m_ap.active ? ButtonVariant::Ghost : ButtonVariant::Ghost,
         .padding = Style::spaceXs * scale,
         .radius = Style::scaledRadiusSm(scale),
         .opacity = actionOpacity,
@@ -216,6 +223,24 @@ private:
       if (m_title != nullptr) {
         m_title->setColor(colorSpecFromRole(ColorRole::OnPrimary));
       }
+      if (m_signalGlyph != nullptr) {
+        m_signalGlyph->setColor(colorSpecFromRole(ColorRole::OnPrimary));
+      }
+      if (m_actionButton != nullptr && m_actionButton->glyph() != nullptr) {
+        m_actionButton->glyph()->setColor(colorSpecFromRole(ColorRole::OnPrimary));
+      }
+    } else if (m_ap.active) {
+      setFill(colorSpecFromRole(ColorRole::Primary, 0.08f));
+      setBorder(colorSpecFromRole(ColorRole::Primary, 0.4f), Style::borderWidth);
+      if (m_title != nullptr) {
+        m_title->setColor(colorSpecFromRole(ColorRole::Primary));
+      }
+      if (m_signalGlyph != nullptr) {
+        m_signalGlyph->setColor(colorSpecFromRole(ColorRole::Primary));
+      }
+      if (m_actionButton != nullptr && m_actionButton->glyph() != nullptr) {
+        m_actionButton->glyph()->setColor(colorSpecFromRole(ColorRole::Primary));
+      }
     } else {
       setFill(colorSpecFromRole(ColorRole::Surface));
       if (hov) {
@@ -225,6 +250,12 @@ private:
       }
       if (m_title != nullptr) {
         m_title->setColor(colorSpecFromRole(ColorRole::OnSurface));
+      }
+      if (m_signalGlyph != nullptr) {
+        m_signalGlyph->setColor(colorSpecFromRole(ColorRole::OnSurface));
+      }
+      if (m_actionButton != nullptr && m_actionButton->glyph() != nullptr) {
+        m_actionButton->glyph()->setColor(colorSpecFromRole(ColorRole::OnSurfaceVariant));
       }
     }
   }
@@ -349,16 +380,34 @@ namespace {
         if (m_title != nullptr) {
           m_title->setColor(colorSpecFromRole(ColorRole::OnPrimary));
         }
+        if (m_checkButton != nullptr && m_checkButton->glyph() != nullptr) {
+          m_checkButton->glyph()->setColor(colorSpecFromRole(ColorRole::OnPrimary));
+        }
         return;
       }
-      setFill(colorSpecFromRole(ColorRole::Surface));
-      if (hov) {
-        setBorder(colorSpecFromRole(ColorRole::Hover), Style::borderWidth);
+
+      if (m_vpn.active) {
+        setFill(colorSpecFromRole(ColorRole::Primary, 0.08f));
+        setBorder(colorSpecFromRole(ColorRole::Primary, 0.4f), Style::borderWidth);
+        if (m_title != nullptr) {
+          m_title->setColor(colorSpecFromRole(ColorRole::Primary));
+        }
+        if (m_checkButton != nullptr && m_checkButton->glyph() != nullptr) {
+          m_checkButton->glyph()->setColor(colorSpecFromRole(ColorRole::Primary));
+        }
       } else {
-        clearBorder();
-      }
-      if (m_title != nullptr) {
-        m_title->setColor(colorSpecFromRole(ColorRole::OnSurface));
+        setFill(colorSpecFromRole(ColorRole::Surface));
+        if (hov) {
+          setBorder(colorSpecFromRole(ColorRole::Hover), Style::borderWidth);
+        } else {
+          clearBorder();
+        }
+        if (m_title != nullptr) {
+          m_title->setColor(colorSpecFromRole(ColorRole::OnSurface));
+        }
+        if (m_checkButton != nullptr && m_checkButton->glyph() != nullptr) {
+          m_checkButton->glyph()->setColor(colorSpecFromRole(ColorRole::OnSurfaceVariant));
+        }
       }
     }
 
@@ -416,6 +465,24 @@ std::unique_ptr<Flex> NetworkTab::create() {
           .fontWeight = FontWeight::Bold,
           .color = colorSpecFromRole(ColorRole::OnSurface),
       }),
+      ui::row({
+          .out = &m_connectedBadge,
+          .align = FlexAlign::Center,
+          .paddingV = 2.0f * scale,
+          .paddingH = 6.0f * scale,
+          .fill = colorSpecFromRole(ColorRole::Primary, 0.15f),
+          .radius = Style::scaledRadiusSm(scale),
+          .border = colorSpecFromRole(ColorRole::Primary, 0.4f),
+          .borderWidth = Style::borderWidth,
+          .visible = false,
+      },
+          ui::label({
+              .text = "Connected",
+              .fontSize = (Style::fontSizeCaption - 2.0f) * scale,
+              .fontWeight = FontWeight::Bold,
+              .color = colorSpecFromRole(ColorRole::Primary),
+          })
+      ),
       ui::label({
           .out = &m_currentDetail,
           .fontSize = Style::fontSizeCaption * scale,
@@ -453,6 +520,7 @@ std::unique_ptr<Flex> NetworkTab::create() {
       .visible = false,
       .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
         applySectionCardStyle(card, scale, opacity, borders);
+        card.setBorder(colorSpecFromRole(ColorRole::Primary, 0.5f), Style::borderWidth);
       },
   });
 
@@ -499,12 +567,14 @@ std::unique_ptr<Flex> NetworkTab::create() {
       ui::button({
           .text = i18n::tr("control-center.network.connect"),
           .variant = ButtonVariant::Default,
+          .radius = Style::scaledRadiusMd(scale),
           .onClick =
               [this]() { submitPasswordPrompt(m_passwordInput != nullptr ? m_passwordInput->value() : std::string{}); },
       }),
       ui::button({
           .text = i18n::tr("common.actions.cancel"),
           .variant = ButtonVariant::Ghost,
+          .radius = Style::scaledRadiusMd(scale),
           .onClick = [this]() { cancelPasswordPrompt(); },
       })
   );
@@ -572,6 +642,7 @@ void NetworkTab::onClose() {
   m_currentCard = nullptr;
   m_currentTitle = nullptr;
   m_currentDetail = nullptr;
+  m_connectedBadge = nullptr;
   m_passwordCard = nullptr;
   m_passwordTitle = nullptr;
   m_passwordInput = nullptr;
@@ -692,6 +763,21 @@ void NetworkTab::syncCurrentCard() {
   }
   m_currentTitle->setText(currentTitle(s));
   m_currentDetail->setText(currentDetail(s));
+
+  if (m_currentCard != nullptr) {
+    if (s.connected) {
+      m_currentCard->setFill(colorSpecFromRole(ColorRole::Primary, 0.08f));
+      m_currentCard->setBorder(colorSpecFromRole(ColorRole::Primary, 0.4f), Style::borderWidth);
+      m_currentTitle->setColor(colorSpecFromRole(ColorRole::Primary));
+    } else {
+      applySectionCardStyle(*m_currentCard, contentScale(), panelCardOpacity(), panelBordersEnabled());
+      m_currentTitle->setColor(colorSpecFromRole(ColorRole::OnSurface));
+    }
+  }
+  if (m_connectedBadge != nullptr) {
+    m_connectedBadge->setVisible(s.connected);
+  }
+
   if (m_disconnectButton != nullptr) {
     const bool canReconnectWired = !s.connected && m_network->canActivateWiredConnection();
     m_disconnectButton->setVisible(s.connected || canReconnectWired || m_actionPending);

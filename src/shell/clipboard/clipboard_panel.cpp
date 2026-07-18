@@ -340,7 +340,7 @@ namespace {
       m_meta->setText(formatTimeAgo(entry.capturedAt) + "  •  " + formatBytes(entry.byteSize));
 
       if (m_glyph != nullptr) {
-        m_glyph->setGlyph(m_isImage ? "photo" : "file-text");
+        m_glyph->setGlyph(m_isImage ? "photo" : "description");
       }
 
       Color parsedColor;

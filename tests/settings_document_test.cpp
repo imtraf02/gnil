@@ -89,6 +89,41 @@ int main() {
     );
   }
 
+  // Test capsule_group mapping
+  {
+    toml::table group;
+    group.insert_or_assign("id", "g1");
+    toml::array members;
+    members.push_back("launcher");
+    members.push_back("workspaces");
+    group.insert_or_assign("members", std::move(members));
+    toml::array groups;
+    groups.push_back(std::move(group));
+    auto* settingsBar = document.get_as<toml::table>("settings")->get_as<toml::table>("bar");
+    settingsBar->insert_or_assign("capsule_group", std::move(groups));
+
+    runtime = gnil::settings_document::toRuntimeOverrides(document);
+    ok &= check(
+        runtime.has_value()
+            && (*runtime)["bar"]["default"]["capsule_group"].as_array() != nullptr
+            && (*runtime)["bar"]["default"]["capsule_group"].as_array()->size() == 1,
+        "capsule_group survives public-document conversion"
+    );
+
+    if (runtime.has_value()) {
+      auto* runtimeGroups = (*runtime)["bar"]["default"]["capsule_group"].as_array();
+      if (runtimeGroups != nullptr && runtimeGroups->size() == 1) {
+        auto* firstGroup = (*runtimeGroups)[0].as_table();
+        if (firstGroup != nullptr) {
+          firstGroup->insert_or_assign("opacity", 0.5);
+        }
+      }
+      gnil::settings_document::syncFromRuntimeOverrides(document, *runtime);
+      const auto persistedOpacity = document["settings"]["bar"]["capsule_group"][0]["opacity"].value<double>();
+      ok &= check(persistedOpacity.has_value() && near(*persistedOpacity, 0.5), "capsule_group changes sync back correctly");
+    }
+  }
+
   document.insert_or_assign("schema_version", std::int64_t{99});
   std::string error;
   ok &= check(

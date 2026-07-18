@@ -68,7 +68,7 @@ public:
 
 private:
   enum ActiveCategoryType { All, RecentlyUsed, Category };
-  enum class Presentation { Applications, ProviderOverview, Wallpaper, Emoji, Detail };
+  enum class Presentation { Applications, ProviderOverview, Wallpaper, LiveWallpaper, Emoji, Detail };
 
   struct CategoryFilterSlot {
     ActiveCategoryType type;
@@ -105,6 +105,7 @@ private:
   void syncLauncherViewLayout(Renderer* renderer = nullptr);
   [[nodiscard]] bool shouldUseAppGrid() const;
   [[nodiscard]] bool isWallpaperBrowse() const;
+  [[nodiscard]] bool isLiveWallpaperBrowse() const;
   [[nodiscard]] Presentation currentPresentation() const;
   void syncDynamicVisualSize(bool animate = true);
   void refreshLauncherAppIconColorization();
@@ -121,6 +122,7 @@ private:
   Flex* m_container = nullptr;
   Input* m_input = nullptr;
   Segmented* m_categoryFilter = nullptr;
+  Segmented* m_wallpaperModeTab = nullptr;
   Flex* m_body = nullptr;
   VirtualGridView* m_grid = nullptr;
   WallpaperCarousel* m_wallpaperCarousel = nullptr;

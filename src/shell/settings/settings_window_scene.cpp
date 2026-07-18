@@ -13,7 +13,6 @@
 #include "render/scene/node.h"
 #include "shell/profile/avatar_path.h"
 #include "shell/settings/font_family_catalog.h"
-#include "shell/settings/settings_bar_management.h"
 #include "shell/settings/settings_content.h"
 #include "shell/settings/settings_content_common.h"
 #include "shell/settings/settings_sidebar.h"
@@ -833,9 +832,6 @@ settings::SettingsContentContext SettingsWindow::makeContentContext(
       .openNotificationFilterEntryEditor =
           [this](std::size_t entryIndex) { openNotificationFilterEntryEditor(entryIndex); },
       .openNotificationFilterCreateEditor = [this]() { openNotificationFilterCreateEditor(); },
-      .openWidgetInspectorEditor = [this](
-                                       std::vector<std::string> laneListPath, std::string widgetName
-                                   ) { openWidgetInspectorEditor(std::move(laneListPath), std::move(widgetName)); },
       .openCapsuleGroupEditor = [this](
                                     std::vector<std::string> laneListPath, std::string groupId
                                 ) { openCapsuleGroupEditor(std::move(laneListPath), std::move(groupId)); },
@@ -906,36 +902,184 @@ void SettingsWindow::rebuildSettingsContent() {
   logSettingsProfile("rebuildContent setup", phaseProfileWatch);
   phaseProfileWatch.reset();
 
-  settings::addSettingsBarManagement(
-      *m_contentContainer,
-      settings::SettingsBarManagementContext{
-          .config = cfg,
-          .configService = m_config,
-          .scale = scale,
-          .searchQuery = m_searchQuery,
-          .selectedSection = m_selectedSection,
-          .selectedBar = selectedBar,
-          .selectedMonitorOverride = selectedMonitorOverride,
-          .renamingBarName = m_renamingBarName,
-          .pendingDeleteBarName = m_pendingDeleteBarName,
-          .renamingMonitorOverrideBarName = m_renamingMonitorOverrideBarName,
-          .renamingMonitorOverrideMatch = m_renamingMonitorOverrideMatch,
-          .pendingDeleteMonitorOverrideBarName = m_pendingDeleteMonitorOverrideBarName,
-          .pendingDeleteMonitorOverrideMatch = m_pendingDeleteMonitorOverrideMatch,
-          .requestRebuild = [this]() { requestSceneRebuild(); },
-          .renameBar =
-              [this](std::string oldName, std::string newName) { renameBar(std::move(oldName), std::move(newName)); },
-          .deleteBar = [this](std::string name) { deleteBar(std::move(name)); },
-          .moveBar = [this](std::string name, int direction) { moveBar(std::move(name), direction); },
-          .renameMonitorOverride =
-              [this](std::string barName, std::string oldMatch, std::string newMatch) {
-                renameMonitorOverride(std::move(barName), std::move(oldMatch), std::move(newMatch));
-              },
-          .deleteMonitorOverride = [this](
-                                       std::string barName, std::string match
-                                   ) { deleteMonitorOverride(std::move(barName), std::move(match)); },
+  const auto sections = sectionKeys(m_settingsRegistry);
+  const auto containsSection = [&sections](settings::SettingsSection section) {
+    return std::ranges::contains(sections, section);
+  };
+
+  auto parentOpt = settings::findParentCategory(m_selectedSection);
+  if (parentOpt.has_value() && m_searchQuery.empty()) {
+    // 1. Header (Title & Description of the parent category)
+    auto hubHeader = ui::column({
+        .align = FlexAlign::Stretch,
+        .gap = Style::spaceXs * scale,
+        .paddingV = Style::spaceSm * scale,
+        .paddingH = Style::spaceSm * scale,
+    });
+    hubHeader->addChild(ui::label({
+        .text = i18n::tr(std::string(parentOpt->labelKey)),
+        .fontSize = Style::fontSizeTitle * scale,
+        .fontWeight = FontWeight::Bold,
+        .color = colorSpecFromRole(ColorRole::Primary),
+    }));
+    hubHeader->addChild(ui::label({
+        .text = i18n::tr(std::string(parentOpt->subtitleKey)),
+        .fontSize = Style::fontSizeBody * scale,
+        .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+    }));
+    m_contentContainer->addChild(std::move(hubHeader));
+    m_contentContainer->addChild(ui::separator());
+
+    // 2. Sub-section list cards!
+    auto cardList = ui::column({
+        .align = FlexAlign::Stretch,
+        .gap = Style::spaceSm * scale,
+    });
+
+    for (const auto& subSec : parentOpt->subSections) {
+      if (subSec != settings::SettingsSection::Bar && !containsSection(subSec)) {
+        continue;
       }
-  );
+      
+      const std::string subSecId(settings::settingsSectionId(subSec));
+      const std::string label = i18n::tr(settings::settingsSectionLabelKey(subSec));
+      const std::string desc = i18n::tr("settings.navigation.descriptions." + subSecId);
+
+      auto card = ui::button({
+          .onClick = [this, subSecId]() {
+            m_selectedSection = subSecId;
+            requestSceneRebuild();
+          },
+          .configure = [scale](Button& b) {
+            b.setDirection(FlexDirection::Horizontal);
+            b.setAlign(FlexAlign::Center);
+            b.setJustify(FlexJustify::SpaceBetween);
+            b.setGap(Style::spaceMd * scale);
+            b.setPadding(Style::spaceMd * scale);
+            b.setRadius(Style::scaledRadiusMd(scale));
+            b.setFill(colorSpecFromRole(ColorRole::SurfaceVariant, 0.4f));
+            b.setBorder(colorSpecFromRole(ColorRole::Outline, 0.5f), Style::borderWidth);
+            b.setFlexGrow(1.0f);
+          }
+      });
+
+      // Left block: Icon + Title/Description block
+      auto leftBlock = ui::row({.align = FlexAlign::Center, .gap = Style::spaceMd * scale});
+      leftBlock->addChild(ui::glyph({
+          .glyph = std::string(settings::sectionGlyph(subSec)),
+          .glyphSize = Style::fontSizeHeader * scale,
+          .color = colorSpecFromRole(ColorRole::Primary),
+      }));
+
+      auto textBlock = ui::column({.align = FlexAlign::Start, .gap = 2.0f * scale});
+      textBlock->addChild(ui::label({
+          .text = label,
+          .fontSize = Style::fontSizeBody * scale,
+          .fontWeight = FontWeight::Bold,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+      }));
+      textBlock->addChild(ui::label({
+          .text = desc,
+          .fontSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      }));
+
+      leftBlock->addChild(std::move(textBlock));
+      card->addChild(std::move(leftBlock));
+
+      // Right block: Chevron right icon
+      card->addChild(ui::glyph({
+          .glyph = "chevron-right",
+          .glyphSize = Style::fontSizeBody * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      }));
+
+      cardList->addChild(std::move(card));
+    }
+
+    m_contentContainer->addChild(std::move(cardList));
+    
+    logSettingsProfile("rebuildContent total", totalProfileWatch);
+    if (gnil::profiling::enabled()) {
+      kLog.info(
+          "profile rebuildContent parentCategory={} registrySize={} searchActive={}",
+          m_selectedSection, m_settingsRegistry.size(), !m_searchQuery.empty()
+      );
+    }
+    return;
+  }
+
+  // Prepend breadcrumbs on detail sub-pages
+  if (m_searchQuery.empty()) {
+    const auto currentSecOpt = settings::settingsSectionFromId(m_selectedSection);
+    const auto parentForSec = currentSecOpt.has_value() ? settings::findParentForSection(*currentSecOpt) : std::nullopt;
+
+    if (parentForSec.has_value() || m_selectedSection == "bar") {
+      const auto parent = parentForSec.has_value() ? *parentForSec : *settings::findParentCategory("group_layout");
+      
+      auto breadcrumbs = ui::row({
+          .align = FlexAlign::Center,
+          .gap = Style::spaceXs * scale,
+          .paddingV = Style::spaceXs * scale,
+          .paddingH = Style::spaceXs * scale,
+      });
+
+      // Back Button
+      breadcrumbs->addChild(ui::button({
+          .glyph = "arrow-left",
+          .glyphSize = Style::fontSizeBody * scale,
+          .variant = ButtonVariant::Ghost,
+          .minWidth = Style::controlHeightSm * scale,
+          .minHeight = Style::controlHeightSm * scale,
+          .padding = Style::spaceXs * scale,
+          .radius = Style::scaledRadiusSm(scale),
+          .onClick = [this, parentId = std::string(parent.id)]() {
+            m_selectedSection = parentId;
+            requestSceneRebuild();
+          },
+      }));
+
+      // Parent Link Button
+      breadcrumbs->addChild(ui::button({
+          .text = i18n::tr(std::string(parent.labelKey)),
+          .fontSize = Style::fontSizeCaption * scale,
+          .variant = ButtonVariant::Ghost,
+          .minHeight = Style::controlHeightSm * scale,
+          .paddingV = Style::spaceXs * scale,
+          .paddingH = Style::spaceXs * scale,
+          .radius = Style::scaledRadiusSm(scale),
+          .onClick = [this, parentId = std::string(parent.id)]() {
+            m_selectedSection = parentId;
+            requestSceneRebuild();
+          },
+      }));
+
+      // Chevron
+      breadcrumbs->addChild(ui::glyph({
+          .glyph = "chevron-right",
+          .glyphSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      }));
+
+      // Current section title
+      std::string pageTitle;
+      if (m_selectedSection == "bar") {
+        pageTitle = i18n::tr("settings.entities.bar.label");
+      } else {
+        pageTitle = i18n::tr(settings::settingsSectionLabelKey(*currentSecOpt));
+      }
+      breadcrumbs->addChild(ui::label({
+          .text = pageTitle,
+          .fontSize = Style::fontSizeCaption * scale,
+          .fontWeight = FontWeight::Bold,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+      }));
+
+      m_contentContainer->addChild(std::move(breadcrumbs));
+      m_contentContainer->addChild(ui::separator());
+    }
+  }
+
   logSettingsProfile("rebuildContent barManagement", phaseProfileWatch);
   phaseProfileWatch.reset();
 
@@ -944,7 +1088,6 @@ void SettingsWindow::rebuildSettingsContent() {
   );
   logSettingsProfile("rebuildContent sections", phaseProfileWatch);
   phaseProfileWatch.reset();
-
 
   logSettingsProfile("rebuildContent total", totalProfileWatch);
   if (gnil::profiling::enabled()) {
@@ -1162,10 +1305,6 @@ std::unique_ptr<Flex> SettingsWindow::buildBody(
     const std::vector<std::string>& availableBars
 ) {
   const auto requestRebuild = [this]() { requestSceneRebuild(); };
-  const auto createBar = [this](std::string name) { this->createBar(std::move(name)); };
-  const auto createMonitorOverride = [this](std::string barName, std::string match) {
-    this->createMonitorOverride(std::move(barName), std::move(match));
-  };
   const auto clearTransientSettingsState = [this]() { this->clearTransientSettingsState(); };
   const auto clearSearchQuery = [this]() { m_searchQuery.clear(); };
 
@@ -1186,14 +1325,9 @@ std::unique_ptr<Flex> SettingsWindow::buildBody(
           .selectedSection = m_selectedSection,
           .selectedBarName = m_selectedBarName,
           .selectedMonitorOverride = m_selectedMonitorOverride,
-          .creatingBarName = m_creatingBarName,
-          .creatingMonitorOverrideBarName = m_creatingMonitorOverrideBarName,
-          .creatingMonitorOverrideMatch = m_creatingMonitorOverrideMatch,
           .clearTransientState = clearTransientSettingsState,
           .clearSearchQuery = clearSearchQuery,
           .requestRebuild = requestRebuild,
-          .createBar = createBar,
-          .createMonitorOverride = createMonitorOverride,
           .scrollSidebarNodeIntoView = [this](const Node* node) { scrollSidebarNodeIntoView(node); },
           .outNav = &m_sidebarNav,
       }
@@ -1572,18 +1706,30 @@ void SettingsWindow::buildScene(std::uint32_t width, std::uint32_t height) {
   const auto containsSection = [&sections](settings::SettingsSection section) {
     return std::ranges::contains(sections, section);
   };
-  if (m_selectedSection == "bar" && selectedBar == nullptr) {
-    m_selectedSection.clear();
-  } else if (m_selectedSection != "bar" && !m_selectedSection.empty()) {
-    const auto selectedSection = settings::settingsSectionFromId(m_selectedSection);
-    if (!selectedSection.has_value() || !containsSection(*selectedSection)) {
-      m_selectedSection.clear();
+  std::vector<std::string> visibleParentIds;
+  for (const auto& parent : settings::parentCategories()) {
+    for (const auto& sec : parent.subSections) {
+      if (containsSection(sec)) {
+        visibleParentIds.push_back(std::string(parent.id));
+        break;
+      }
     }
   }
-  if (m_selectedSection.empty()) {
-    m_selectedSection = containsSection(settings::SettingsSection::Appearance)
-        ? std::string(settings::settingsSectionId(settings::SettingsSection::Appearance))
-        : (!sections.empty() ? std::string(settings::settingsSectionId(sections.front())) : std::string{});
+
+  bool valid = false;
+  if (!m_selectedSection.empty()) {
+    if (m_selectedSection.starts_with("group_")) {
+      valid = std::ranges::contains(visibleParentIds, m_selectedSection);
+    } else if (m_selectedSection == "bar") {
+      valid = (selectedBar != nullptr);
+    } else {
+      const auto selectedSectionOpt = settings::settingsSectionFromId(m_selectedSection);
+      valid = selectedSectionOpt.has_value() && containsSection(*selectedSectionOpt);
+    }
+  }
+
+  if (!valid) {
+    m_selectedSection = !visibleParentIds.empty() ? visibleParentIds.front() : "group_personalization";
   }
 
   const std::string resetPageScope = pageScopeKey(m_selectedSection, m_selectedBarName, m_selectedMonitorOverride);

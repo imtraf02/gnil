@@ -67,6 +67,13 @@ void Segmented::setSelectedIndex(std::size_t index) {
   }
 }
 
+Button* Segmented::optionButton(std::size_t index) const noexcept {
+  if (index >= m_buttons.size()) {
+    return nullptr;
+  }
+  return m_buttons[index];
+}
+
 void Segmented::setFontSize(float size) {
   m_fontSize = size;
   const float fs = effectiveFontSize();

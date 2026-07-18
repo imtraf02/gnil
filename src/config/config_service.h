@@ -113,16 +113,7 @@ public:
   [[nodiscard]] bool hasEffectiveOverride(const std::vector<std::string>& path) const;
   [[nodiscard]] bool isOverrideOnlyBar(std::string_view name) const;
   [[nodiscard]] bool isOverrideOnlyCalendarAccount(std::string_view id) const;
-  [[nodiscard]] bool canMoveBarOverride(std::string_view name, int direction) const;
-  [[nodiscard]] bool canDeleteBarOverride(std::string_view name) const;
   [[nodiscard]] bool isOverrideOnlyMonitorOverride(std::string_view barName, std::string_view match) const;
-  bool createBarOverride(std::string_view name);
-  bool moveBarOverride(std::string_view name, int direction);
-  bool renameBarOverride(std::string_view oldName, std::string_view newName);
-  bool deleteBarOverride(std::string_view name);
-  bool createMonitorOverride(std::string_view barName, std::string_view match);
-  bool renameMonitorOverride(std::string_view barName, std::string_view oldMatch, std::string_view newMatch);
-  bool deleteMonitorOverride(std::string_view barName, std::string_view match);
   bool deleteCalendarAccountOverride(std::string_view id);
   bool setOverride(const std::vector<std::string>& path, ConfigOverrideValue value);
   bool setOverride(const std::vector<std::string>& path, ConfigOverrideValue value, bool* changed);

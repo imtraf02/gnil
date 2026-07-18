@@ -887,7 +887,7 @@
         "delete-confirm-desc": "This GUI-created bar will be removed from settings.toml.",
         "delete-confirm-title": "Delete \"{name}\"?",
         "id-placeholder": "Bar ID",
-        "label": "Bar: {name}",
+        "label": "Bar",
         "management": "Bar",
         "move-down": "Move Down",
         "move-up": "Move Up",
@@ -1113,6 +1113,7 @@
         "launcher": "Launcher",
         "layout": "Layout",
         "lifecycle": "Lifecycle",
+        "live": "Live Wallpaper",
         "location": "Location",
         "lock-screen": "Lock Screen",
         "media": "Media",
@@ -1137,6 +1138,7 @@
         "security": "Security",
         "session-panel": "Session Panel",
         "shape": "Shape",
+        "source": "Source",
         "system": "System",
         "theme": "Theme",
         "toasts": "Toasts",
@@ -1171,6 +1173,51 @@
         "shell": "Shell",
         "system": "System",
         "wallpaper": "Wallpaper"
+      },
+      "parents": {
+        "system": {
+          "title": "System & Core",
+          "subtitle": "Configure system settings, shell behavior, keybinds, and power options"
+        },
+        "personalization": {
+          "title": "Personalization",
+          "subtitle": "Customize wallpapers, widget positions, fonts, colors, and layout scales"
+        },
+        "layout": {
+          "title": "Bar & Layout",
+          "subtitle": "Configure the status bars, app launcher, control center, and utility panels"
+        },
+        "services": {
+          "title": "Services & Location",
+          "subtitle": "Manage backend services, location tracking, and weather integration"
+        },
+        "notifications": {
+          "title": "Notifications & Alerts",
+          "subtitle": "Configure notification behavior, urgency levels, and do-not-disturb"
+        }
+      },
+      "descriptions": {
+        "accessibility": "Adjust text size, contrast, and high contrast settings",
+        "appearance": "Customize fonts, colors, corner roundness, and animations",
+        "backdrop": "Configure background blur and window shading",
+        "bar": "Customize status bars, layouts, and widgets",
+        "control-center": "Configure shortcut tiles and panel layout",
+        "desktop": "Configure desktop workspace grid and layouts",
+        "dock": "Adjust taskbar dock positioning and auto-hide behaviors",
+        "hooks": "Run custom scripts on session start, lock, or idle",
+        "keybinds": "Customize hotkeys for navigation, applications, and windows",
+        "launcher": "Configure application search and sort properties",
+        "location": "Set timezones, location tracking, and sunrise/sunset",
+        "niri": "Configure backdrop settings and niri compositor integrations",
+        "notifications": "Set up notification filters, history, and do-not-disturb",
+        "osd": "Adjust volume, brightness, and state change indicators",
+        "panels": "Configure float panels, floating positions, and styles",
+        "power": "Configure sleep timeouts, battery alerts, and performance profiles",
+        "security": "Set screen locking, security options, and polkit agents",
+        "services": "Manage calendar accounts and custom background services",
+        "shell": "Adjust window layouts, theme modes, and shadow directions",
+        "system": "Check battery devices, monitor poll intervals, and screen time",
+        "wallpaper": "Set background wallpaper folders, fit styles, and transitions"
       }
     },
     "notifications": {
@@ -2778,6 +2825,20 @@
           "description": "Wallpaper folder used in light theme mode",
           "label": "Light Mode Directory",
           "placeholder": "~/Pictures/Wallpapers"
+        },
+        "live-wallpaper-directory": {
+          "description": "Folder containing live (video) wallpapers",
+          "label": "Live Wallpaper Directory"
+        },
+        "live-wallpaper-directory-light": {
+          "description": "Live wallpaper folder used in light theme mode",
+          "label": "Live Light Mode Directory",
+          "placeholder": "~/Videos/LiveWallpapers"
+        },
+        "live-wallpaper-directory-dark": {
+          "description": "Live wallpaper folder used in dark theme mode",
+          "label": "Live Dark Mode Directory",
+          "placeholder": "~/Videos/LiveWallpapers"
         },
         "edge-smoothness": {
           "description": "Feathering of transition edges between wallpapers",

@@ -24,6 +24,7 @@ public:
 
   void setSelectedIndex(std::size_t index);
   [[nodiscard]] std::size_t selectedIndex() const noexcept { return m_selected; }
+  [[nodiscard]] Button* optionButton(std::size_t index) const noexcept;
 
   void setFontSize(float size);
   void setScale(float scale);
