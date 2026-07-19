@@ -12,6 +12,7 @@
 #include "render/scene/node.h"
 #include "shell/control_center/tab.h"
 #include "shell/panel/panel_manager.h"
+#include "system/lyrics_service.h"
 #include "ui/builders.h"
 #include "ui/controls/button.h"
 #include "ui/controls/context_menu.h"
@@ -85,10 +86,21 @@ namespace {
 
 MediaTab::MediaTab(
     MprisService* mpris, HttpClient* httpClient, PipeWireSpectrum* spectrum, ConfigService* config,
-    WaylandConnection* wayland, RenderContext* renderContext
+    WaylandConnection* wayland, RenderContext* renderContext, bool dashboardMode
 )
     : m_mpris(mpris), m_httpClient(httpClient), m_spectrum(spectrum), m_config(config), m_wayland(wayland),
-      m_renderContext(renderContext) {}
+      m_renderContext(renderContext), m_dashboardMode(dashboardMode) {
+  if (m_dashboardMode) {
+    const std::weak_ptr<void> alive = m_aliveGuard;
+    m_lyricsService = std::make_unique<LyricsService>(m_httpClient, [alive]() {
+      if (alive.expired()) {
+        return;
+      }
+      PanelManager::instance().requestUpdateOnly();
+      PanelManager::instance().requestRedraw();
+    });
+  }
+}
 
 MediaTab::~MediaTab() { m_aliveGuard.reset(); }
 
@@ -462,6 +474,44 @@ std::unique_ptr<Flex> MediaTab::create() {
       },
   });
 
+  if (m_dashboardMode) {
+    visualizerColumn->addChild(ui::label({
+        .text = "Synced lyrics",
+        .fontSize = Style::fontSizeTitle * scale,
+        .fontWeight = FontWeight::Bold,
+        .color = colorSpecFromRole(ColorRole::OnSurface),
+    }));
+    visualizerColumn->addChild(ui::label({
+        .out = &m_lyricsStatus,
+        .text = "No active track",
+        .fontSize = Style::fontSizeCaption * scale,
+        .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+        .flexGrow = 1.0f,
+    }));
+    visualizerColumn->addChild(ui::label({
+        .out = &m_lyricsPrevious,
+        .text = "",
+        .fontSize = Style::fontSizeCaption * scale,
+        .color = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.65f),
+        .visible = false,
+    }));
+    visualizerColumn->addChild(ui::label({
+        .out = &m_lyricsCurrent,
+        .text = "",
+        .fontSize = Style::fontSizeBody * scale,
+        .fontWeight = FontWeight::Bold,
+        .color = colorSpecFromRole(ColorRole::Primary),
+        .visible = false,
+    }));
+    visualizerColumn->addChild(ui::label({
+        .out = &m_lyricsNext,
+        .text = "",
+        .fontSize = Style::fontSizeCaption * scale,
+        .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+        .visible = false,
+    }));
+  }
+
   auto visualizerBody = ui::row({
       .out = &m_visualizerBody,
       .align = FlexAlign::Stretch,
@@ -608,6 +658,7 @@ void MediaTab::doUpdate(Renderer& renderer) {
   }
 
   const auto active = m_mpris != nullptr ? m_mpris->activePlayer() : std::nullopt;
+  syncLyrics(active);
   const auto now = std::chrono::steady_clock::now();
   const bool hasPendingSeek = m_pendingSeekUs >= 0 && now < m_pendingSeekUntil;
   const bool withinProgressSettle =
@@ -701,6 +752,10 @@ void MediaTab::onClose() {
   m_trackTitle = nullptr;
   m_trackArtist = nullptr;
   m_trackAlbum = nullptr;
+  m_lyricsStatus = nullptr;
+  m_lyricsPrevious = nullptr;
+  m_lyricsCurrent = nullptr;
+  m_lyricsNext = nullptr;
   m_progressSlider = nullptr;
   m_prevButton = nullptr;
   m_playPauseButton = nullptr;
@@ -728,6 +783,38 @@ bool MediaTab::dismissTransientUi() {
   m_playerMenuPopup->close();
   PanelManager::instance().clearActivePopup();
   return true;
+}
+
+void MediaTab::syncLyrics(const std::optional<MprisPlayerInfo>& active) {
+  if (!m_dashboardMode || m_lyricsService == nullptr) {
+    return;
+  }
+  const bool enabled = m_config == nullptr || m_config->config().dashboard.media.lyricsEnabled;
+  m_lyricsService->syncTrack(active, enabled);
+
+  const auto current = active.has_value() ? m_lyricsService->currentLine(active->positionUs) : std::nullopt;
+  const auto& lines = m_lyricsService->lines();
+  const bool hasCurrent = current.has_value() && *current < lines.size();
+  if (m_lyricsStatus != nullptr) {
+    m_lyricsStatus->setText(hasCurrent ? "" : m_lyricsService->status());
+    m_lyricsStatus->setVisible(!hasCurrent);
+    m_lyricsStatus->setParticipatesInLayout(!hasCurrent);
+  }
+  const auto syncLine = [&lines](Label* label, std::optional<std::size_t> line) {
+    if (label == nullptr) {
+      return;
+    }
+    const bool visible = line.has_value() && *line < lines.size();
+    label->setText(visible ? lines[*line].text : "");
+    label->setVisible(visible);
+    label->setParticipatesInLayout(visible);
+  };
+  syncLine(m_lyricsPrevious, hasCurrent && *current > 0 ? std::optional<std::size_t>{*current - 1} : std::nullopt);
+  syncLine(m_lyricsCurrent, hasCurrent ? current : std::nullopt);
+  syncLine(
+      m_lyricsNext,
+      hasCurrent && *current + 1 < lines.size() ? std::optional<std::size_t>{*current + 1} : std::nullopt
+  );
 }
 
 void MediaTab::clearArt(Renderer& renderer) {

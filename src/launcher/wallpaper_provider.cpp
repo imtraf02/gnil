@@ -78,9 +78,7 @@ std::vector<LauncherResult> WallpaperProvider::query(std::string_view text) cons
   }
 
   const std::string query = StringUtils::toLower(StringUtils::trim(text));
-  auto candidates = collectWallpapers(
-      wallpaper::resolveGlobalWallpaperDirectory(m_config->config().wallpaper, m_config->config().theme.mode)
-  );
+  auto candidates = collectWallpapers(wallpaper::resolveGlobalWallpaperDirectory(m_config->config().wallpaper));
   if (candidates.empty()) {
     return {};
   }

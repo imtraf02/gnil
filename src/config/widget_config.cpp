@@ -112,6 +112,11 @@ namespace gnil::config {
     WidgetConfig spacer;
     spacer.type = "spacer";
     seed("spacer", std::move(spacer));
+
+    WidgetConfig dashboard;
+    dashboard.type = "dashboard";
+    dashboard.settings["glyph"] = std::string("dashboard");
+    seed("dashboard", std::move(dashboard));
   }
 
   WidgetConfig

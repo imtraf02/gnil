@@ -110,6 +110,7 @@ WallpaperTile::WallpaperTile(float cellWidth, float cellHeight, float contentSca
   m_layout->addChild(
       ui::box({
           .out = &m_thumbHost,
+          .fill = colorSpecFromRole(ColorRole::SurfaceVariant),
           .radius = frameRadius,
           .configure = [frameRadius](Box& box) {
             box.setRadius(frameRadius);
@@ -140,7 +141,7 @@ WallpaperTile::WallpaperTile(float cellWidth, float cellHeight, float contentSca
   m_thumbHost->addChild(
       ui::glyph({
           .out = &m_loadingGlyph,
-          .glyph = "hourglass-empty",
+          .glyph = "image",
           .color = colorSpecFromRole(ColorRole::OnSurface, 0.5f),
           .visible = false,
           .participatesInLayout = false,
@@ -355,7 +356,7 @@ void WallpaperTile::setEntry(const WallpaperEntry& entry, Renderer& renderer) {
   }
 
   if (m_thumbHost != nullptr) {
-    m_thumbHost->setFill(clearColorSpec());
+    m_thumbHost->setFill(colorSpecFromRole(ColorRole::SurfaceVariant));
   }
   m_thumb->setVisible(true);
   m_thumbPath = pathString;
@@ -446,6 +447,7 @@ void WallpaperTile::refreshThumbnail(Renderer& renderer) {
     m_thumb->clear(renderer);
     m_thumb->setVisible(false);
     if (m_loadingGlyph != nullptr) {
+      m_loadingGlyph->setGlyph("image");
       m_loadingGlyph->setVisible(true);
     }
   }

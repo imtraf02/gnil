@@ -78,9 +78,8 @@ std::vector<LauncherResult> LiveWallpaperProvider::query(std::string_view text) 
   }
 
   const std::string query = StringUtils::toLower(StringUtils::trim(text));
-  auto candidates = collectLiveWallpapers(
-      wallpaper::resolveGlobalLiveWallpaperDirectory(m_config->config().wallpaper, m_config->config().theme.mode)
-  );
+  auto candidates =
+      collectLiveWallpapers(wallpaper::resolveGlobalLiveWallpaperDirectory(m_config->config().wallpaper));
   if (candidates.empty()) {
     return {};
   }

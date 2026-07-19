@@ -391,8 +391,6 @@ struct WallpaperMonitorOverride {
   std::optional<bool> enabled;
   std::optional<ColorSpec> fillColor;
   std::optional<std::string> directory;
-  std::optional<std::string> directoryLight;
-  std::optional<std::string> directoryDark;
 
   bool operator==(const WallpaperMonitorOverride&) const = default;
 };
@@ -437,12 +435,8 @@ struct WallpaperConfig {
   float transitionDurationMs = 1500.0f;
   float edgeSmoothness = 0.3f;
   bool transitionOnStartup = false;
-  std::string directory;      // empty = ~/Pictures/Wallpapers
-  std::string directoryLight; // empty = directory
-  std::string directoryDark;  // empty = directory
-  std::string liveWallpaperDirectory;      // empty = ~/Videos/LiveWallpapers
-  std::string liveWallpaperDirectoryLight; // empty = liveWallpaperDirectory
-  std::string liveWallpaperDirectoryDark;  // empty = liveWallpaperDirectory
+  std::string directory;              // empty = ~/Pictures/Wallpapers
+  std::string liveWallpaperDirectory; // empty = ~/Videos/LiveWallpapers
   bool perMonitorDirectories = false;
   WallpaperAutomationConfig automation;
   std::vector<WallpaperMonitorOverride> monitorOverrides;
@@ -659,6 +653,39 @@ struct SidebarConfig {
   bool operator==(const SidebarConfig&) const = default;
 };
 
+// The top-centre dashboard is intentionally independent from the standalone
+// content panels (network, audio, bluetooth, ...).  Its configuration mirrors
+// the four-room Caelestia layout while keeping the data services shared.
+struct DashboardConfig {
+  struct MediaConfig {
+    bool lyricsEnabled = true;
+
+    bool operator==(const MediaConfig&) const = default;
+  };
+
+  struct PerformanceConfig {
+    bool showBattery = true;
+    bool showGpu = true;
+    bool showCpu = true;
+    bool showMemory = true;
+    bool showStorage = true;
+    bool showNetwork = true;
+
+    bool operator==(const PerformanceConfig&) const = default;
+  };
+
+  bool enabled = true;
+  std::int32_t dragThreshold = 50;
+  bool showDashboard = true;
+  bool showMedia = true;
+  bool showPerformance = true;
+  bool showWeather = true;
+  MediaConfig media;
+  PerformanceConfig performance;
+
+  bool operator==(const DashboardConfig&) const = default;
+};
+
 constexpr EnumOption<SessionActionButtonVariant> kSessionActionButtonVariants[] = {
     {SessionActionButtonVariant::Default, "default", "settings.session-actions.variant.default"},
     {SessionActionButtonVariant::Primary, "primary", "settings.session-actions.variant.primary"},
@@ -866,7 +893,6 @@ struct ShellConfig {
     bool enableDangerousActions = false;
     std::vector<std::string> favouriteApps;
     std::vector<std::string> hiddenApps;
-    bool categories = true;
     bool showIcons = true;
     bool compact = false;
     bool appGrid = false;
@@ -1308,6 +1334,7 @@ struct Config {
   OsdConfig osd;
   NotificationConfig notification;
   SidebarConfig sidebar;
+  DashboardConfig dashboard;
   WeatherConfig weather;
   CalendarConfig calendar;
   SystemConfig system;
@@ -1338,6 +1365,7 @@ struct ConfigChangeSet {
   bool osd = true;
   bool notification = true;
   bool sidebar = true;
+  bool dashboard = true;
   bool weather = true;
   bool calendar = true;
   bool system = true;
@@ -1366,6 +1394,7 @@ struct ConfigChangeSet {
         || osd
         || notification
         || sidebar
+        || dashboard
         || weather
         || calendar
         || system

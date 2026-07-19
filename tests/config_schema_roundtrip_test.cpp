@@ -241,6 +241,23 @@ namespace {
         .minHoverThresholdMs = 350,
         .dragThreshold = 96,
     };
+    c.dashboard = DashboardConfig{
+        .enabled = true,
+        .dragThreshold = 72,
+        .showDashboard = true,
+        .showMedia = true,
+        .showPerformance = false,
+        .showWeather = true,
+        .media = {.lyricsEnabled = false},
+        .performance = {
+            .showBattery = false,
+            .showGpu = true,
+            .showCpu = true,
+            .showMemory = false,
+            .showStorage = true,
+            .showNetwork = false,
+        },
+    };
     c.brightness.enableDdcutil = true;
     c.brightness.ddcutilIgnoreMmids = {"ABC123"};
     c.brightness.monitorOverrides = {
@@ -283,7 +300,7 @@ namespace {
     c.wallpaper.automation.intervalSeconds = 30;
     c.wallpaper.automation.order = WallpaperAutomationConfig::Order::Alphabetical;
     c.wallpaper.monitorOverrides = {
-        {"DP-1", true, colorSpecFromConfigString("#00ff00"), std::string("/srv/wp1"), std::nullopt, std::nullopt},
+        {"DP-1", true, colorSpecFromConfigString("#00ff00"), std::string("/srv/wp1")},
     };
     c.accessibility.uiScale = 1.25f;
     c.nexus.wallpapersPerRow = 5;
@@ -404,6 +421,15 @@ namespace {
       readInto(t, s, shellSchema(), "shell", d);
       if (s.clipboardHistoryMaxEntries != 10000) {
         fail("shell.clipboard_history_max_entries clamp: expected 10000");
+      }
+    }
+    {
+      auto t = toml::parse("drag_threshold = 900");
+      DashboardConfig dashboard{};
+      Diagnostics diagnostics;
+      readInto(t, dashboard, dashboardSchema(), "dashboard", diagnostics);
+      if (dashboard.dragThreshold != 500) {
+        fail("dashboard.drag_threshold clamp: expected 500");
       }
     }
   }

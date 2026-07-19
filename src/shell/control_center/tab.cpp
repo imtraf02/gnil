@@ -14,6 +14,22 @@ namespace control_center {
     card.setPadding((Style::spaceSm + Style::spaceXs) * scale, Style::spaceMd * scale);
   }
 
+  void applySeamlessSectionStyle(Flex& section, float scale) {
+    section.clearFill();
+    section.clearBorder();
+    section.setDirection(FlexDirection::Vertical);
+    section.setAlign(FlexAlign::Stretch);
+    section.setGap(Style::spaceSm * scale);
+    section.setPadding(Style::spaceXs * scale, Style::spaceXs * scale);
+  }
+
+  void addDivider(Flex& parent, float scale) {
+    parent.addChild(ui::box({
+        .fill = colorSpecFromRole(ColorRole::Outline, 0.15f),
+        .height = 1.0f * scale,
+    }));
+  }
+
   Label* addTitle(Flex& parent, const std::string& text, float scale) {
     Label* ptr = nullptr;
     auto label = ui::label({

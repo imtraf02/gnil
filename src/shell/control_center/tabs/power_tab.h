@@ -16,7 +16,7 @@ class PowerProfilesService;
 
 class PowerTab : public Tab {
 public:
-  PowerTab(UPowerService* upower, PowerProfilesService* powerProfiles);
+  PowerTab(UPowerService* upower, PowerProfilesService* powerProfiles, bool scrollbarVisible = true);
 
   std::unique_ptr<Flex> create() override;
   void onClose() override;
@@ -37,6 +37,7 @@ private:
 
   UPowerService* m_upower = nullptr;
   PowerProfilesService* m_powerProfiles = nullptr;
+  bool m_scrollbarVisible = true;
 
   Flex* m_root = nullptr;
 

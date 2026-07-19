@@ -24,12 +24,13 @@ class Slider;
 class AudioVisualizer;
 class ConfigService;
 class WaylandConnection;
+class LyricsService;
 
 class MediaTab : public Tab {
 public:
   MediaTab(
       MprisService* mpris, HttpClient* httpClient, PipeWireSpectrum* spectrum, ConfigService* config,
-      WaylandConnection* wayland, RenderContext* renderContext
+      WaylandConnection* wayland, RenderContext* renderContext, bool dashboardMode = false
   );
   ~MediaTab() override;
 
@@ -45,6 +46,7 @@ private:
   void refresh(Renderer& renderer);
   void clearArt(Renderer& renderer);
   void commitPendingSeek(double valueSeconds);
+  void syncLyrics(const std::optional<MprisPlayerInfo>& active);
 
   void openPlayerMenu();
 
@@ -59,6 +61,8 @@ private:
   ConfigService* m_config = nullptr;
   WaylandConnection* m_wayland = nullptr;
   RenderContext* m_renderContext = nullptr;
+  bool m_dashboardMode = false;
+  std::unique_ptr<LyricsService> m_lyricsService;
   std::uint64_t m_spectrumListenerId = 0;
   bool m_active = false;
 
@@ -76,6 +80,10 @@ private:
   Label* m_trackTitle = nullptr;
   Label* m_trackArtist = nullptr;
   Label* m_trackAlbum = nullptr;
+  Label* m_lyricsStatus = nullptr;
+  Label* m_lyricsPrevious = nullptr;
+  Label* m_lyricsCurrent = nullptr;
+  Label* m_lyricsNext = nullptr;
   Slider* m_progressSlider = nullptr;
   Button* m_prevButton = nullptr;
   Button* m_playPauseButton = nullptr;

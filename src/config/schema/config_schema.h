@@ -17,6 +17,7 @@ namespace gnil::config::schema {
   const Schema<LocationConfig>& locationSchema();
   const Schema<NotificationConfig>& notificationSchema();
   const Schema<SidebarConfig>& sidebarSchema();
+  const Schema<DashboardConfig>& dashboardSchema();
   const Schema<DockConfig>& dockSchema();
   const Schema<DesktopWidgetsConfig>& desktopWidgetsSchema();
   const Schema<BrightnessConfig>& brightnessSchema();

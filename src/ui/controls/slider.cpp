@@ -320,14 +320,12 @@ void Slider::applyVisualState() {
     thumbBorder = resolved(ColorRole::Hover);
   }
 
-  auto trackStyle = solidStyle(trackColor, m_trackHeight * 0.5f);
-  trackStyle.radius = Radii{Style::sliderInsideCornerRadius, m_trackHeight * 0.5f, m_trackHeight * 0.5f,
-                            Style::sliderInsideCornerRadius};
+  auto trackStyle = solidStyle(trackColor, Style::sliderInsideCornerRadius);
+  trackStyle.radius = Radii{Style::sliderInsideCornerRadius};
   m_track->setStyle(trackStyle);
 
-  auto fillStyle = solidStyle(fillColor, m_trackHeight * 0.5f);
-  fillStyle.radius = Radii{m_trackHeight * 0.5f, Style::sliderInsideCornerRadius, Style::sliderInsideCornerRadius,
-                           m_trackHeight * 0.5f};
+  auto fillStyle = solidStyle(fillColor, Style::sliderInsideCornerRadius);
+  fillStyle.radius = Radii{Style::sliderInsideCornerRadius};
   m_fill->setStyle(fillStyle);
 
   auto thumbStyle = solidStyle(thumbColor, m_thumb->width() * 0.5f);

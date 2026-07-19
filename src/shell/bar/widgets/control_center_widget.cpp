@@ -13,7 +13,7 @@ ControlCenterWidget::ControlCenterWidget(wl_output* /*output*/, std::string barG
 
 void ControlCenterWidget::create() {
   auto area = std::make_unique<InputArea>();
-  area->setOnClick([this](const InputArea::PointerData& /*data*/) { requestPanelToggle("control-center", "home"); });
+  area->setOnClick([this](const InputArea::PointerData& /*data*/) { requestPanelToggle("dashboard"); });
 
   if (m_customImage.enabled()) {
     area->addChild(ui::image({.out = &m_image, .fit = ImageFit::Contain}));
@@ -21,7 +21,7 @@ void ControlCenterWidget::create() {
     area->addChild(
         ui::glyph({
             .out = &m_glyph,
-            .glyph = m_barGlyphId.empty() ? "search" : m_barGlyphId,
+            .glyph = m_barGlyphId.empty() ? "dashboard" : m_barGlyphId,
             .glyphSize = Style::baseGlyphSize * m_contentScale,
             .color = widgetIconColorOr(colorSpecFromRole(ColorRole::OnSurface)),
         })

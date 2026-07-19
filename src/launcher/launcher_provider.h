@@ -6,11 +6,6 @@
 #include <string_view>
 #include <vector>
 
-struct LauncherCategory {
-  std::string label;
-  std::string glyphName;
-};
-
 struct LauncherResult {
   std::string id;
   std::string providerId; // Set by LauncherPanel after query; used for activation dispatch and usage tracking
@@ -24,11 +19,9 @@ struct LauncherResult {
   std::string badge;
   // When launching an application via AppProvider, matches DesktopAction::id (primary Exec leaves this empty).
   std::string desktopActionId;
-  std::string category;
   std::string presentation;
   std::optional<std::string> query;
   double score = 0.0;
-  int recentlyUsedIndex = 0; // Higher is more recent. <=0 means no record or too old.
   bool available = true;
 };
 
@@ -52,8 +45,6 @@ public:
   // Prefixed providers (non-empty prefix()) normally only respond when their prefix is typed.
   // Return true to also contribute results to the general (non-prefixed) search.
   [[nodiscard]] virtual bool includeInGlobalSearch() const { return false; }
-
-  [[nodiscard]] virtual std::vector<LauncherCategory> categories() const { return {}; }
 
   // Async providers deliver results after query() returns; the
   // panel installs this callback so the provider can ask for the current query to

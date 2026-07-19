@@ -556,8 +556,8 @@ void Application::initIpc() {
   m_bar.registerIpc(m_ipcService);
   m_desktopWidgetsController.registerIpc(m_ipcService);
   m_panelManager.registerIpc(m_ipcService);
-  // Keep the product-facing aliases explicit. There is deliberately no
-  // dashboard alias: each destination owns one panel and one size contract.
+  // Keep the product-facing aliases explicit. Dashboard is the four-room
+  // top-centre surface; technical destinations retain their standalone ids.
   m_ipcService.registerHandler(
       "panel",
       [this](const std::string& args) -> std::string {
@@ -571,10 +571,11 @@ void Application::initIpc() {
             || parts[1] == "clipboard" || parts[1] == "settings" || parts[1] == "media"
             || parts[1] == "audio" || parts[1] == "brightness" || parts[1] == "system"
             || parts[1] == "battery" || parts[1] == "network" || parts[1] == "bluetooth"
-            || parts[1] == "weather" || parts[1] == "calendar" || parts[1] == "screen-time") {
+            || parts[1] == "weather" || parts[1] == "calendar" || parts[1] == "screen-time"
+            || parts[1] == "dashboard") {
           target = parts[1];
-        } else if (parts[1] == "dashboard") {
-          return "error: dashboard was removed; open a destination such as network, audio, or system\n";
+        } else if (parts[1] == "control-center") {
+          target = "dashboard";
         } else if (parts[1] == "sidebar" || parts[1] == "notifications") {
           target = "sidebar";
         } else {

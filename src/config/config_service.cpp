@@ -631,6 +631,7 @@ void ConfigService::fireReloadCallbacks() {
     add(m_lastChange.osd, "osd");
     add(m_lastChange.notification, "notification");
     add(m_lastChange.sidebar, "sidebar");
+    add(m_lastChange.dashboard, "dashboard");
     add(m_lastChange.weather, "weather");
     add(m_lastChange.calendar, "calendar");
     add(m_lastChange.system, "system");

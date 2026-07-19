@@ -59,6 +59,7 @@
 #include "shell/clipboard/clipboard_panel.h"
 #include "shell/clipboard/clipboard_paste.h"
 #include "shell/control_center/content_panel.h"
+#include "shell/dashboard/dashboard_panel.h"
 #include "shell/launcher/launcher_panel.h"
 #include "shell/polkit/polkit_panel.h"
 #include "shell/session/session_ipc.h"
@@ -148,12 +149,13 @@ void Application::initUiRenderSurfacesAndSettings() {
   });
   m_liveWallpaperPaletteConn = m_wallpaper.livePaletteChanged().connect([this]() {
     m_themeService.onWallpaperChange();
+    m_backdrop.onStateChange();
   });
   // ThemeService is applied before render surfaces are constructed. Re-resolve
   // once the live-wallpaper provider exists; this starts non-blocking frame
   // extraction and keeps the already-applied static palette until it finishes.
   m_themeService.onWallpaperChange();
-  m_backdrop.initialize(m_wayland, &m_configService, &m_sharedTextureCache, &m_glShared);
+  m_backdrop.initialize(m_wayland, &m_configService, &m_sharedTextureCache, &m_glShared, &m_wallpaper);
   m_settingsWindow.initialize(
       m_wayland, &m_configService, &m_renderContext, &m_dependencyService, m_upowerService.get(), &m_idleManager,
       &m_compositorPlatform, m_accountsService.get()
@@ -284,6 +286,8 @@ void Application::initInputDispatch() {
     if (m_windowSwitcher.onPointerEvent(event))
       return;
     if (m_panelManager.onPointerEvent(event))
+      return;
+    if (m_dashboardEdgeTrigger.onPointerEvent(event))
       return;
     if (m_sidebarEdgeTrigger.onPointerEvent(event))
       return;
@@ -441,6 +445,7 @@ void Application::initPanelManagerAndPanels() {
   for (auto& [id, panel] : makeContentPanels(contentPanelServices)) {
     m_panelManager.registerPanel(id, std::move(panel));
   }
+  m_panelManager.registerPanel("dashboard", std::make_unique<DashboardPanel>(contentPanelServices));
   {
     auto trayMenu = std::make_unique<TrayMenu>(&m_configService, m_trayService.get());
     m_trayMenu = trayMenu.get();
@@ -473,7 +478,9 @@ void Application::initPanelManagerAndPanels() {
     m_panelManager.registerPanel("settings", std::move(nexusPanel));
   }
   {
-    auto launcherPanel = std::make_unique<LauncherPanel>(&m_configService, &m_asyncTextureCache, &m_wallpaper);
+    auto launcherPanel = std::make_unique<LauncherPanel>(
+        &m_configService, &m_asyncTextureCache, &m_thumbnailService, &m_wallpaper
+    );
     launcherPanel->addProvider(std::make_unique<AppProvider>(&m_configService, &m_compositorPlatform));
     launcherPanel->addProvider(std::make_unique<WallpaperProvider>(&m_configService, &m_wayland, &m_wallpaper));
     launcherPanel->addProvider(std::make_unique<LiveWallpaperProvider>(&m_configService, &m_wayland, &m_wallpaper));
@@ -745,6 +752,14 @@ void Application::initBarAndLayout() {
   });
   m_configService.addReloadCallback([this]() { m_hotCorners.onConfigReload(); });
   m_configService.addReloadCallback([this]() {
+    m_dashboardEdgeTrigger.onConfigReload();
+    if (m_configService.lastChange().dashboard
+        && !m_configService.config().dashboard.enabled
+        && m_panelManager.isOpenPanel("dashboard")) {
+      m_panelManager.closePanel();
+    }
+  });
+  m_configService.addReloadCallback([this]() {
     m_sidebarEdgeTrigger.onConfigReload();
     if (m_configService.lastChange().sidebar
         && !m_configService.config().sidebar.enabled
@@ -904,5 +919,6 @@ void Application::initWidgetControllersAndCallbacks() {
   // entirely in reconcileOutputSurfaces(), keeping the trigger zones above the
   // rail so they are never occluded by shell chrome on their shared layer.
   m_hotCorners.initialize(m_wayland, &m_configService, &m_renderContext);
+  m_dashboardEdgeTrigger.initialize(m_wayland, &m_configService, &m_renderContext);
   m_sidebarEdgeTrigger.initialize(m_wayland, &m_configService, &m_renderContext);
 }

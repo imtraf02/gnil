@@ -40,30 +40,41 @@ namespace {
     return i18n::tr("control-center.power.unknown-device");
   }
 
-  void applyProfileButtonPalette(Button* btn, std::string_view profile) {
+  void applyProfileButtonPalette(Button* btn, std::string_view profile, bool active = true) {
     if (btn == nullptr) {
       return;
     }
-    ColorRole role = ColorRole::Primary;
-    if (profile == "performance") {
-      role = ColorRole::Error;
-    } else if (profile == "power-saver") {
-      role = ColorRole::Tertiary;
+    if (active) {
+      ColorRole role = ColorRole::Primary;
+      if (profile == "performance") {
+        role = ColorRole::Error;
+      } else if (profile == "power-saver") {
+        role = ColorRole::Tertiary;
+      }
+      auto palette = Button::defaultPalette(ButtonVariant::TabActive);
+      palette.normal.bg = colorSpecFromRole(role);
+      palette.normal.label = colorSpecFromRole(ColorRole::OnPrimary);
+      palette.hover.bg = colorSpecFromRole(role, 0.9f);
+      palette.hover.label = colorSpecFromRole(ColorRole::OnPrimary);
+      palette.pressed.bg = colorSpecFromRole(role, 0.8f);
+      palette.pressed.label = colorSpecFromRole(ColorRole::OnPrimary);
+      btn->setCustomPalette(palette);
+    } else {
+      auto palette = Button::defaultPalette(ButtonVariant::Tab);
+      palette.normal.bg = colorSpecFromRole(ColorRole::SurfaceVariant, 0.35f);
+      palette.normal.label = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.75f);
+      palette.hover.bg = colorSpecFromRole(ColorRole::SurfaceVariant, 0.6f);
+      palette.hover.label = colorSpecFromRole(ColorRole::OnSurface, 1.0f);
+      palette.pressed.bg = colorSpecFromRole(ColorRole::SurfaceVariant, 0.8f);
+      palette.pressed.label = colorSpecFromRole(ColorRole::OnSurface, 1.0f);
+      btn->setCustomPalette(palette);
     }
-    auto palette = Button::defaultPalette(ButtonVariant::TabActive);
-    palette.normal.bg = colorSpecFromRole(role);
-    palette.normal.label = colorSpecFromRole(ColorRole::OnPrimary);
-    palette.hover.bg = colorSpecFromRole(role, 0.9f);
-    palette.hover.label = colorSpecFromRole(ColorRole::OnPrimary);
-    palette.pressed.bg = colorSpecFromRole(role, 0.8f);
-    palette.pressed.label = colorSpecFromRole(ColorRole::OnPrimary);
-    btn->setCustomPalette(palette);
   }
 
 } // namespace
 
-PowerTab::PowerTab(UPowerService* upower, PowerProfilesService* powerProfiles)
-    : m_upower(upower), m_powerProfiles(powerProfiles) {}
+PowerTab::PowerTab(UPowerService* upower, PowerProfilesService* powerProfiles, bool scrollbarVisible)
+    : m_upower(upower), m_powerProfiles(powerProfiles), m_scrollbarVisible(scrollbarVisible) {}
 
 std::unique_ptr<Flex> PowerTab::create() {
   const float scale = contentScale();
@@ -71,11 +82,11 @@ std::unique_ptr<Flex> PowerTab::create() {
   auto tab = ui::column({
       .out = &m_root,
       .align = FlexAlign::Stretch,
-      .gap = Style::spaceMd * scale,
+      .gap = Style::spaceSm * scale,
   });
 
   auto scroll = ui::scrollView({
-      .scrollbarVisible = true,
+      .scrollbarVisible = m_scrollbarVisible,
       .flexGrow = 1.0f,
       .configure = [](ScrollView& scrollView) {
         scrollView.clearFill();
@@ -86,10 +97,11 @@ std::unique_ptr<Flex> PowerTab::create() {
   auto* content = scroll->content();
   content->setDirection(FlexDirection::Vertical);
   content->setAlign(FlexAlign::Stretch);
-  content->setGap(Style::spaceMd * scale);
+  content->setGap(Style::spaceSm * scale);
 
   buildStatusCard(*content, scale);
   buildProfilesCard(*content, scale);
+  syncPowerProfiles();
   buildHealthCard(*content, scale);
   buildPeripheralsCard(*content, scale);
 
@@ -104,36 +116,63 @@ void PowerTab::buildStatusCard(Flex& root, float scale) {
   }
 
   auto card = ui::column({
-      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& section) {
-        applySectionCardStyle(section, scale, opacity, borders);
+      .gap = Style::spaceXs * scale,
+      .configure = [](Flex& section) {
+        section.clearFill();
+        section.clearBorder();
+        section.setDirection(FlexDirection::Vertical);
+        section.setAlign(FlexAlign::Stretch);
       },
   });
   m_statusCard = card.get();
-
-  card->addChild(makeCardHeaderRow(i18n::tr("control-center.power.battery"), scale));
 
   auto topRow = ui::row(
       {.align = FlexAlign::Center, .gap = Style::spaceSm * scale},
       ui::glyph({
           .out = &m_statusGlyph,
           .glyph = batteryGlyphName(0.0, BatteryState::Unknown),
-          .glyphSize = Style::fontSizeTitle * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
+          .glyphSize = 24.0f * scale,
+          .color = colorSpecFromRole(ColorRole::Primary),
       }),
       ui::label({
           .out = &m_percentLabel,
           .text = "--",
-          .fontSize = Style::fontSizeTitle * scale,
+          .fontSize = 28.0f * scale,
           .fontWeight = FontWeight::Bold,
           .color = colorSpecFromRole(ColorRole::OnSurface),
       }),
-      ui::label({
-          .out = &m_stateLabel,
-          .text = "",
-          .fontSize = Style::fontSizeBody * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-          .flexGrow = 1.0f,
-      })
+      ui::column(
+          {.align = FlexAlign::Start, .justify = FlexJustify::Center, .gap = 0.0f, .flexGrow = 1.0f},
+          ui::label({
+              .out = &m_stateLabel,
+              .text = "",
+              .fontSize = Style::fontSizeCaption * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          }),
+          ui::row(
+              {.out = &m_timeRow, .align = FlexAlign::Center, .gap = Style::spaceXs * scale, .visible = false},
+              ui::label({
+                  .out = &m_timeLabel,
+                  .text = "",
+                  .fontSize = Style::fontSizeCaption * scale,
+                  .color = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.7f),
+              })
+          )
+      ),
+      ui::row(
+          {.out = &m_rateRow, .align = FlexAlign::Center, .gap = Style::spaceXs * scale, .visible = false},
+          ui::glyph({
+              .glyph = "bolt",
+              .glyphSize = Style::fontSizeCaption * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.6f),
+          }),
+          ui::label({
+              .out = &m_rateLabel,
+              .text = "",
+              .fontSize = Style::fontSizeCaption * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.8f),
+          })
+      )
   );
   card->addChild(std::move(topRow));
 
@@ -141,96 +180,84 @@ void PowerTab::buildStatusCard(Flex& root, float scale) {
       ui::progressBar({
           .out = &m_levelBar,
           .fill = colorSpecFromRole(ColorRole::Primary),
-          .track = colorSpecFromRole(ColorRole::Surface),
-          .radius = Style::sliderTrackHeight * scale * 0.5f,
+          .track = colorSpecFromRole(ColorRole::Outline, 0.15f),
+          .radius = 2.5f * scale,
           .progress = 0.0f,
-          .height = Style::sliderTrackHeight * scale,
+          .height = 5.0f * scale,
       })
   );
-
-  auto timeRow = ui::row(
-      {.out = &m_timeRow, .align = FlexAlign::Center, .gap = Style::spaceXs * scale, .visible = false},
-      ui::glyph({
-          .glyph = "clock",
-          .glyphSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-      }),
-      ui::label({
-          .out = &m_timeLabel,
-          .text = "",
-          .fontSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-      })
-  );
-  card->addChild(std::move(timeRow));
-
-  auto rateRow = ui::row(
-      {.out = &m_rateRow, .align = FlexAlign::Center, .gap = Style::spaceXs * scale, .visible = false},
-      ui::glyph({
-          .glyph = "bolt",
-          .glyphSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-      }),
-      ui::label({
-          .out = &m_rateLabel,
-          .text = "",
-          .fontSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-      })
-  );
-  card->addChild(std::move(rateRow));
 
   root.addChild(std::move(card));
 }
 
 void PowerTab::buildProfilesCard(Flex& root, float scale) {
-  if (m_powerProfiles == nullptr) {
-    return;
-  }
-
   m_profileOrder.clear();
-  const auto& available = m_powerProfiles->profiles();
-  for (const auto& candidate : powerProfileOrder()) {
-    if (std::ranges::find(available, candidate) != available.end()) {
-      m_profileOrder.emplace_back(candidate);
+  if (m_powerProfiles != nullptr && !m_powerProfiles->profiles().empty()) {
+    const auto& available = m_powerProfiles->profiles();
+    for (const auto& candidate : powerProfileOrder()) {
+      if (std::ranges::find(available, candidate) != available.end()) {
+        m_profileOrder.emplace_back(candidate);
+      }
     }
   }
   if (m_profileOrder.empty()) {
-    return;
+    for (const auto& candidate : powerProfileOrder()) {
+      m_profileOrder.emplace_back(candidate);
+    }
   }
 
   auto card = ui::column({
-      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& section) {
-        applySectionCardStyle(section, scale, opacity, borders);
+      .gap = Style::spaceXs * scale,
+      .configure = [](Flex& section) {
+        section.clearFill();
+        section.clearBorder();
+        section.setDirection(FlexDirection::Vertical);
+        section.setAlign(FlexAlign::Stretch);
       },
   });
   m_profilesCard = card.get();
 
-  card->addChild(makeCardHeaderRow(i18n::tr("control-center.power.power-profile"), scale));
-
   std::vector<ui::SegmentedOption> options;
   options.reserve(m_profileOrder.size());
   for (const auto& profile : m_profileOrder) {
-    options.push_back({.label = profileLabel(profile), .glyph = std::string(profileGlyphName(profile))});
+    options.push_back({.label = "", .glyph = std::string(profileGlyphName(profile))});
   }
 
   card->addChild(
       ui::segmented({
           .out = &m_profiles,
           .options = std::move(options),
-          .fontSize = Style::fontSizeCaption * scale,
+          .fontSize = Style::fontSizeTitle * scale,
           .scale = scale,
-          .surfaceOpacity = panelCardOpacity(),
-          .surfaceRole = ColorRole::Surface,
+          .surfaceOpacity = 0.2f,
+          .surfaceRole = ColorRole::SurfaceVariant,
           .equalSegmentWidths = true,
           .onChange = [this](std::size_t index) {
-            if (m_syncingProfiles || m_powerProfiles == nullptr || index >= m_profileOrder.size()) {
+            if (m_syncingProfiles || index >= m_profileOrder.size()) {
               return;
             }
-            (void)m_powerProfiles->setActiveProfile(m_profileOrder[index]);
+            if (m_powerProfiles != nullptr) {
+              (void)m_powerProfiles->setActiveProfile(m_profileOrder[index]);
+            }
+            if (m_profiles != nullptr) {
+              for (std::size_t i = 0; i < m_profileOrder.size(); ++i) {
+                if (auto* btn = m_profiles->optionButton(i)) {
+                  applyProfileButtonPalette(btn, m_profileOrder[i], i == index);
+                }
+              }
+            }
           },
       })
   );
+
+  if (m_profiles != nullptr) {
+    for (std::size_t i = 0; i < m_profileOrder.size(); ++i) {
+      m_profiles->setOptionTooltip(i, profileLabel(m_profileOrder[i]));
+      if (auto* btn = m_profiles->optionButton(i)) {
+        applyProfileButtonPalette(btn, m_profileOrder[i], i == 0);
+      }
+    }
+  }
 
   auto inhibitedRow = ui::row(
       {.out = &m_inhibitedRow, .align = FlexAlign::Center, .gap = Style::spaceXs * scale, .visible = false},
@@ -257,31 +284,23 @@ void PowerTab::buildHealthCard(Flex& root, float scale) {
     return;
   }
 
-  auto card = ui::column({
+  auto card = ui::row({
+      .out = &m_healthCard,
+      .align = FlexAlign::Center,
+      .justify = FlexJustify::SpaceBetween,
+      .gap = Style::spaceSm * scale,
       .visible = false,
-      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& section) {
-        applySectionCardStyle(section, scale, opacity, borders);
+      .configure = [](Flex& section) {
+        section.clearFill();
+        section.clearBorder();
       },
   });
-  m_healthCard = card.get();
-
-  auto header = makeCardHeaderRow(i18n::tr("control-center.power.health"), scale);
-  header->addChild(
-      ui::label({
-          .out = &m_healthLabel,
-          .text = "--",
-          .fontSize = Style::fontSizeBody * scale,
-          .fontWeight = FontWeight::Bold,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
-      })
-  );
-  card->addChild(std::move(header));
 
   card->addChild(
-      ui::label({
-          .text = i18n::tr("control-center.power.design-capacity"),
-          .fontSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      ui::glyph({
+          .glyph = "heart",
+          .glyphSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::Tertiary),
       })
   );
 
@@ -289,10 +308,21 @@ void PowerTab::buildHealthCard(Flex& root, float scale) {
       ui::progressBar({
           .out = &m_healthBar,
           .fill = colorSpecFromRole(ColorRole::Primary),
-          .track = colorSpecFromRole(ColorRole::Surface),
-          .radius = Style::sliderTrackHeight * scale * 0.5f,
+          .track = colorSpecFromRole(ColorRole::Outline, 0.15f),
+          .radius = 2.0f * scale,
           .progress = 0.0f,
-          .height = Style::sliderTrackHeight * scale,
+          .width = 80.0f * scale,
+          .height = 4.0f * scale,
+      })
+  );
+
+  card->addChild(
+      ui::label({
+          .out = &m_healthLabel,
+          .text = "--",
+          .fontSize = Style::fontSizeCaption * scale,
+          .fontWeight = FontWeight::Bold,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
       })
   );
 
@@ -305,16 +335,18 @@ void PowerTab::buildPeripheralsCard(Flex& root, float scale) {
   }
 
   auto card = ui::column({
+      .gap = Style::spaceXs * scale,
       .visible = false,
-      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& section) {
-        applySectionCardStyle(section, scale, opacity, borders);
+      .configure = [](Flex& section) {
+        section.clearFill();
+        section.clearBorder();
+        section.setDirection(FlexDirection::Vertical);
+        section.setAlign(FlexAlign::Stretch);
       },
   });
   m_peripheralsCard = card.get();
 
-  card->addChild(makeCardHeaderRow(i18n::tr("control-center.power.peripherals"), scale));
-
-  auto list = ui::column({.out = &m_peripheralsList, .align = FlexAlign::Stretch, .gap = Style::spaceSm * scale});
+  auto list = ui::column({.out = &m_peripheralsList, .align = FlexAlign::Stretch, .gap = Style::spaceXs * scale});
   card->addChild(std::move(list));
 
   root.addChild(std::move(card));
@@ -418,31 +450,31 @@ void PowerTab::syncBatteryStatus() {
 }
 
 void PowerTab::syncPowerProfiles() {
-  if (m_profiles == nullptr || m_powerProfiles == nullptr || m_profileOrder.empty()) {
+  if (m_profiles == nullptr || m_profileOrder.empty()) {
     return;
   }
 
-  const auto& active = m_powerProfiles->activeProfile();
-  const auto it = std::ranges::find(m_profileOrder, active);
-  if (it != m_profileOrder.end()) {
-    const auto index = static_cast<std::size_t>(std::distance(m_profileOrder.begin(), it));
-    if (index != m_profiles->selectedIndex()) {
-      m_syncingProfiles = true;
-      m_profiles->setSelectedIndex(index);
-      m_syncingProfiles = false;
-    }
-    for (std::size_t i = 0; i < m_profileOrder.size(); ++i) {
-      if (auto* btn = m_profiles->optionButton(i)) {
-        if (i == index) {
-          applyProfileButtonPalette(btn, m_profileOrder[i]);
-        } else {
-          btn->setCustomPalette(Button::defaultPalette(ButtonVariant::Tab));
-        }
+  std::size_t index = m_profiles->selectedIndex();
+  if (m_powerProfiles != nullptr) {
+    const auto& active = m_powerProfiles->activeProfile();
+    const auto it = std::ranges::find(m_profileOrder, active);
+    if (it != m_profileOrder.end()) {
+      index = static_cast<std::size_t>(std::distance(m_profileOrder.begin(), it));
+      if (index != m_profiles->selectedIndex()) {
+        m_syncingProfiles = true;
+        m_profiles->setSelectedIndex(index);
+        m_syncingProfiles = false;
       }
     }
   }
 
-  if (m_inhibitedRow != nullptr) {
+  for (std::size_t i = 0; i < m_profileOrder.size(); ++i) {
+    if (auto* btn = m_profiles->optionButton(i)) {
+      applyProfileButtonPalette(btn, m_profileOrder[i], i == index);
+    }
+  }
+
+  if (m_inhibitedRow != nullptr && m_powerProfiles != nullptr) {
     m_inhibitedRow->setVisible(!m_powerProfiles->state().performanceInhibited.empty());
   }
 }

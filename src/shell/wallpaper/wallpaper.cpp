@@ -1034,8 +1034,10 @@ Wallpaper::livePaletteSource(std::string_view outputSelector) {
   return std::nullopt;
 }
 
-std::string Wallpaper::liveWallpaperFallbackFrame() const {
-  if (!m_livePaletteSource.has_value() || m_livePaletteSource->framePaths.empty()) {
+std::string Wallpaper::liveWallpaperFallbackFrame(std::string_view connector) const {
+  if (!m_livePaletteFallbackConnectors.contains(std::string(connector))
+      || !m_livePaletteSource.has_value()
+      || m_livePaletteSource->framePaths.empty()) {
     return {};
   }
   if (m_livePaletteSource->framePaths.size() > 1) {
@@ -1050,9 +1052,17 @@ void Wallpaper::ensureLiveWallpaperPalette(std::string_view outputSelector) {
     if (!m_livePaletteDesiredIdentity.empty() || m_livePaletteSource.has_value()) {
       m_livePaletteDesiredIdentity.clear();
       m_livePaletteSource.reset();
+      m_livePaletteFallbackConnectors.clear();
       ++m_livePaletteGeneration;
     }
     return;
+  }
+
+  m_livePaletteFallbackConnectors.clear();
+  for (const auto& [connector, process] : m_videoProcesses) {
+    if (process.path == selected->first) {
+      m_livePaletteFallbackConnectors.insert(connector);
+    }
   }
 
   std::error_code ec;
@@ -1195,11 +1205,6 @@ void Wallpaper::completeLivePaletteExtraction(
       .identity = std::move(identity),
       .framePaths = std::move(framePaths),
   };
-
-  if (m_config != nullptr && !m_livePaletteSource->framePaths.empty()) {
-    const std::string fallbackFrame = m_livePaletteSource->framePaths.size() > 1 ? m_livePaletteSource->framePaths[1] : m_livePaletteSource->framePaths[0];
-    m_config->setWallpaperPath(std::nullopt, fallbackFrame);
-  }
 
   m_livePaletteChanged.emit();
 }
@@ -1536,7 +1541,6 @@ void Wallpaper::applyStartupAutomation(std::int64_t secondStamp) {
   }
 
   const auto& outputs = m_wayland->outputs();
-  const ThemeMode mode = m_config->config().theme.mode;
   bool attempted = false;
 
   ConfigService::WallpaperBatch batch(*m_config);
@@ -1553,7 +1557,7 @@ void Wallpaper::applyStartupAutomation(std::int64_t secondStamp) {
       attempted = true;
       std::vector<std::string> candidates;
       collectWallpaperCandidates(
-          wallpaper::resolveWallpaperDirectory(wallpaper, output, mode), automation.recursive, candidates
+          wallpaper::resolveWallpaperDirectory(wallpaper, output), automation.recursive, candidates
       );
       if (candidates.empty()) {
         continue;
@@ -1582,7 +1586,7 @@ void Wallpaper::applyStartupAutomation(std::int64_t secondStamp) {
     if (attempted) {
       std::vector<std::string> candidates;
       collectWallpaperCandidates(
-          wallpaper::resolveGlobalWallpaperDirectory(wallpaper, mode), automation.recursive, candidates
+          wallpaper::resolveGlobalWallpaperDirectory(wallpaper), automation.recursive, candidates
       );
       if (!candidates.empty()) {
         const std::string currentDefault = m_config->getDefaultWallpaperPath();
@@ -1621,8 +1625,6 @@ void Wallpaper::runAutomation(std::int64_t secondStamp) {
     return;
   }
 
-  const ThemeMode mode = m_config->config().theme.mode;
-
   ConfigService::WallpaperBatch batch(*m_config);
 
   if (wallpaper.perMonitorDirectories) {
@@ -1640,8 +1642,8 @@ void Wallpaper::runAutomation(std::int64_t secondStamp) {
         }
       }
       std::vector<std::string> candidates;
-      const std::string dir = output != nullptr ? wallpaper::resolveWallpaperDirectory(wallpaper, *output, mode)
-                                                : wallpaper::resolveGlobalWallpaperDirectory(wallpaper, mode);
+      const std::string dir = output != nullptr ? wallpaper::resolveWallpaperDirectory(wallpaper, *output)
+                                                : wallpaper::resolveGlobalWallpaperDirectory(wallpaper);
       collectWallpaperCandidates(dir, automation.recursive, candidates);
       if (candidates.empty()) {
         continue;
@@ -1656,7 +1658,7 @@ void Wallpaper::runAutomation(std::int64_t secondStamp) {
     }
   } else {
     std::vector<std::string> candidates;
-    const std::string dir = wallpaper::resolveGlobalWallpaperDirectory(wallpaper, mode);
+    const std::string dir = wallpaper::resolveGlobalWallpaperDirectory(wallpaper);
     collectWallpaperCandidates(dir, automation.recursive, candidates);
     if (!candidates.empty()) {
       const std::string currentDefault = m_config->getDefaultWallpaperPath();
@@ -1681,10 +1683,6 @@ Wallpaper::SwitchOutcome Wallpaper::switchWallpaperTo(PickWallpaper action, std:
   }
 
   const auto& wallpaper = m_config->config().wallpaper;
-  const ThemeMode mode = wallpaper.perMonitorDirectories
-      ? (m_config->config().theme.mode == ThemeMode::Light ? ThemeMode::Light : ThemeMode::Dark)
-      : ThemeMode::Dark;
-
   const auto pick = [action](std::vector<std::string> candidates, const std::string& currentPath) -> std::string {
     switch (action) {
     case PickWallpaper::Random:
@@ -1729,8 +1727,8 @@ Wallpaper::SwitchOutcome Wallpaper::switchWallpaperTo(PickWallpaper action, std:
       }
     }
     std::vector<std::string> candidates;
-    const std::string dir = output != nullptr ? wallpaper::resolveWallpaperDirectory(wallpaper, *output, mode)
-                                              : wallpaper::resolveGlobalWallpaperDirectory(wallpaper, mode);
+    const std::string dir = output != nullptr ? wallpaper::resolveWallpaperDirectory(wallpaper, *output)
+                                              : wallpaper::resolveGlobalWallpaperDirectory(wallpaper);
     collectWallpaperCandidates(dir, wallpaper.automation.recursive, candidates);
     if (candidates.empty()) {
       return SwitchOutcome::Unavailable;
@@ -1764,8 +1762,8 @@ Wallpaper::SwitchOutcome Wallpaper::switchWallpaperTo(PickWallpaper action, std:
         }
       }
       std::vector<std::string> candidates;
-      const std::string dir = output != nullptr ? wallpaper::resolveWallpaperDirectory(wallpaper, *output, mode)
-                                                : wallpaper::resolveGlobalWallpaperDirectory(wallpaper, mode);
+      const std::string dir = output != nullptr ? wallpaper::resolveWallpaperDirectory(wallpaper, *output)
+                                                : wallpaper::resolveGlobalWallpaperDirectory(wallpaper);
       collectWallpaperCandidates(dir, wallpaper.automation.recursive, candidates);
       if (candidates.empty()) {
         continue;
@@ -1782,7 +1780,7 @@ Wallpaper::SwitchOutcome Wallpaper::switchWallpaperTo(PickWallpaper action, std:
     }
   } else {
     std::vector<std::string> candidates;
-    const std::string dir = wallpaper::resolveGlobalWallpaperDirectory(wallpaper, mode);
+    const std::string dir = wallpaper::resolveGlobalWallpaperDirectory(wallpaper);
     collectWallpaperCandidates(dir, wallpaper.automation.recursive, candidates);
     if (!candidates.empty()) {
       sawCandidates = true;

@@ -423,8 +423,8 @@ namespace {
 
 } // namespace
 
-NetworkTab::NetworkTab(INetworkService* network, NetworkSecretAgent* secrets)
-    : m_network(network), m_secrets(secrets) {
+NetworkTab::NetworkTab(INetworkService* network, NetworkSecretAgent* secrets, bool useInternalScroll)
+    : m_network(network), m_secrets(secrets), m_useInternalScroll(useInternalScroll) {
   if (m_secrets != nullptr) {
     m_secrets->setRequestCallback([this](const NetworkSecretAgent::SecretRequest& request) {
       showPasswordPrompt(request);
@@ -451,8 +451,8 @@ std::unique_ptr<Flex> NetworkTab::create() {
 
   auto currentCard = ui::column({
       .out = &m_currentCard,
-      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
-        applySectionCardStyle(card, scale, opacity, borders);
+      .configure = [scale](Flex& card) {
+        applySeamlessSectionStyle(card, scale);
       },
   });
   addTitle(*currentCard, i18n::tr("control-center.network.current-connection"), scale);
@@ -582,23 +582,31 @@ std::unique_ptr<Flex> NetworkTab::create() {
   passwordCard->addChild(std::move(inputRow));
   tab->addChild(std::move(passwordCard));
 
-  auto listScroll = ui::scrollView({
-      .out = &m_listScroll,
-      .scrollbarVisible = true,
-      .viewportPaddingH = 0.0f,
-      .viewportPaddingV = 0.0f,
-      .flexGrow = 1.0f,
-      .configure = [](ScrollView& scrollView) {
-        scrollView.clearFill();
-        scrollView.clearBorder();
-      },
-  });
-  m_list = listScroll->content();
-  m_list->setDirection(FlexDirection::Vertical);
-  m_list->setAlign(FlexAlign::Stretch);
-  m_list->setGap(Style::spaceMd * scale);
-
-  tab->addChild(std::move(listScroll));
+  if (m_useInternalScroll) {
+    auto listScroll = ui::scrollView({
+        .out = &m_listScroll,
+        .scrollbarVisible = true,
+        .viewportPaddingH = 0.0f,
+        .viewportPaddingV = 0.0f,
+        .flexGrow = 1.0f,
+        .configure = [](ScrollView& scrollView) {
+          scrollView.clearFill();
+          scrollView.clearBorder();
+        },
+    });
+    m_list = listScroll->content();
+    m_list->setDirection(FlexDirection::Vertical);
+    m_list->setAlign(FlexAlign::Stretch);
+    m_list->setGap(Style::spaceMd * scale);
+    tab->addChild(std::move(listScroll));
+  } else {
+    auto list = ui::column({
+        .out = &m_list,
+        .align = FlexAlign::Stretch,
+        .gap = Style::spaceMd * scale,
+    });
+    tab->addChild(std::move(list));
+  }
   return tab;
 }
 
@@ -770,7 +778,7 @@ void NetworkTab::syncCurrentCard() {
       m_currentCard->setBorder(colorSpecFromRole(ColorRole::Primary, 0.4f), Style::borderWidth);
       m_currentTitle->setColor(colorSpecFromRole(ColorRole::Primary));
     } else {
-      applySectionCardStyle(*m_currentCard, contentScale(), panelCardOpacity(), panelBordersEnabled());
+      applySeamlessSectionStyle(*m_currentCard, contentScale());
       m_currentTitle->setColor(colorSpecFromRole(ColorRole::OnSurface));
     }
   }
@@ -846,10 +854,10 @@ NetworkTab::structureKey(const std::vector<AccessPointInfo>& aps, const std::vec
 
 void NetworkTab::rebuildApList(Renderer& renderer) {
   uiAssertNotRendering("NetworkTab::rebuildApList");
-  if (m_list == nullptr || m_listScroll == nullptr) {
+  if (m_list == nullptr) {
     return;
   }
-  const float listWidth = m_listScroll->contentViewportWidth();
+  const float listWidth = m_listScroll != nullptr ? m_listScroll->contentViewportWidth() : m_list->width();
   if (listWidth <= 0.0f) {
     return;
   }
@@ -934,7 +942,7 @@ void NetworkTab::rebuildApList(Renderer& renderer) {
 
     if (!vpns.empty()) {
       auto vpnCard = ui::column({
-          .configure = [scale, opacity, borders](Flex& card) { applySectionCardStyle(card, scale, opacity, borders); },
+          .configure = [scale](Flex& card) { applySeamlessSectionStyle(card, scale); },
       });
 
       auto vpnHeader = makeCardHeaderRow(i18n::tr("control-center.network.vpns"), scale);
@@ -977,7 +985,7 @@ void NetworkTab::rebuildApList(Renderer& renderer) {
 
     {
       auto wifiCard = ui::column({
-          .configure = [scale, opacity, borders](Flex& card) { applySectionCardStyle(card, scale, opacity, borders); },
+          .configure = [scale](Flex& card) { applySeamlessSectionStyle(card, scale); },
       });
 
       auto wifiHeader = makeCardHeaderRow(i18n::tr("control-center.network.wifi"), scale);

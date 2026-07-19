@@ -2,6 +2,7 @@
 
 #include "notification/notification.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <deque>
 #include <string>
@@ -10,6 +11,10 @@
 #include <vector>
 
 namespace notification_card {
+
+  [[nodiscard]] inline float displayedHeightForReveal(float targetHeight, float reveal) noexcept {
+    return std::max(1.0f, targetHeight * std::clamp(reveal, 0.0f, 1.0f));
+  }
 
   enum class GestureAction {
     None,

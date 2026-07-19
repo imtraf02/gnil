@@ -12,10 +12,11 @@ class Glyph;
 class Graph;
 class Label;
 class SystemMonitorService;
+class ConfigService;
 
 class SystemTab : public Tab {
 public:
-  explicit SystemTab(SystemMonitorService* monitor);
+  explicit SystemTab(SystemMonitorService* monitor, ConfigService* config = nullptr, bool dashboardMode = false);
   ~SystemTab() override;
 
   std::unique_ptr<Flex> create() override;
@@ -30,9 +31,12 @@ private:
   void updateGraphs(Renderer& renderer);
   void syncLabels();
   void updateGpuVisibility();
+  void syncDashboardCardVisibility();
   [[nodiscard]] float scrollProgressForSample(std::chrono::steady_clock::time_point sampledAt) const;
 
   SystemMonitorService* m_monitor;
+  ConfigService* m_config = nullptr;
+  bool m_dashboardMode = false;
   bool m_active = false;
   bool m_graphInitialized = false;
   bool m_gpuVisible = false;
@@ -47,6 +51,9 @@ private:
   double m_netPeak = 0.0;
 
   Flex* m_root = nullptr;
+  Flex* m_primaryRow = nullptr;
+  Flex* m_secondaryRow = nullptr;
+  Flex* m_infoRow = nullptr;
 
   Graph* m_cpuGraph = nullptr;
   Graph* m_ramGraph = nullptr;
@@ -57,6 +64,8 @@ private:
   Flex* m_ramCard = nullptr;
   Flex* m_gpuCard = nullptr;
   Flex* m_netCard = nullptr;
+  Flex* m_systemCard = nullptr;
+  Flex* m_resourcesCard = nullptr;
 
   Flex* m_cpuLegend = nullptr;
   Flex* m_ramLegend = nullptr;

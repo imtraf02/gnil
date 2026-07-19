@@ -8,6 +8,7 @@
 #include "core/ui_phase.h"
 #include "i18n/i18n.h"
 #include "render/animation/animation_manager.h"
+#include "render/animation/motion_service.h"
 #include "render/core/async_texture_cache.h"
 #include "render/core/renderer.h"
 #include "render/scene/input_area.h"
@@ -31,13 +32,14 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <random>
 #include <string_view>
-#include <tuple>
+#include <utility>
 
 namespace {
 
@@ -628,14 +630,103 @@ namespace {
 
 } // namespace
 
-class WallpaperCarousel final : public Node {
+class WallpaperCarousel final : public InputArea {
 public:
-  explicit WallpaperCarousel(AsyncTextureCache* asyncTextures) : m_asyncTextures(asyncTextures) {
+  WallpaperCarousel(ThumbnailService* thumbnails, float contentScale)
+      : m_thumbnails(thumbnails), m_contentScale(contentScale) {
     setClipChildren(true);
     setFlexGrow(1.0f);
+    setOnEnter([this](const PointerData& data) { updateHoveredCard(data.localX, data.localY); });
+    setOnLeave([this]() {
+      m_hoveredPhysical = kNoCard;
+      applyCardPositions();
+    });
+    setOnMotion([this](const PointerData& data) {
+      if (m_dragging) {
+        updateDrag(data.localX);
+      } else {
+        updateHoveredCard(data.localX, data.localY);
+      }
+    });
+    setOnPress([this](const PointerData& data) {
+      if (data.button != BTN_LEFT) {
+        return;
+      }
+      if (data.pressed) {
+        beginDrag(data.localX, data.localY);
+      } else {
+        endDrag();
+      }
+    });
+    setOnClick([this](const PointerData& data) {
+      if (std::exchange(m_suppressClick, false)) {
+        return;
+      }
+      const std::size_t physical = cardAt(data.localX, data.localY);
+      if (physical == kNoCard || physical >= m_cards.size() || !m_onActivate) {
+        return;
+      }
+      m_onActivate(m_cards[physical].resultIndex);
+    });
+    setOnAxisHandler([this](const PointerData& data) { return handleAxis(data); });
   }
 
-  void setResults(const std::vector<LauncherResult>* results) { m_results = results; }
+  ~WallpaperCarousel() override {
+    stopSkeletonPulse();
+    releaseThumbnails();
+  }
+
+  void setResults(const std::vector<LauncherResult>* results) {
+    m_results = results;
+    if (m_results == nullptr) {
+      releaseThumbnails();
+    }
+  }
+
+  void prepareModeTransition(int direction) { m_pendingModeDirection = std::clamp(direction, -1, 1); }
+
+  void setOnActivate(std::function<void(std::size_t)> callback) { m_onActivate = std::move(callback); }
+  void setOnSelectionChanged(std::function<void(std::size_t)> callback) {
+    m_onSelectionChanged = std::move(callback);
+  }
+  void setOnSelectionSettled(std::function<void(std::size_t)> callback) {
+    m_onSelectionSettled = std::move(callback);
+  }
+  [[nodiscard]] bool selectionInMotion() const noexcept { return m_slideAnim != 0 || m_dragging; }
+
+  void refreshThumbnails(Renderer& renderer) {
+    if (m_results == nullptr || m_results->empty()) {
+      releaseThumbnails();
+      return;
+    }
+    const float physicalScale = std::max(1.0f, renderer.renderScale());
+    const int targetPx = static_cast<int>(std::lround(std::max(m_cardWidth, m_cardHeight) * physicalScale));
+    if (targetPx <= 0) {
+      return;
+    }
+    ensureThumbnailAcquisitions(targetPx);
+    for (auto& card : m_cards) {
+      if (card.resultIndex >= m_acquiredPaths.size()) {
+        continue;
+      }
+      const std::string& path = m_acquiredPaths[card.resultIndex];
+      const TextureHandle handle = m_thumbnails != nullptr && !path.empty()
+          ? m_thumbnails->peek(path, m_thumbnailTargetPx)
+          : TextureHandle{};
+      if (handle.id != 0) {
+        card.image->setExternalTexture(renderer, handle);
+        card.image->setVisible(true);
+        revealThumbnail(card);
+      } else {
+        resetThumbnailToLoading(card, renderer);
+      }
+    }
+    if (hasLoadingCards()) {
+      startSkeletonPulse();
+    } else {
+      stopSkeletonPulse();
+    }
+  }
 
   void setSelectedIndex(std::size_t index) {
     if (m_results == nullptr || m_results->empty()) {
@@ -643,6 +734,9 @@ public:
     }
     const std::size_t next = std::min(index, m_results->size() - 1);
     if (next == m_selectedIndex && m_cycle.count() == m_results->size()) {
+      if (m_slideAnim != 0 && !m_selectionMotion) {
+        m_notifySettledAfterModeEntrance = true;
+      }
       return;
     }
     const std::size_t previous = m_selectedIndex;
@@ -657,12 +751,13 @@ public:
     } else {
       (void)m_cycle.select(next);
     }
+    markLayoutDirty();
     animateToSelection();
   }
 
 protected:
   void doLayout(Renderer& renderer) override {
-    rebuildIfNeeded(renderer);
+    rebuildIfNeeded();
     layoutCards(renderer);
     Node::doLayout(renderer);
   }
@@ -670,25 +765,202 @@ protected:
 private:
   struct Card {
     Flex* root = nullptr;
+    Box* imageHost = nullptr;
+    Box* skeleton = nullptr;
     Image* image = nullptr;
+    Glyph* placeholder = nullptr;
     Label* title = nullptr;
-    std::string imagePath;
+    std::size_t resultIndex = 0;
+    float revealProgress = 0.0f;
+    AnimationManager::Id revealAnim = 0;
+    bool thumbnailReady = false;
   };
 
-  void rebuildIfNeeded(Renderer& renderer) {
+  static constexpr std::size_t kNoCard = static_cast<std::size_t>(-1);
+  static constexpr float kDragThreshold = 6.0f;
+  static constexpr float kFlickProjectionMs = 140.0f;
+  static constexpr int kMaxFlickItems = 3;
+  static constexpr float kSkeletonPulseLow = 0.42f;
+  static constexpr float kSkeletonPulseHigh = 0.72f;
+  static constexpr float kSkeletonPulseDurationMs = 900.0f;
+  static constexpr std::size_t kThumbnailCacheRadius = 3;
+
+  void applyLoadingVisual(Card& card) {
+    const float pending = 1.0f - card.revealProgress;
+    card.image->setOpacity(card.revealProgress);
+    card.skeleton->setOpacity(m_skeletonPulse * pending);
+    card.skeleton->setVisible(pending > 0.001f);
+    card.placeholder->setOpacity(0.52f * pending);
+    card.placeholder->setVisible(pending > 0.001f);
+  }
+
+  [[nodiscard]] bool cardThumbnailRequested(const Card& card) const {
+    return card.resultIndex < m_acquiredPaths.size() && !m_acquiredPaths[card.resultIndex].empty();
+  }
+
+  [[nodiscard]] bool hasLoadingCards() const {
+    return std::ranges::any_of(m_cards, [this](const Card& card) {
+      return cardThumbnailRequested(card) && !card.thumbnailReady;
+    });
+  }
+
+  void stopSkeletonPulse() {
+    if (m_skeletonAnim != 0 && animationManager() != nullptr) {
+      animationManager()->cancel(m_skeletonAnim);
+    }
+    m_skeletonAnim = 0;
+  }
+
+  void startSkeletonPulse() {
+    if (m_skeletonAnim != 0 || !hasLoadingCards()) {
+      return;
+    }
+    if (!MotionService::instance().enabled() || animationManager() == nullptr) {
+      m_skeletonPulse = kSkeletonPulseLow;
+      for (auto& card : m_cards) {
+        applyLoadingVisual(card);
+      }
+      return;
+    }
+    const float target = m_skeletonPulseRising ? kSkeletonPulseHigh : kSkeletonPulseLow;
+    m_skeletonAnim = animationManager()->animate(
+        m_skeletonPulse, target, kSkeletonPulseDurationMs, Easing::EaseInOutCubic,
+        [this](float opacity) {
+          m_skeletonPulse = opacity;
+          for (auto& card : m_cards) {
+            if ((cardThumbnailRequested(card) && !card.thumbnailReady) || card.revealProgress < 1.0f) {
+              applyLoadingVisual(card);
+            }
+          }
+        },
+        [this]() {
+          m_skeletonAnim = 0;
+          m_skeletonPulseRising = !m_skeletonPulseRising;
+          startSkeletonPulse();
+        }, this
+    );
+  }
+
+  void revealThumbnail(Card& card) {
+    if (card.thumbnailReady) {
+      applyLoadingVisual(card);
+      return;
+    }
+    card.thumbnailReady = true;
+    if (card.revealProgress >= 1.0f) {
+      applyLoadingVisual(card);
+      return;
+    }
+    if (card.revealAnim != 0 && animationManager() != nullptr) {
+      animationManager()->cancel(card.revealAnim);
+      card.revealAnim = 0;
+    }
+    if (!MotionService::instance().enabled() || animationManager() == nullptr) {
+      card.revealProgress = 1.0f;
+      applyLoadingVisual(card);
+      return;
+    }
+    card.revealAnim = animationManager()->animate(
+        card.revealProgress, 1.0f, Style::animNormal, Easing::CaelestiaDefaultEffects,
+        [this, &card](float progress) {
+          card.revealProgress = progress;
+          applyLoadingVisual(card);
+        },
+        [this, &card]() {
+          card.revealAnim = 0;
+          card.revealProgress = 1.0f;
+          applyLoadingVisual(card);
+        }, card.image
+    );
+  }
+
+  void resetThumbnailToLoading(Card& card, Renderer& renderer) {
+    if (!card.thumbnailReady && card.revealProgress <= 0.0f && !card.image->visible()) {
+      return;
+    }
+    if (card.revealAnim != 0 && animationManager() != nullptr) {
+      animationManager()->cancel(card.revealAnim);
+      card.revealAnim = 0;
+    }
+    card.thumbnailReady = false;
+    card.revealProgress = 0.0f;
+    card.image->clear(renderer);
+    card.image->setVisible(false);
+    applyLoadingVisual(card);
+  }
+
+  void releaseThumbnails() {
+    if (m_thumbnails != nullptr && m_thumbnailTargetPx > 0) {
+      for (const auto& path : m_acquiredPaths) {
+        if (!path.empty()) {
+          m_thumbnails->release(path, m_thumbnailTargetPx);
+        }
+      }
+    }
+    m_acquiredPaths.clear();
+    m_thumbnailTargetPx = 0;
+  }
+
+  void ensureThumbnailAcquisitions(int targetPx) {
+    if (m_thumbnails == nullptr || m_results == nullptr) {
+      return;
+    }
+    std::vector<std::string> paths(m_results->size());
+    for (std::size_t i = 0; i < m_results->size(); ++i) {
+      const std::size_t direct = i > m_selectedIndex ? i - m_selectedIndex : m_selectedIndex - i;
+      const std::size_t cyclic = std::min(direct, m_results->size() - direct);
+      if (cyclic <= kThumbnailCacheRadius) {
+        paths[i] = (*m_results)[i].iconPath;
+      }
+    }
+    if (targetPx == m_thumbnailTargetPx && paths == m_acquiredPaths) {
+      return;
+    }
+    if (targetPx != m_thumbnailTargetPx || paths.size() != m_acquiredPaths.size()) {
+      releaseThumbnails();
+      m_thumbnailTargetPx = targetPx;
+      m_acquiredPaths.resize(paths.size());
+    }
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+      if (paths[i] == m_acquiredPaths[i]) {
+        continue;
+      }
+      if (!m_acquiredPaths[i].empty()) {
+        m_thumbnails->release(m_acquiredPaths[i], m_thumbnailTargetPx);
+      }
+      m_acquiredPaths[i] = std::move(paths[i]);
+      if (!m_acquiredPaths[i].empty()) {
+        (void)m_thumbnails->acquire(m_acquiredPaths[i], m_thumbnailTargetPx);
+      }
+    }
+  }
+
+  void rebuildIfNeeded() {
     std::vector<std::string> ids;
     if (m_results != nullptr) {
       ids.reserve(m_results->size());
       for (const auto& result : *m_results) {
-        ids.push_back(result.id);
+        ids.push_back(result.providerId + "\n" + result.id);
       }
     }
     if (ids == m_resultIds) {
       return;
     }
+    if (m_slideAnim != 0 && animationManager() != nullptr) {
+      animationManager()->cancel(m_slideAnim);
+      m_slideAnim = 0;
+    }
+    m_selectionMotion = false;
+    m_notifySettledAfterModeEntrance = false;
+    m_hoveredPhysical = kNoCard;
+    m_pressedPhysical = kNoCard;
+    m_dragging = false;
+    m_suppressClick = false;
+    stopSkeletonPulse();
     while (!children().empty()) {
       (void)removeChild(children().front().get());
     }
+    releaseThumbnails();
     m_cards.clear();
     m_resultIds = std::move(ids);
     m_selectedIndex = std::min(m_selectedIndex, m_resultIds.empty() ? std::size_t{0} : m_resultIds.size() - 1);
@@ -700,38 +972,63 @@ private:
     m_cycle.setCount(m_results->size());
     (void)m_cycle.select(m_selectedIndex);
     for (std::size_t copy = 0; copy < 3; ++copy) {
-      for (const auto& result : *m_results) {
+      for (std::size_t resultIndex = 0; resultIndex < m_results->size(); ++resultIndex) {
+        const auto& result = (*m_results)[resultIndex];
         Card card;
         auto root = ui::column({
           .out = &card.root,
           .align = FlexAlign::Center,
-          .gap = Style::spaceSm,
-          .padding = Style::spaceSm,
-          .radius = Style::radiusLg,
-      });
-        root->addChild(ui::image({.out = &card.image}));
+          .gap = Style::spaceSm * m_contentScale,
+          .padding = Style::spaceSm * m_contentScale,
+          .radius = Style::scaledRadiusLg(m_contentScale),
+        });
+        auto imageHost = ui::box({
+            .out = &card.imageHost,
+            .fill = colorSpecFromRole(ColorRole::SurfaceVariant),
+            .radius = Style::scaledRadiusMd(m_contentScale),
+            .configure = [](Box& box) { box.setClipChildren(true); },
+        });
+        imageHost->addChild(
+            ui::box({
+                .out = &card.skeleton,
+                .fill = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.18f),
+                .radius = Style::scaledRadiusMd(m_contentScale),
+                .opacity = kSkeletonPulseLow,
+                .participatesInLayout = false,
+            })
+        );
+        imageHost->addChild(
+            ui::image({
+                .out = &card.image,
+                .fit = ImageFit::Cover,
+                .radius = Style::scaledRadiusMd(m_contentScale),
+                .opacity = 0.0f,
+                .participatesInLayout = false,
+            })
+        );
+        imageHost->addChild(
+            ui::glyph({
+                .out = &card.placeholder,
+                .glyph = result.providerId == kLiveWallpaperProviderId ? "smart_display" : "image",
+                .glyphSize = Style::fontSizeTitle * 1.5f * m_contentScale,
+                .color = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.62f),
+                .opacity = 0.52f,
+                .participatesInLayout = false,
+            })
+        );
+        root->addChild(std::move(imageHost));
         root->addChild(
           ui::label({
               .out = &card.title,
-              .fontSize = Style::fontSizeCaption,
+              .fontSize = Style::fontSizeCaption * m_contentScale,
               .fontWeight = FontWeight::Medium,
               .color = colorSpecFromRole(ColorRole::OnSurface),
               .maxLines = 1,
               .configure = [](Label& label) { label.setTextAlign(TextAlign::Center); },
           })
         );
-        card.imagePath = result.iconPath;
+        card.resultIndex = resultIndex;
         card.title->setText(singleLinePreview(result.title));
-        card.image->setFit(ImageFit::Cover);
-        card.image->setRadius(Style::radiusMd);
-        card.image->setAsyncReadyCallback([]() { PanelManager::instance().requestRedraw(); });
-        if (!card.imagePath.empty()) {
-          if (m_asyncTextures != nullptr) {
-            (void)card.image->setSourceFileAsync(renderer, *m_asyncTextures, card.imagePath, 640, true);
-          } else {
-            (void)card.image->setSourceFile(renderer, card.imagePath, 640, true);
-          }
-        }
         addChild(std::move(root));
         m_cards.push_back(std::move(card));
       }
@@ -743,6 +1040,163 @@ private:
         - static_cast<float>(m_cycle.physicalIndex()) * (m_cardWidth + m_gap);
   }
 
+  [[nodiscard]] float cardStride() const { return m_cardWidth + m_gap; }
+
+  [[nodiscard]] std::size_t cardAt(float localX, float localY) const {
+    if (localY < 0.0f || localY > m_cardHeight) {
+      return kNoCard;
+    }
+    for (std::size_t i = 0; i < m_cards.size(); ++i) {
+      const float left = m_offsetX + static_cast<float>(i) * cardStride();
+      if (localX >= left && localX <= left + m_cardWidth) {
+        return i;
+      }
+    }
+    return kNoCard;
+  }
+
+  void updateHoveredCard(float localX, float localY) {
+    const std::size_t hovered = cardAt(localX, localY);
+    if (hovered == m_hoveredPhysical) {
+      return;
+    }
+    m_hoveredPhysical = hovered;
+    applyCardPositions();
+  }
+
+  void notifySelectionChanged() {
+    m_selectedIndex = m_cycle.logicalIndex();
+    markLayoutDirty();
+    if (m_onSelectionChanged) {
+      m_onSelectionChanged(m_selectedIndex);
+    }
+  }
+
+  void selectPhysical(std::size_t physical) {
+    if (!m_cycle.selectPhysical(physical)) {
+      return;
+    }
+    notifySelectionChanged();
+  }
+
+  void rebaseForInteraction() {
+    if (m_cards.empty() || cardStride() <= 0.0f) {
+      return;
+    }
+    const std::size_t before = m_cycle.physicalIndex();
+    if (!m_cycle.rebase()) {
+      return;
+    }
+    const auto shift = static_cast<long>(m_cycle.physicalIndex()) - static_cast<long>(before);
+    m_offsetX -= static_cast<float>(shift) * cardStride();
+  }
+
+  void beginDrag(float localX, float localY) {
+    if (m_cards.empty() || cardStride() <= 0.0f) {
+      return;
+    }
+    if (m_slideAnim != 0 && animationManager() != nullptr) {
+      animationManager()->cancel(m_slideAnim);
+      m_slideAnim = 0;
+    }
+    m_selectionMotion = false;
+    rebaseForInteraction();
+    m_dragging = true;
+    m_dragMoved = false;
+    m_suppressClick = false;
+    m_dragStartX = localX;
+    m_dragStartOffset = m_offsetX;
+    m_lastDragX = localX;
+    m_lastDragSampleAt = std::chrono::steady_clock::now();
+    m_dragVelocity = 0.0f;
+    m_pressedPhysical = cardAt(localX, localY);
+    applyCardPositions();
+  }
+
+  void updateDrag(float localX) {
+    if (!m_dragging || m_cards.empty()) {
+      return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    const float dtMs = std::chrono::duration<float, std::milli>(now - m_lastDragSampleAt).count();
+    if (dtMs > 0.0f && dtMs < 80.0f) {
+      m_dragVelocity = (localX - m_lastDragX) / dtMs;
+    }
+    m_lastDragX = localX;
+    m_lastDragSampleAt = now;
+
+    const float delta = localX - m_dragStartX;
+    m_dragMoved = m_dragMoved || std::abs(delta) >= kDragThreshold * m_contentScale;
+    if (!m_dragMoved) {
+      return;
+    }
+
+    const float centerOffset = width() * 0.5f - m_cardWidth * 0.5f;
+    const float minOffset = centerOffset - static_cast<float>(m_cards.size() - 1) * cardStride();
+    m_offsetX = std::clamp(m_dragStartOffset + delta, minOffset, centerOffset);
+    const auto nearest = static_cast<std::size_t>(std::clamp(
+        std::lround((centerOffset - m_offsetX) / cardStride()), 0L,
+        static_cast<long>(m_cards.size() - 1)
+    ));
+    selectPhysical(nearest);
+    m_hoveredPhysical = cardAt(localX, m_cardHeight * 0.5f);
+    applyCardPositions();
+  }
+
+  void endDrag() {
+    if (!m_dragging) {
+      return;
+    }
+    m_dragging = false;
+    m_pressedPhysical = kNoCard;
+    m_suppressClick = m_dragMoved;
+
+    if (m_dragMoved && !m_cards.empty()) {
+      const float centerOffset = width() * 0.5f - m_cardWidth * 0.5f;
+      const float projectedOffset = m_offsetX + m_dragVelocity * kFlickProjectionMs;
+      const long nearest = std::lround((centerOffset - m_offsetX) / cardStride());
+      const long projected = std::lround((centerOffset - projectedOffset) / cardStride());
+      const long bounded = std::clamp(
+          projected, nearest - static_cast<long>(kMaxFlickItems), nearest + static_cast<long>(kMaxFlickItems)
+      );
+      const auto target = static_cast<std::size_t>(
+          std::clamp(bounded, 0L, static_cast<long>(m_cards.size() - 1))
+      );
+      selectPhysical(target);
+    }
+    animateToSelection();
+  }
+
+  bool handleAxis(const PointerData& data) {
+    if (m_results == nullptr || m_results->empty()) {
+      return true;
+    }
+    const float steps = data.scrollSteps();
+    if (steps == 0.0f) {
+      return true;
+    }
+    if (m_results->size() == 1) {
+      return true;
+    }
+    if (m_slideAnim != 0 && animationManager() != nullptr) {
+      animationManager()->cancel(m_slideAnim);
+      m_slideAnim = 0;
+    }
+    m_selectionMotion = false;
+    rebaseForInteraction();
+    const int count = std::clamp(
+        static_cast<int>(std::abs(steps)), 1,
+        std::min(kMaxFlickItems, static_cast<int>(m_results->size()))
+    );
+    const int direction = steps > 0.0f ? 1 : -1;
+    for (int i = 0; i < count; ++i) {
+      (void)m_cycle.move(direction);
+    }
+    notifySelectionChanged();
+    animateToSelection();
+    return true;
+  }
+
   void animateToSelection() {
     if (m_cards.empty() || width() <= 0.0f) {
       return;
@@ -752,6 +1206,8 @@ private:
       if (m_slideAnim != 0) {
         animations->cancel(m_slideAnim);
       }
+      m_selectionMotion = true;
+      m_notifySettledAfterModeEntrance = false;
       m_slideAnim = animations->animate(
           m_offsetX, target, Style::animNormal, Easing::EaseOutCubic,
           [this](float offset) {
@@ -760,26 +1216,87 @@ private:
           },
           [this]() {
             m_slideAnim = 0;
+            m_selectionMotion = false;
             if (m_cycle.rebase()) {
               m_offsetX = selectedOffset();
               applyCardPositions();
             }
+            if (m_onSelectionSettled) {
+              m_onSelectionSettled(m_selectedIndex);
+            }
           }, this
       );
     } else {
+      m_selectionMotion = false;
       m_offsetX = target;
       applyCardPositions();
+      if (m_onSelectionSettled) {
+        m_onSelectionSettled(m_selectedIndex);
+      }
     }
   }
 
   void applyCardPositions() {
     for (std::size_t i = 0; i < m_cards.size(); ++i) {
       auto& card = m_cards[i];
-      card.root->setPosition(m_offsetX + static_cast<float>(i) * (m_cardWidth + m_gap), 0.0f);
-      const bool selected = i == m_cycle.physicalIndex();
-      const bool adjacent = i + 1 == m_cycle.physicalIndex() || i == m_cycle.physicalIndex() + 1;
-      card.root->setScale(selected ? 1.0f : 0.8f);
-      card.root->setOpacity(selected ? 1.0f : (adjacent ? 0.68f : 0.42f));
+      const float x = m_offsetX + static_cast<float>(i) * cardStride();
+      card.root->setPosition(x, 0.0f);
+      const float cardCenter = x + m_cardWidth * 0.5f;
+      const float viewportCenter = width() * 0.5f;
+      const float distance = cardStride() > 0.0f ? std::abs(cardCenter - viewportCenter) / cardStride() : 0.0f;
+      const float focus = std::clamp(distance, 0.0f, 1.0f);
+      const bool hovered = i == m_hoveredPhysical;
+      const bool pressed = i == m_pressedPhysical && InputArea::pressed();
+      float cardScale = std::lerp(1.0f, 0.8f, focus);
+      if (hovered) {
+        cardScale = std::min(1.0f, cardScale + 0.025f);
+      }
+      if (pressed) {
+        cardScale *= 0.97f;
+      }
+      card.root->setScale(cardScale);
+      const float fadeDistance = std::clamp(distance - 1.15f, 0.0f, 1.0f);
+      const float baseOpacity = std::lerp(1.0f, 0.42f, fadeDistance);
+      card.root->setOpacity(baseOpacity * m_modeTransitionOpacity);
+      card.root->setZIndex(static_cast<std::int32_t>(1000.0f - std::min(distance, 999.0f)));
+    }
+  }
+
+  void startModeEntrance() {
+    const int direction = std::exchange(m_pendingModeDirection, 0);
+    if (direction == 0 || m_cards.empty()) {
+      m_modeTransitionOpacity = 1.0f;
+      return;
+    }
+    const float target = selectedOffset();
+    const float distance = std::min(width() * 0.08f, 52.0f * m_contentScale);
+    const float start = target + static_cast<float>(direction) * distance;
+    m_offsetX = start;
+    m_modeTransitionOpacity = 0.48f;
+    if (AnimationManager* animations = animationManager(); animations != nullptr) {
+      if (m_slideAnim != 0) {
+        animations->cancel(m_slideAnim);
+      }
+      m_slideAnim = animations->animate(
+          0.0f, 1.0f, Style::animNormal, Easing::EaseOutCubic,
+          [this, start, target](float progress) {
+            m_offsetX = start + (target - start) * progress;
+            m_modeTransitionOpacity = 0.48f + 0.52f * progress;
+            applyCardPositions();
+          },
+          [this, target]() {
+            m_offsetX = target;
+            m_modeTransitionOpacity = 1.0f;
+            m_slideAnim = 0;
+            applyCardPositions();
+            if (std::exchange(m_notifySettledAfterModeEntrance, false) && m_onSelectionSettled) {
+              m_onSelectionSettled(m_selectedIndex);
+            }
+          }, this
+      );
+    } else {
+      m_offsetX = target;
+      m_modeTransitionOpacity = 1.0f;
     }
   }
 
@@ -787,35 +1304,73 @@ private:
     if (m_cards.empty()) {
       return;
     }
-    m_gap = Style::spaceLg;
-    m_cardWidth = std::min(460.0f, std::max(220.0f, width() * 0.64f));
-    const float imageWidth = std::max(1.0f, m_cardWidth - Style::spaceSm * 2.0f);
+    m_gap = Style::spaceLg * m_contentScale;
+    m_cardWidth = std::min(460.0f * m_contentScale, std::max(220.0f * m_contentScale, width() * 0.64f));
+    const float imageWidth = std::max(1.0f, m_cardWidth - Style::spaceSm * m_contentScale * 2.0f);
     const float imageHeight = wallpaperCardImageHeight(imageWidth);
-    const float cardHeight = imageHeight + Style::fontSizeCaption + Style::spaceSm * 3.0f;
+    const float cardHeight =
+        imageHeight + Style::fontSizeCaption * m_contentScale + Style::spaceSm * m_contentScale * 3.0f;
+    m_cardHeight = cardHeight;
     for (auto& card : m_cards) {
       card.root->setSize(m_cardWidth, cardHeight);
-      card.image->setSize(imageWidth, imageHeight);
+      card.imageHost->setSize(imageWidth, imageHeight);
+      card.skeleton->setPosition(0.0f, 0.0f);
+      card.skeleton->setFrameSize(imageWidth, imageHeight);
+      card.image->setPosition(0.0f, 0.0f);
+      card.image->setFrameSize(imageWidth, imageHeight);
       card.title->setMaxWidth(imageWidth);
       card.root->layout(renderer);
+      card.placeholder->measure(renderer);
+      const float placeholderSize = card.placeholder->width();
+      card.placeholder->setPosition(
+          std::round((imageWidth - placeholderSize) * 0.5f),
+          std::round((imageHeight - placeholderSize) * 0.5f)
+      );
     }
     if (!m_positionInitialized) {
       m_positionInitialized = true;
       m_offsetX = selectedOffset();
+      startModeEntrance();
     }
+    refreshThumbnails(renderer);
     applyCardPositions();
   }
 
-  AsyncTextureCache* m_asyncTextures = nullptr;
+  ThumbnailService* m_thumbnails = nullptr;
+  float m_contentScale = 1.0f;
   const std::vector<LauncherResult>* m_results = nullptr;
   std::vector<std::string> m_resultIds;
+  std::vector<std::string> m_acquiredPaths;
   std::vector<Card> m_cards;
   std::size_t m_selectedIndex = 0;
   CyclicPicker m_cycle;
   float m_cardWidth = 0.0f;
+  float m_cardHeight = 0.0f;
   float m_gap = 0.0f;
   float m_offsetX = 0.0f;
+  float m_modeTransitionOpacity = 1.0f;
+  int m_pendingModeDirection = 0;
+  int m_thumbnailTargetPx = 0;
   bool m_positionInitialized = false;
   AnimationManager::Id m_slideAnim = 0;
+  bool m_selectionMotion = false;
+  bool m_notifySettledAfterModeEntrance = false;
+  std::size_t m_hoveredPhysical = kNoCard;
+  std::size_t m_pressedPhysical = kNoCard;
+  float m_dragStartX = 0.0f;
+  float m_dragStartOffset = 0.0f;
+  float m_lastDragX = 0.0f;
+  float m_dragVelocity = 0.0f;
+  std::chrono::steady_clock::time_point m_lastDragSampleAt;
+  bool m_dragging = false;
+  bool m_dragMoved = false;
+  bool m_suppressClick = false;
+  float m_skeletonPulse = kSkeletonPulseLow;
+  bool m_skeletonPulseRising = true;
+  AnimationManager::Id m_skeletonAnim = 0;
+  std::function<void(std::size_t)> m_onActivate;
+  std::function<void(std::size_t)> m_onSelectionChanged;
+  std::function<void(std::size_t)> m_onSelectionSettled;
 };
 
 class LauncherResultAdapter final : public VirtualGridAdapter {
@@ -916,8 +1471,10 @@ private:
   SecondaryActivateCallback m_onSecondaryActivate;
 };
 
-LauncherPanel::LauncherPanel(ConfigService* config, AsyncTextureCache* asyncTextures, Wallpaper* wallpaper)
-    : m_config(config), m_asyncTextures(asyncTextures), m_wallpaper(wallpaper) {
+LauncherPanel::LauncherPanel(
+    ConfigService* config, AsyncTextureCache* asyncTextures, ThumbnailService* thumbnails, Wallpaper* wallpaper
+)
+    : m_config(config), m_asyncTextures(asyncTextures), m_thumbnails(thumbnails), m_wallpaper(wallpaper) {
   syncUsageTrackingState();
 }
 
@@ -957,6 +1514,7 @@ void LauncherPanel::setScopedProvider(std::string_view providerId, std::string_v
 
 void LauncherPanel::create() {
   m_launcherRowHeight = 0.0f;
+  m_wallpaperModeIndex = 0;
   const float scale = contentScale();
   auto container = ui::column({
       .out = &m_container,
@@ -994,17 +1552,6 @@ void LauncherPanel::create() {
           },
   });
 
-  auto categoryFilter = ui::segmented({
-      .out = &m_categoryFilter,
-      .scale = scale,
-      .compact = true,
-      .surfaceOpacity = panelCardOpacity(),
-      .equalSegmentWidths = true,
-      .visible = false,
-      .participatesInLayout = false,
-      .configure = [](Segmented& segmented) { segmented.setAlign(FlexAlign::Center); },
-  });
-
   auto wallpaperModeTab = ui::segmented({
       .out = &m_wallpaperModeTab,
       .scale = scale,
@@ -1018,7 +1565,14 @@ void LauncherPanel::create() {
         segmented.addOption("Images", "image");
         segmented.addOption("Videos", "smart_display");
         segmented.setSelectedIndex(0);
-        segmented.setOnChange([this](std::size_t /*idx*/) {
+        segmented.setOnChange([this](std::size_t idx) {
+          if (idx == m_wallpaperModeIndex) {
+            return;
+          }
+          if (m_wallpaperCarousel != nullptr) {
+            m_wallpaperCarousel->prepareModeTransition(idx > m_wallpaperModeIndex ? 1 : -1);
+          }
+          m_wallpaperModeIndex = idx;
           m_selectedIndex = 0;
           reapplyCurrentQuery();
         });
@@ -1065,8 +1619,32 @@ void LauncherPanel::create() {
       })
   );
 
-  auto wallpaperCarousel = std::make_unique<WallpaperCarousel>(m_asyncTextures);
+  auto wallpaperCarousel = std::make_unique<WallpaperCarousel>(m_thumbnails, scale);
   m_wallpaperCarousel = wallpaperCarousel.get();
+  wallpaperCarousel->setOnSelectionChanged([this](std::size_t index) {
+    if (index >= m_results.size()) {
+      return;
+    }
+    ++m_wallpaperPreviewSerial;
+    m_selectedIndex = index;
+    if (m_grid != nullptr) {
+      m_grid->setSelectedIndex(index);
+    }
+  });
+  wallpaperCarousel->setOnSelectionSettled([this](std::size_t index) {
+    const std::optional<std::size_t> pending = std::exchange(m_pendingWallpaperSelection, std::nullopt);
+    const bool activate = pending.has_value() && *pending == index;
+    const std::uint64_t serial = ++m_wallpaperPreviewSerial;
+    DeferredCall::callLater([this, index, activate, serial]() {
+      if (serial != m_wallpaperPreviewSerial || index >= m_results.size() || index != m_selectedIndex) {
+        return;
+      }
+      if (!previewWallpaperAt(index) && activate) {
+        (void)applyWallpaperAt(index, false);
+      }
+    });
+  });
+  wallpaperCarousel->setOnActivate([this](std::size_t index) { selectWallpaperAt(index); });
   wallpaperCarousel->setVisible(false);
   wallpaperCarousel->setParticipatesInLayout(false);
   body->addChild(std::move(wallpaperCarousel));
@@ -1122,7 +1700,6 @@ void LauncherPanel::create() {
   container->addChild(std::move(body));
   // Caelestia's launcher grows upward from the search field. Results and
   // provider controls therefore live above the persistent bottom input.
-  container->addChild(std::move(categoryFilter));
   container->addChild(std::move(wallpaperModeTab));
   container->addChild(std::move(input));
 
@@ -1130,6 +1707,16 @@ void LauncherPanel::create() {
 
   if (m_animations != nullptr) {
     root()->setAnimationManager(m_animations);
+  }
+
+  if (m_thumbnails != nullptr) {
+    m_thumbnailPendingSub = m_thumbnails->subscribePendingUpload([this]() {
+      if (m_container == nullptr) {
+        return;
+      }
+      m_thumbnailRefreshPending = true;
+      PanelManager::instance().requestUpdateOnly();
+    });
   }
 
   m_appIconColorizeConn = shellAppIconColorizationChanged().connect([this]() { refreshLauncherAppIconColorization(); });
@@ -1201,14 +1788,17 @@ LauncherPanel::Presentation LauncherPanel::currentPresentation() const {
 
 void LauncherPanel::syncDynamicVisualSize(bool animate) {
   const Presentation next = currentPresentation();
+  const Presentation previous = m_presentation;
   const bool presentationChanged = next != m_presentation;
+  const bool wallpaperModeSwitch =
+      (previous == Presentation::Wallpaper || previous == Presentation::LiveWallpaper)
+      && (next == Presentation::Wallpaper || next == Presentation::LiveWallpaper);
   m_presentation = next;
 
   float width = 630.0f;
   float height = 420.0f;
-  const auto dynamicListHeight = [this](std::size_t rows, std::size_t maxRows, bool categoryVisible) {
-    const float chromeHeight =
-        Style::panelPadding * 2.0f + 48.0f + Style::spaceSm + (categoryVisible ? 36.0f + Style::spaceSm : 0.0f);
+  const auto dynamicListHeight = [this](std::size_t rows, std::size_t maxRows) {
+    const float chromeHeight = Style::panelPadding * 2.0f + 48.0f + Style::spaceSm;
     const float rowHeight = std::max(48.0f, m_launcherRowHeight > 0.0f ? m_launcherRowHeight : 56.0f);
     return launcher_visual::dynamicListHeight(chromeHeight, rowHeight, Style::spaceXs, rows, maxRows);
   };
@@ -1230,7 +1820,7 @@ void LauncherPanel::syncDynamicVisualSize(bool animate) {
     // rather than reserving a fixed empty block for every `/` query.
     const auto maxRows =
         m_config != nullptr ? static_cast<std::size_t>(m_config->config().shell.launcher.maxShown) : std::size_t{7};
-    height = dynamicListHeight(m_results.size(), maxRows, false);
+    height = dynamicListHeight(m_results.size(), maxRows);
     break;
   }
   case Presentation::Detail:
@@ -1242,17 +1832,16 @@ void LauncherPanel::syncDynamicVisualSize(bool animate) {
     // an empty search therefore collapses to the search row, while each real
     // row grows the drawer until its normal cap. Keep the same relationship
     // here instead of reserving at least one (and previously 210 px) row.
-    const bool categoryVisible = m_categoryFilter != nullptr && m_categoryFilter->visible();
     const std::size_t resultRows = m_results.empty()
         ? 0
         : (m_usingAppGrid ? (m_results.size() + kAppGridColumns - 1) / kAppGridColumns : m_results.size());
-    height = dynamicListHeight(resultRows, m_usingAppGrid ? 4 : 7, categoryVisible);
+    height = dynamicListHeight(resultRows, m_usingAppGrid ? 4 : 7);
     break;
   }
   }
 
   PanelManager::instance().requestActivePanelVisualSize(scaled(width), scaled(height), animate);
-  if (presentationChanged && animate && root() != nullptr && m_animations != nullptr) {
+  if (presentationChanged && !wallpaperModeSwitch && animate && root() != nullptr && m_animations != nullptr) {
     if (m_modeTransitionAnimation != 0) {
       m_animations->cancel(m_modeTransitionAnimation);
     }
@@ -1289,7 +1878,7 @@ void LauncherPanel::syncLauncherViewLayout(Renderer* renderer) {
   }
 
   const bool useGrid = shouldUseAppGrid();
-  const bool useWallpaperGrid = useGrid && isWallpaperBrowse();
+  const bool useWallpaperGrid = useGrid && (isWallpaperBrowse() || isLiveWallpaperBrowse());
   const float scale = contentScale();
   const LauncherListStyle style = launcherListStyleFrom(m_config, scale);
   m_listAdapter->setListStyle(style);
@@ -1388,9 +1977,6 @@ void LauncherPanel::onPanelCardOpacityChanged(float opacity) {
   if (m_input != nullptr) {
     m_input->setSurfaceOpacity(opacity);
   }
-  if (m_categoryFilter != nullptr) {
-    m_categoryFilter->setSurfaceOpacity(opacity);
-  }
   if (m_wallpaperModeTab != nullptr) {
     m_wallpaperModeTab->setSurfaceOpacity(opacity);
   }
@@ -1402,6 +1988,11 @@ void LauncherPanel::onPanelCardOpacityChanged(float opacity) {
 void LauncherPanel::doLayout(Renderer& renderer, float width, float height) {
   if (m_container == nullptr || m_input == nullptr) {
     return;
+  }
+
+  if (m_thumbnails != nullptr) {
+    (void)m_thumbnails->uploadPending(renderer.textureManager());
+    m_thumbnailRefreshPending = false;
   }
 
   syncLauncherListStyle();
@@ -1416,22 +2007,20 @@ void LauncherPanel::doLayout(Renderer& renderer, float width, float height) {
   }
 }
 
+void LauncherPanel::doUpdate(Renderer& renderer) {
+  if (!m_thumbnailRefreshPending || m_thumbnails == nullptr || m_wallpaperCarousel == nullptr) {
+    return;
+  }
+  (void)m_thumbnails->uploadPending(renderer.textureManager());
+  m_thumbnailRefreshPending = false;
+  m_wallpaperCarousel->refreshThumbnails(renderer);
+  PanelManager::instance().requestRedraw();
+}
+
 void LauncherPanel::onOpen(std::string_view context) {
   // Pick up apps installed since the last scan (notably Nix profile swaps that
   // inotify cannot observe). Cheap stat-only check; only rescans on real change.
   refreshDesktopEntriesIfSourcesChanged();
-
-  m_categoryFilterVisible = m_config != nullptr && m_config->config().shell.launcher.categories;
-  m_activeCategoryType = All;
-  m_activeCategory.clear();
-  m_currentCategories.clear();
-  m_categoryFilterSlots.clear();
-  m_hasRecentlyUsed = false;
-  if (m_categoryFilter != nullptr) {
-    m_categoryFilter->clearOptions();
-    m_categoryFilter->setVisible(false);
-    m_categoryFilter->setParticipatesInLayout(false);
-  }
 
   const std::string initialValue(context);
   if (m_input != nullptr) {
@@ -1445,6 +2034,8 @@ void LauncherPanel::onOpen(std::string_view context) {
 }
 
 void LauncherPanel::onClose() {
+  m_pendingWallpaperSelection.reset();
+  ++m_wallpaperPreviewSerial;
   if (m_wallpaper != nullptr) {
     m_wallpaper->clearPreview();
   }
@@ -1465,26 +2056,23 @@ void LauncherPanel::onClose() {
   m_allResults.clear();
   m_scopedProviderId.clear();
   m_scopedPlaceholder.clear();
-  m_activeCategoryType = All;
-  m_activeCategory.clear();
-  m_currentCategories.clear();
-  m_categoryFilterSlots.clear();
-  m_hasRecentlyUsed = false;
   m_selectedIndex = 0;
   m_usingAppGrid = false;
   m_usingWallpaperGrid = false;
   m_launcherRowHeight = 0.0f;
+  m_wallpaperModeIndex = 0;
+  m_thumbnailRefreshPending = false;
 
   if (m_grid != nullptr) {
     m_grid->setAdapter(nullptr);
   }
   m_listAdapter.reset();
   m_gridAdapter.reset();
+  m_thumbnailPendingSub.disconnect();
 
   // The scene tree (and all nodes) is destroyed by PanelManager after onClose().
   m_container = nullptr;
   m_input = nullptr;
-  m_categoryFilter = nullptr;
   m_wallpaperModeTab = nullptr;
   m_body = nullptr;
   m_grid = nullptr;
@@ -1586,21 +2174,16 @@ bool LauncherPanel::handleGlobalKey(std::uint32_t sym, std::uint32_t modifiers, 
     }
   }
 
-  if (m_categoryFilter != nullptr && m_categoryFilter->visible()) {
-    if (focused == m_categoryFilter->focusArea()) {
-      return false;
-    }
-  }
-
   return handleKeyEvent(sym, modifiers);
 }
 
 void LauncherPanel::onInputChanged(const std::string& text) {
   m_query = text;
   m_allResults.clear();
-
-  std::vector<LauncherCategory> newCategories;
-  bool hasRecentlyUsed = false;
+  if (m_wallpaperModeTab != nullptr) {
+    m_wallpaperModeTab->setVisible(false);
+    m_wallpaperModeTab->setParticipatesInLayout(false);
+  }
 
   if (m_scopedProviderId.empty() && routeCommandQuery(text)) {
     // The command router owns every slash query before legacy provider-prefix
@@ -1668,7 +2251,6 @@ void LauncherPanel::onInputChanged(const std::string& text) {
       for (auto& result : results) {
         const int usageCount = m_usageTracker.getCount(provider.id(), result.id);
         result.score += usageBoostForScore(result.score, usageCount, typedQuery);
-        result.recentlyUsedIndex = m_usageTracker.getRecentlyUsedIndex(provider.id(), result.id);
       }
     };
 
@@ -1676,15 +2258,11 @@ void LauncherPanel::onInputChanged(const std::string& text) {
       m_allResults = activeProvider->query(queryText);
       if (activeProvider->trackUsage()) {
         applyUsageBoost(m_allResults, *activeProvider);
-        if (sortByUsage && m_usageTracker.getRecentlyUsedCount(activeProvider->id()) > 0) {
-          hasRecentlyUsed = true;
-        }
       }
       for (auto& result : m_allResults) {
         result.providerId = activeProvider->id();
       }
       sortResultsByScore(m_allResults);
-      newCategories = activeProvider->categories();
     } else if (startsWithSlash(text)) {
       m_allResults = providerOverviewResults(text);
     } else {
@@ -1701,9 +2279,6 @@ void LauncherPanel::onInputChanged(const std::string& text) {
         auto results = provider->query(queryText);
         if (provider->trackUsage()) {
           applyUsageBoost(results, *provider);
-          if (sortByUsage && m_usageTracker.getRecentlyUsedCount(provider->id()) > 0) {
-            hasRecentlyUsed = true;
-          }
         }
         for (auto& result : results) {
           result.providerId = provider->id();
@@ -1711,10 +2286,6 @@ void LauncherPanel::onInputChanged(const std::string& text) {
         m_allResults.insert(
             m_allResults.end(), std::make_move_iterator(results.begin()), std::make_move_iterator(results.end())
         );
-        auto providerCats = provider->categories();
-        for (auto& cat : providerCats) {
-          newCategories.push_back(std::move(cat));
-        }
       }
       sortResultsByScore(m_allResults);
     }
@@ -1737,28 +2308,7 @@ void LauncherPanel::onInputChanged(const std::string& text) {
     }
   }
 
-  bool categoriesChanged = newCategories.size() != m_currentCategories.size();
-  if (!categoriesChanged) {
-    for (std::size_t i = 0; i < newCategories.size(); ++i) {
-      if (newCategories[i].label != m_currentCategories[i].label) {
-        categoriesChanged = true;
-        break;
-      }
-    }
-  }
-
-  if (hasRecentlyUsed != m_hasRecentlyUsed) {
-    m_hasRecentlyUsed = hasRecentlyUsed;
-    categoriesChanged = true;
-  }
-
-  if (categoriesChanged) {
-    m_activeCategoryType = All;
-    m_activeCategory.clear();
-    rebuildCategoryFilter(newCategories);
-  }
-
-  applyActiveCategory();
+  publishResults();
 }
 
 std::vector<LauncherResult> LauncherPanel::commandCatalogResults(std::string_view filter) {
@@ -1851,7 +2401,17 @@ bool LauncherPanel::routeCommandQuery(std::string_view text) {
     return true;
   }
 
-  const std::string_view providerId = route.mode == launcher_command::Mode::Calculator ? "Calculator" : "Wallpaper";
+  const bool wallpaperMode = route.mode == launcher_command::Mode::Wallpaper;
+  if (m_wallpaperModeTab != nullptr) {
+    m_wallpaperModeTab->setVisible(wallpaperMode);
+    m_wallpaperModeTab->setParticipatesInLayout(wallpaperMode);
+  }
+  std::string_view providerId = "Calculator";
+  if (wallpaperMode) {
+    providerId = m_wallpaperModeTab != nullptr && m_wallpaperModeTab->selectedIndex() == 1
+        ? kLiveWallpaperProviderId
+        : kWallpaperProviderId;
+  }
   for (const auto& provider : m_providers) {
     if (provider->id() != providerId) {
       continue;
@@ -1870,79 +2430,6 @@ bool LauncherPanel::routeCommandQuery(std::string_view text) {
     break;
   }
   return true;
-}
-
-void LauncherPanel::rebuildCategoryFilter(const std::vector<LauncherCategory>& categories) {
-  m_currentCategories = categories;
-  m_categoryFilterSlots.clear();
-  if (categories.empty() && !m_hasRecentlyUsed) {
-    if (m_categoryFilter != nullptr) {
-      m_categoryFilter->clearOptions();
-      setCategoryFilterVisible(false);
-    }
-    return;
-  }
-
-  m_categoryFilterSlots.push_back({All, 0});
-  if (m_hasRecentlyUsed) {
-    m_categoryFilterSlots.push_back({RecentlyUsed, 0});
-  }
-  for (std::size_t i = 0; i < categories.size(); ++i) {
-    m_categoryFilterSlots.push_back({Category, i});
-  }
-
-  if (m_categoryFilter == nullptr) {
-    return;
-  }
-
-  m_categoryFilter->clearOptions();
-  for (std::size_t i = 0; i < m_categoryFilterSlots.size(); ++i) {
-    const auto& slot = m_categoryFilterSlots[i];
-    switch (slot.type) {
-    case All:
-      m_categoryFilter->addOption("", "layout-grid");
-      m_categoryFilter->setOptionTooltip(i, i18n::tr("launcher.categories.all"));
-      break;
-    case RecentlyUsed:
-      m_categoryFilter->addOption("", "history");
-      m_categoryFilter->setOptionTooltip(i, i18n::tr("launcher.categories.recently-used"));
-      break;
-    case Category:
-      m_categoryFilter->addOption("", categories[slot.categoryIndex].glyphName);
-      m_categoryFilter->setOptionTooltip(i, categories[slot.categoryIndex].label);
-      break;
-    }
-  }
-  m_categoryFilter->setSelectedIndex(0);
-  m_categoryFilter->setOnChange([this](std::size_t idx) { setActiveCategorySlot(idx); });
-  setCategoryFilterVisible(m_categoryFilterVisible);
-}
-
-void LauncherPanel::setActiveCategorySlot(std::size_t slotIndex) {
-  if (slotIndex >= m_categoryFilterSlots.size()) {
-    return;
-  }
-
-  const auto& slot = m_categoryFilterSlots[slotIndex];
-  m_activeCategoryType = slot.type;
-  if (slot.type == Category && slot.categoryIndex < m_currentCategories.size()) {
-    m_activeCategory = m_currentCategories[slot.categoryIndex].label;
-  } else {
-    m_activeCategory.clear();
-  }
-  applyActiveCategory();
-}
-
-void LauncherPanel::setCategoryFilterVisible(bool visible) {
-  if (m_categoryFilter == nullptr) {
-    return;
-  }
-  const bool show = visible && !m_categoryFilterSlots.empty();
-  m_categoryFilter->setVisible(show);
-  m_categoryFilter->setParticipatesInLayout(show);
-  if (m_container != nullptr) {
-    m_container->markLayoutDirty();
-  }
 }
 
 std::vector<LauncherResult> LauncherPanel::providerOverviewResults(std::string_view text) const {
@@ -1983,30 +2470,8 @@ std::vector<LauncherResult> LauncherPanel::providerOverviewResults(std::string_v
   return results;
 }
 
-void LauncherPanel::applyActiveCategory() {
-  m_results.clear();
-  switch (m_activeCategoryType) {
-  case All:
-    m_results = m_allResults;
-    break;
-  case RecentlyUsed:
-    std::ranges::copy_if(m_allResults, std::back_inserter(m_results), [](const LauncherResult& r) {
-      return r.recentlyUsedIndex > 0;
-    });
-    std::ranges::sort(m_results, [](const LauncherResult& a, const LauncherResult& b) {
-      return a.recentlyUsedIndex > b.recentlyUsedIndex
-          || (a.recentlyUsedIndex == b.recentlyUsedIndex
-              && std::tie(a.providerId, a.id) < std::tie(b.providerId, b.id));
-    });
-    break;
-  case Category:
-    for (const auto& r : m_allResults) {
-      if (r.category == m_activeCategory) {
-        m_results.push_back(r);
-      }
-    }
-    break;
-  }
+void LauncherPanel::publishResults() {
+  m_results = m_allResults;
   m_selectedIndex = 0;
   refreshResults();
 }
@@ -2040,12 +2505,15 @@ void LauncherPanel::applyEmptyState() {
   }
   const bool empty = m_results.empty();
   const bool detail = !empty && shouldUseDetailPresentation();
-  const bool wallpaper = !empty && isWallpaperBrowse();
+  const bool wallpaper = !empty && (isWallpaperBrowse() || isLiveWallpaperBrowse());
   m_grid->setVisible(!empty && !detail && !wallpaper);
   m_grid->setParticipatesInLayout(!empty && !detail && !wallpaper);
   if (m_wallpaperCarousel != nullptr) {
     m_wallpaperCarousel->setVisible(wallpaper);
     m_wallpaperCarousel->setParticipatesInLayout(wallpaper);
+    if (!wallpaper) {
+      m_wallpaperCarousel->setResults(nullptr);
+    }
   }
   if (m_detailScroll != nullptr) {
     m_detailScroll->setVisible(detail);
@@ -2263,6 +2731,72 @@ void LauncherPanel::activateAt(std::size_t index) {
   activateSelected();
 }
 
+void LauncherPanel::selectWallpaperAt(std::size_t index) {
+  if (index >= m_results.size()) {
+    return;
+  }
+  ++m_wallpaperPreviewSerial;
+  const bool selectionChanged = index != m_selectedIndex;
+  const bool deferUntilSettled = m_wallpaperCarousel != nullptr
+      && (selectionChanged || m_wallpaperCarousel->selectionInMotion());
+  m_pendingWallpaperSelection = deferUntilSettled ? std::optional<std::size_t>{index} : std::nullopt;
+  m_selectedIndex = index;
+  if (m_grid != nullptr) {
+    m_grid->setSelectedIndex(m_selectedIndex);
+  }
+  if (m_wallpaperCarousel != nullptr) {
+    m_wallpaperCarousel->setSelectedIndex(m_selectedIndex);
+  }
+  if (deferUntilSettled) {
+    return;
+  }
+  if (!previewWallpaperAt(index)) {
+    (void)applyWallpaperAt(index, false);
+  }
+}
+
+bool LauncherPanel::previewWallpaperAt(std::size_t index) {
+  if (index >= m_results.size() || m_wallpaper == nullptr) {
+    return false;
+  }
+  const LauncherResult& result = m_results[index];
+  if (result.providerId != kWallpaperProviderId || !result.available || result.id.empty()) {
+    return false;
+  }
+  return m_wallpaper->previewWallpaperImage(std::nullopt, result.id);
+}
+
+bool LauncherPanel::applyWallpaperAt(std::size_t index, bool closePanel) {
+  if (index >= m_results.size()) {
+    return false;
+  }
+  const LauncherResult& result = m_results[index];
+  const bool staticWallpaper = result.providerId == kWallpaperProviderId;
+  const bool liveWallpaper = result.providerId == kLiveWallpaperProviderId;
+  if ((!staticWallpaper && !liveWallpaper) || !result.available) {
+    return false;
+  }
+
+  if (staticWallpaper && m_wallpaper != nullptr) {
+    m_wallpaper->commitPreview();
+  }
+  for (auto& provider : m_providers) {
+    if (provider->id() != std::string_view(result.providerId)) {
+      continue;
+    }
+    if (!provider->activate(result)) {
+      return false;
+    }
+    if (closePanel) {
+      PanelManager::instance().closePanel(staticWallpaper);
+    } else {
+      PanelManager::instance().requestRedraw();
+    }
+    return true;
+  }
+  return false;
+}
+
 void LauncherPanel::activateSelected() {
   if (m_selectedIndex >= m_results.size()) {
     return;
@@ -2270,6 +2804,10 @@ void LauncherPanel::activateSelected() {
 
   const auto& result = m_results[m_selectedIndex];
   if (!result.available) {
+    return;
+  }
+  if (result.providerId == kWallpaperProviderId || result.providerId == kLiveWallpaperProviderId) {
+    (void)applyWallpaperAt(m_selectedIndex, true);
     return;
   }
   if (result.providerId == kCommandProviderId) {
@@ -2291,11 +2829,6 @@ void LauncherPanel::activateSelected() {
     return;
   }
 
-  const bool wallpaperResult = result.providerId == kWallpaperProviderId;
-  if (wallpaperResult && m_wallpaper != nullptr) {
-    m_wallpaper->commitPreview();
-  }
-
   // Dispatch only to the provider that produced this result. Providers can use
   // overlapping id shapes, so probing every provider risks side effects.
   for (auto& provider : m_providers) {
@@ -2310,7 +2843,7 @@ void LauncherPanel::activateSelected() {
     if (shouldTrackUsage() && provider->trackUsage()) {
       m_usageTracker.record(provider->id(), result.id);
     }
-    PanelManager::instance().closePanel(wallpaperResult);
+    PanelManager::instance().closePanel(false);
     return;
   }
 }
@@ -2372,7 +2905,7 @@ bool LauncherPanel::activateCommandResult(const LauncherResult& result) {
         candidate.subtitle = "Press Enter again to confirm";
       }
     }
-    applyActiveCategory();
+    publishResults();
     return true;
   }
 
@@ -2475,6 +3008,10 @@ bool LauncherPanel::handleKeyEvent(std::uint32_t sym, std::uint32_t modifiers) {
     if (next == static_cast<int>(m_selectedIndex)) {
       return;
     }
+    if (wallpaperNav) {
+      ++m_wallpaperPreviewSerial;
+      m_pendingWallpaperSelection.reset();
+    }
     m_selectedIndex = static_cast<std::size_t>(next);
     if (m_grid != nullptr) {
       m_grid->setSelectedIndex(m_selectedIndex);
@@ -2483,33 +3020,6 @@ bool LauncherPanel::handleKeyEvent(std::uint32_t sym, std::uint32_t modifiers) {
       m_wallpaperCarousel->setSelectedIndex(m_selectedIndex);
     }
   };
-
-  const auto cycleCategory = [this](bool reverse) {
-    if (m_categoryFilter == nullptr) {
-      return false;
-    }
-    const std::size_t total = m_categoryFilterSlots.size();
-    if (total == 0) {
-      return false;
-    }
-
-    const bool wasVisible = m_categoryFilter->visible();
-    m_categoryFilterVisible = true;
-    setCategoryFilterVisible(true);
-    if (!wasVisible) {
-      return true;
-    }
-
-    const std::size_t selected = std::min(m_categoryFilter->selectedIndex(), total - 1);
-    const std::size_t next =
-        reverse ? (selected == 0 ? total - 1 : selected - 1) : (selected + 1 < total ? selected + 1 : 0);
-    m_categoryFilter->setSelectedIndex(next);
-    return true;
-  };
-
-  if (sym == XKB_KEY_F6 && (modifiers & ~(KeyMod::Shift)) == 0) {
-    return cycleCategory((modifiers & KeyMod::Shift) != 0);
-  }
 
   if (KeySymbol::isPageUp(sym)) {
     const int stride = m_grid != nullptr ? static_cast<int>(m_grid->pageItemStride()) : 1;
@@ -2544,9 +3054,7 @@ bool LauncherPanel::handleKeyEvent(std::uint32_t sym, std::uint32_t modifiers) {
   }
 
   if (wallpaperNav && KeySymbol::isSpace(sym)) {
-    if (m_selectedIndex < m_results.size() && m_wallpaper != nullptr) {
-      (void)m_wallpaper->previewWallpaperImage(std::nullopt, m_results[m_selectedIndex].id);
-    }
+    selectWallpaperAt(m_selectedIndex);
     return true;
   }
 

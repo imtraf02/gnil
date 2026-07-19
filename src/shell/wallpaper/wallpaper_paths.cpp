@@ -13,44 +13,25 @@ wallpaper::findWallpaperMonitorOverride(const WallpaperConfig& config, const Way
   return nullptr;
 }
 
-std::string
-wallpaper::resolveWallpaperDirectory(const WallpaperConfig& config, const WaylandOutput& output, ThemeMode mode) {
+std::string wallpaper::resolveWallpaperDirectory(const WallpaperConfig& config, const WaylandOutput& output) {
   if (config.perMonitorDirectories) {
     if (const auto* ovr = findWallpaperMonitorOverride(config, output); ovr != nullptr) {
-      if (mode == ThemeMode::Light && ovr->directoryLight.has_value() && !ovr->directoryLight->empty()) {
-        return *ovr->directoryLight;
-      }
-      if (mode == ThemeMode::Dark && ovr->directoryDark.has_value() && !ovr->directoryDark->empty()) {
-        return *ovr->directoryDark;
-      }
       if (ovr->directory.has_value() && !ovr->directory->empty()) {
         return *ovr->directory;
       }
     }
   }
-  return resolveGlobalWallpaperDirectory(config, mode);
+  return resolveGlobalWallpaperDirectory(config);
 }
 
-std::string wallpaper::resolveGlobalWallpaperDirectory(const WallpaperConfig& config, ThemeMode mode) {
-  if (mode == ThemeMode::Light && !config.directoryLight.empty()) {
-    return config.directoryLight;
-  }
-  if (mode == ThemeMode::Dark && !config.directoryDark.empty()) {
-    return config.directoryDark;
-  }
+std::string wallpaper::resolveGlobalWallpaperDirectory(const WallpaperConfig& config) {
   if (!config.directory.empty()) {
     return config.directory;
   }
   return FileUtils::expandUserPath(std::string(kDefaultWallpaperDirectory)).string();
 }
 
-std::string wallpaper::resolveGlobalLiveWallpaperDirectory(const WallpaperConfig& config, ThemeMode mode) {
-  if (mode == ThemeMode::Light && !config.liveWallpaperDirectoryLight.empty()) {
-    return config.liveWallpaperDirectoryLight;
-  }
-  if (mode == ThemeMode::Dark && !config.liveWallpaperDirectoryDark.empty()) {
-    return config.liveWallpaperDirectoryDark;
-  }
+std::string wallpaper::resolveGlobalLiveWallpaperDirectory(const WallpaperConfig& config) {
   if (!config.liveWallpaperDirectory.empty()) {
     return config.liveWallpaperDirectory;
   }

@@ -466,6 +466,7 @@ void Application::reconcileOutputSurfaces() {
   m_panelManager.onOutputChange();
   m_desktopWidgetsController.onOutputChange();
   m_hotCorners.onOutputChange();
+  m_dashboardEdgeTrigger.onOutputChange();
   m_sidebarEdgeTrigger.onOutputChange();
   m_lockScreen.onOutputChange();
   m_idleGraceOverlay.onOutputChange();
@@ -1181,7 +1182,7 @@ void Application::triggerShellAction(const std::string& action, wl_output* outpu
   if (action == "launcher") {
     m_panelManager.togglePanel("launcher", PanelOpenRequest{.output = output});
   } else if (action == "control_center") {
-    kLog.warn("shell action control_center was removed; bind a destination panel such as network or audio");
+    m_panelManager.togglePanel("dashboard", PanelOpenRequest{.output = output});
   } else if (action == "overview") {
     // There is no public toggle for overview in OverviewLauncherCapture.
     // Try to execute a generic compositor action, or use niri directly if using niri.

@@ -546,6 +546,71 @@ namespace settings {
       ));
     }
 
+    // Dashboard — kept in its own settings section so the Panels page can
+    // reveal it as one coherent room instead of scattering tab switches among
+    // unrelated standalone-panel sizing controls.
+    entries.push_back(makeEntry(
+        SettingsSection::ControlCenter, "general", "Enabled",
+        "Enable the top-centre dashboard.", {"dashboard", "enabled"},
+        ToggleSetting{cfg.dashboard.enabled}, "dashboard top center"
+    ));
+    {
+      auto e = makeEntry(
+          SettingsSection::ControlCenter, "general", "Drag threshold",
+          "Distance dragged from the top edge before the dashboard opens.",
+          {"dashboard", "drag_threshold"},
+          StepperSetting{.value = cfg.dashboard.dragThreshold, .minValue = 1, .maxValue = 500, .step = 5,
+                         .valueSuffix = "px"},
+          "dashboard touch swipe gesture"
+      );
+      e.visibleWhen = [](const Config& c) { return c.dashboard.enabled; };
+      entries.push_back(std::move(e));
+    }
+
+    const auto addDashboardToggle = [&entries](std::string group, std::string label, std::vector<std::string> path,
+                                                bool checked, std::string search) {
+      auto e = makeEntry(
+          SettingsSection::ControlCenter, std::move(group), std::move(label),
+          "Show this room in the dashboard tab strip.", std::move(path), ToggleSetting{checked}, std::move(search)
+      );
+      e.visibleWhen = [](const Config& c) { return c.dashboard.enabled; };
+      entries.push_back(std::move(e));
+    };
+    addDashboardToggle("tabs", "Dashboard", {"dashboard", "show_dashboard"}, cfg.dashboard.showDashboard, "home");
+    addDashboardToggle("tabs", "Media", {"dashboard", "show_media"}, cfg.dashboard.showMedia, "music player");
+    addDashboardToggle(
+        "tabs", "Performance", {"dashboard", "show_performance"}, cfg.dashboard.showPerformance,
+        "cpu gpu memory storage network"
+    );
+    addDashboardToggle("tabs", "Weather", {"dashboard", "show_weather"}, cfg.dashboard.showWeather, "forecast");
+
+    {
+      auto e = makeEntry(
+          SettingsSection::ControlCenter, "media", "Synced lyrics",
+          "Fetch and cache time-synchronised lyrics for the active MPRIS track.",
+          {"dashboard", "media", "lyrics_enabled"}, ToggleSetting{cfg.dashboard.media.lyricsEnabled},
+          "lyrics lrc lrclib"
+      );
+      e.visibleWhen = [](const Config& c) { return c.dashboard.enabled && c.dashboard.showMedia; };
+      entries.push_back(std::move(e));
+    }
+
+    const auto addPerformanceToggle = [&entries](std::string label, std::string key, bool checked) {
+      auto e = makeEntry(
+          SettingsSection::ControlCenter, "performance", std::move(label),
+          "Show this card in the Performance room.", {"dashboard", "performance", std::move(key)},
+          ToggleSetting{checked}, "dashboard performance widget"
+      );
+      e.visibleWhen = [](const Config& c) { return c.dashboard.enabled && c.dashboard.showPerformance; };
+      entries.push_back(std::move(e));
+    };
+    addPerformanceToggle("Battery", "show_battery", cfg.dashboard.performance.showBattery);
+    addPerformanceToggle("GPU", "show_gpu", cfg.dashboard.performance.showGpu);
+    addPerformanceToggle("CPU", "show_cpu", cfg.dashboard.performance.showCpu);
+    addPerformanceToggle("Memory", "show_memory", cfg.dashboard.performance.showMemory);
+    addPerformanceToggle("Storage", "show_storage", cfg.dashboard.performance.showStorage);
+    addPerformanceToggle("Network", "show_network", cfg.dashboard.performance.showNetwork);
+
     const BarConfig* lingBar = selectedBar;
     if (lingBar == nullptr && !cfg.bars.empty()) {
       lingBar = &cfg.bars.front();
@@ -618,28 +683,6 @@ namespace settings {
         "folder path"
     ));
     entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.directory-light.label"),
-        tr("settings.schema.wallpaper.directory-light.description"), {"wallpaper", "directory_light"},
-        TextSetting{
-            .value = cfg.wallpaper.directoryLight,
-            .placeholder = tr("settings.schema.wallpaper.directory-light.placeholder"),
-            .browseMode = TextSettingBrowseMode::SelectFolder,
-            .browseFileExtensions = {}
-        },
-        "folder path light theme", true
-    ));
-    entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.directory-dark.label"),
-        tr("settings.schema.wallpaper.directory-dark.description"), {"wallpaper", "directory_dark"},
-        TextSetting{
-            .value = cfg.wallpaper.directoryDark,
-            .placeholder = tr("settings.schema.wallpaper.directory-dark.placeholder"),
-            .browseMode = TextSettingBrowseMode::SelectFolder,
-            .browseFileExtensions = {}
-        },
-        "folder path dark theme", true
-    ));
-    entries.push_back(makeEntry(
         SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory.label"),
         tr("settings.schema.wallpaper.live-wallpaper-directory.description"), {"wallpaper", "live_wallpaper_directory"},
         TextSetting{
@@ -649,28 +692,6 @@ namespace settings {
             .browseFileExtensions = {}
         },
         "live wallpaper folder path"
-    ));
-    entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory-light.label"),
-        tr("settings.schema.wallpaper.live-wallpaper-directory-light.description"), {"wallpaper", "live_wallpaper_directory_light"},
-        TextSetting{
-            .value = cfg.wallpaper.liveWallpaperDirectoryLight,
-            .placeholder = tr("settings.schema.wallpaper.live-wallpaper-directory-light.placeholder"),
-            .browseMode = TextSettingBrowseMode::SelectFolder,
-            .browseFileExtensions = {}
-        },
-        "live wallpaper folder path light theme", true
-    ));
-    entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory-dark.label"),
-        tr("settings.schema.wallpaper.live-wallpaper-directory-dark.description"), {"wallpaper", "live_wallpaper_directory_dark"},
-        TextSetting{
-            .value = cfg.wallpaper.liveWallpaperDirectoryDark,
-            .placeholder = tr("settings.schema.wallpaper.live-wallpaper-directory-dark.placeholder"),
-            .browseMode = TextSettingBrowseMode::SelectFolder,
-            .browseFileExtensions = {}
-        },
-        "live wallpaper folder path dark theme", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.per-monitor-directories.label"),
@@ -902,28 +923,6 @@ namespace settings {
         "folder path"
     ));
     entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.directory-light.label"),
-        tr("settings.schema.wallpaper.directory-light.description"), {"wallpaper", "directory_light"},
-        TextSetting{
-            .value = cfg.wallpaper.directoryLight,
-            .placeholder = tr("settings.schema.wallpaper.directory-light.placeholder"),
-            .browseMode = TextSettingBrowseMode::SelectFolder,
-            .browseFileExtensions = {}
-        },
-        "folder path light theme", true
-    ));
-    entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.directory-dark.label"),
-        tr("settings.schema.wallpaper.directory-dark.description"), {"wallpaper", "directory_dark"},
-        TextSetting{
-            .value = cfg.wallpaper.directoryDark,
-            .placeholder = tr("settings.schema.wallpaper.directory-dark.placeholder"),
-            .browseMode = TextSettingBrowseMode::SelectFolder,
-            .browseFileExtensions = {}
-        },
-        "folder path dark theme", true
-    ));
-    entries.push_back(makeEntry(
         SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory.label"),
         tr("settings.schema.wallpaper.live-wallpaper-directory.description"), {"wallpaper", "live_wallpaper_directory"},
         TextSetting{
@@ -933,28 +932,6 @@ namespace settings {
             .browseFileExtensions = {}
         },
         "live wallpaper folder path"
-    ));
-    entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory-light.label"),
-        tr("settings.schema.wallpaper.live-wallpaper-directory-light.description"), {"wallpaper", "live_wallpaper_directory_light"},
-        TextSetting{
-            .value = cfg.wallpaper.liveWallpaperDirectoryLight,
-            .placeholder = tr("settings.schema.wallpaper.live-wallpaper-directory-light.placeholder"),
-            .browseMode = TextSettingBrowseMode::SelectFolder,
-            .browseFileExtensions = {}
-        },
-        "live wallpaper folder path light theme", true
-    ));
-    entries.push_back(makeEntry(
-        SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.live-wallpaper-directory-dark.label"),
-        tr("settings.schema.wallpaper.live-wallpaper-directory-dark.description"), {"wallpaper", "live_wallpaper_directory_dark"},
-        TextSetting{
-            .value = cfg.wallpaper.liveWallpaperDirectoryDark,
-            .placeholder = tr("settings.schema.wallpaper.live-wallpaper-directory-dark.placeholder"),
-            .browseMode = TextSettingBrowseMode::SelectFolder,
-            .browseFileExtensions = {}
-        },
-        "live wallpaper folder path dark theme", true
     ));
     entries.push_back(makeEntry(
         SettingsSection::Wallpaper, "directories", tr("settings.schema.wallpaper.per-monitor-directories.label"),
@@ -1002,36 +979,6 @@ namespace settings {
                 .browseFileExtensions = {}
             },
             "monitor folder"
-        );
-        e.visibleWhen = perMonOn;
-        entries.push_back(std::move(e));
-      }
-      {
-        auto e = makeEntry(
-            section, "monitors", connector, tr("settings.schema.wallpaper.monitor-directory-light.label"),
-            monitorPath("directory_light"),
-            TextSetting{
-                .value = ovr != nullptr && ovr->directoryLight.has_value() ? *ovr->directoryLight : "",
-                .placeholder = tr("settings.schema.wallpaper.monitor-directory-light.placeholder"),
-                .browseMode = TextSettingBrowseMode::SelectFolder,
-                .browseFileExtensions = {}
-            },
-            "monitor light folder", true
-        );
-        e.visibleWhen = perMonOn;
-        entries.push_back(std::move(e));
-      }
-      {
-        auto e = makeEntry(
-            section, "monitors", connector, tr("settings.schema.wallpaper.monitor-directory-dark.label"),
-            monitorPath("directory_dark"),
-            TextSetting{
-                .value = ovr != nullptr && ovr->directoryDark.has_value() ? *ovr->directoryDark : "",
-                .placeholder = tr("settings.schema.wallpaper.monitor-directory-dark.placeholder"),
-                .browseMode = TextSettingBrowseMode::SelectFolder,
-                .browseFileExtensions = {}
-            },
-            "monitor dark folder", true
         );
         e.visibleWhen = perMonOn;
         entries.push_back(std::move(e));
@@ -1367,11 +1314,6 @@ namespace settings {
         ToggleSetting{cfg.shell.panel.borders}, "outline border card"
     ));
     entries.push_back(makeEntry(
-        SettingsSection::Launcher, "launcher", tr("settings.schema.panels.launcher-categories.label"),
-        tr("settings.schema.panels.launcher-categories.description"), {"shell", "launcher", "categories"},
-        ToggleSetting{cfg.shell.launcher.categories}, "launcher categories filter"
-    ));
-    entries.push_back(makeEntry(
         SettingsSection::Launcher, "launcher", tr("settings.schema.panels.launcher-show-icons.label"),
         tr("settings.schema.panels.launcher-show-icons.description"), {"shell", "launcher", "show_icons"},
         ToggleSetting{cfg.shell.launcher.showIcons}, "launcher app icons hide"
@@ -1523,7 +1465,7 @@ namespace settings {
               .placeholder = tr("settings.schema.lockscreen.wallpaper.placeholder"),
               .browseMode = TextSettingBrowseMode::OpenFile,
               .browseFileExtensions = {".png", ".jpg", ".jpeg", ".webp", ".svg", ".bmp", ".gif"},
-              .browseFallbackDirectory = wallpaper::resolveGlobalWallpaperDirectory(cfg.wallpaper, cfg.theme.mode),
+              .browseFallbackDirectory = wallpaper::resolveGlobalWallpaperDirectory(cfg.wallpaper),
           },
           "lock screen background image custom"
       );

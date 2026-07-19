@@ -63,12 +63,10 @@ enable_ddc_support = false
 [settings.wallpaper]
 enabled = true
 overview_enabled = true
+overview_blur_intensity = 0.5
+overview_tint_intensity = 0.3
 directory = ""
-directory_light = ""
-directory_dark = ""
 live_wallpaper_directory = ""
-live_wallpaper_directory_light = ""
-live_wallpaper_directory_dark = ""
 per_monitor_directories = false
 recursive = false
 set_for_all_monitors = true
@@ -110,6 +108,25 @@ max_wallpapers = 5
 gif = ""
 drag_threshold = 30
 vim_keybinds = false
+
+[settings.dashboard]
+enabled = true
+drag_threshold = 50
+show_dashboard = true
+show_media = true
+show_performance = true
+show_weather = true
+
+[settings.dashboard.media]
+lyrics_enabled = true
+
+[settings.dashboard.performance]
+show_battery = true
+show_gpu = true
+show_cpu = true
+show_memory = true
+show_storage = true
+show_network = true
 
 [settings.calendar]
 show_events_card = true
@@ -276,12 +293,24 @@ height = 720.0
       copyNode(document, {"settings", "appearance", "corner_radius"}, runtime, {"shell", "chrome"}, "rounding");
 
       copyNode(document, {"settings", "wallpaper", "enabled"}, runtime, {"wallpaper"}, "enabled");
-      copyNode(document, {"settings", "wallpaper", "directory"}, runtime, {"wallpaper"}, "directory");
-      copyNode(document, {"settings", "wallpaper", "directory_light"}, runtime, {"wallpaper"}, "directory_light");
-      copyNode(document, {"settings", "wallpaper", "directory_dark"}, runtime, {"wallpaper"}, "directory_dark");
-      copyNode(document, {"settings", "wallpaper", "live_wallpaper_directory"}, runtime, {"wallpaper"}, "live_wallpaper_directory");
-      copyNode(document, {"settings", "wallpaper", "live_wallpaper_directory_light"}, runtime, {"wallpaper"}, "live_wallpaper_directory_light");
-      copyNode(document, {"settings", "wallpaper", "live_wallpaper_directory_dark"}, runtime, {"wallpaper"}, "live_wallpaper_directory_dark");
+      copyNode(document, {"settings", "wallpaper", "overview_enabled"}, runtime, {"backdrop"}, "enabled");
+      copyNode(document, {"settings", "wallpaper", "overview_blur_intensity"}, runtime, {"backdrop"}, "blur_intensity");
+      copyNode(document, {"settings", "wallpaper", "overview_tint_intensity"}, runtime, {"backdrop"}, "tint_intensity");
+      const auto copyUnifiedDirectory = [&](std::string_view key, std::string_view legacyDark,
+                                            std::string_view legacyLight) {
+        std::string value = valueAt<std::string>(document, {"settings", "wallpaper", key}).value_or("");
+        if (value.empty()) {
+          value = valueAt<std::string>(document, {"settings", "wallpaper", legacyDark}).value_or("");
+        }
+        if (value.empty()) {
+          value = valueAt<std::string>(document, {"settings", "wallpaper", legacyLight}).value_or("");
+        }
+        ensureTable(runtime, {"wallpaper"})->insert_or_assign(key, std::move(value));
+      };
+      copyUnifiedDirectory("directory", "directory_dark", "directory_light");
+      copyUnifiedDirectory(
+          "live_wallpaper_directory", "live_wallpaper_directory_dark", "live_wallpaper_directory_light"
+      );
       copyNode(document, {"settings", "wallpaper", "per_monitor_directories"}, runtime, {"wallpaper"}, "per_monitor_directories");
       copyNode(document, {"settings", "wallpaper", "fill_mode"}, runtime, {"wallpaper"}, "fill_mode");
       copyNode(document, {"settings", "wallpaper", "fill_color"}, runtime, {"wallpaper"}, "fill_color");
@@ -309,6 +338,19 @@ height = 720.0
       copyNode(document, {"settings", "launcher", "hidden_apps"}, runtime, {"shell", "launcher"}, "hidden_apps");
       copyNode(document, {"settings", "session", "drag_threshold"}, runtime, {"shell", "launcher"}, "drag_threshold");
       copyNode(document, {"settings", "session", "vim_keybinds"}, runtime, {"shell", "launcher"}, "vim_keybinds");
+      copyNode(document, {"settings", "dashboard", "enabled"}, runtime, {"dashboard"}, "enabled");
+      copyNode(document, {"settings", "dashboard", "drag_threshold"}, runtime, {"dashboard"}, "drag_threshold");
+      copyNode(document, {"settings", "dashboard", "show_dashboard"}, runtime, {"dashboard"}, "show_dashboard");
+      copyNode(document, {"settings", "dashboard", "show_media"}, runtime, {"dashboard"}, "show_media");
+      copyNode(document, {"settings", "dashboard", "show_performance"}, runtime, {"dashboard"}, "show_performance");
+      copyNode(document, {"settings", "dashboard", "show_weather"}, runtime, {"dashboard"}, "show_weather");
+      copyNode(document, {"settings", "dashboard", "media", "lyrics_enabled"}, runtime, {"dashboard", "media"}, "lyrics_enabled");
+      copyNode(document, {"settings", "dashboard", "performance", "show_battery"}, runtime, {"dashboard", "performance"}, "show_battery");
+      copyNode(document, {"settings", "dashboard", "performance", "show_gpu"}, runtime, {"dashboard", "performance"}, "show_gpu");
+      copyNode(document, {"settings", "dashboard", "performance", "show_cpu"}, runtime, {"dashboard", "performance"}, "show_cpu");
+      copyNode(document, {"settings", "dashboard", "performance", "show_memory"}, runtime, {"dashboard", "performance"}, "show_memory");
+      copyNode(document, {"settings", "dashboard", "performance", "show_storage"}, runtime, {"dashboard", "performance"}, "show_storage");
+      copyNode(document, {"settings", "dashboard", "performance", "show_network"}, runtime, {"dashboard", "performance"}, "show_network");
       copyNode(document, {"settings", "calendar", "show_events_card"}, runtime, {"calendar"}, "show_events_card");
       copyNode(document, {"settings", "lock", "fingerprint"}, runtime, {"lockscreen"}, "fingerprint");
 
@@ -373,12 +415,21 @@ height = 720.0
       copyNode(runtime, {"shell", "chrome", "rounding"}, document, {"settings", "appearance"}, "corner_radius");
 
       copyNode(runtime, {"wallpaper", "enabled"}, document, {"settings", "wallpaper"}, "enabled");
-      copyNode(runtime, {"wallpaper", "directory"}, document, {"settings", "wallpaper"}, "directory");
-      copyNode(runtime, {"wallpaper", "directory_light"}, document, {"settings", "wallpaper"}, "directory_light");
-      copyNode(runtime, {"wallpaper", "directory_dark"}, document, {"settings", "wallpaper"}, "directory_dark");
-      copyNode(runtime, {"wallpaper", "live_wallpaper_directory"}, document, {"settings", "wallpaper"}, "live_wallpaper_directory");
-      copyNode(runtime, {"wallpaper", "live_wallpaper_directory_light"}, document, {"settings", "wallpaper"}, "live_wallpaper_directory_light");
-      copyNode(runtime, {"wallpaper", "live_wallpaper_directory_dark"}, document, {"settings", "wallpaper"}, "live_wallpaper_directory_dark");
+      copyNode(runtime, {"backdrop", "enabled"}, document, {"settings", "wallpaper"}, "overview_enabled");
+      copyNode(runtime, {"backdrop", "blur_intensity"}, document, {"settings", "wallpaper"}, "overview_blur_intensity");
+      copyNode(runtime, {"backdrop", "tint_intensity"}, document, {"settings", "wallpaper"}, "overview_tint_intensity");
+      auto* wallpaperSettings = ensureTable(document, {"settings", "wallpaper"});
+      if (const auto* directory = nodeAt(runtime, {"wallpaper", "directory"}); directory != nullptr) {
+        setNode(document, {"settings", "wallpaper"}, "directory", *directory);
+        wallpaperSettings->erase("directory_light");
+        wallpaperSettings->erase("directory_dark");
+      }
+      if (const auto* directory = nodeAt(runtime, {"wallpaper", "live_wallpaper_directory"});
+          directory != nullptr) {
+        setNode(document, {"settings", "wallpaper"}, "live_wallpaper_directory", *directory);
+        wallpaperSettings->erase("live_wallpaper_directory_light");
+        wallpaperSettings->erase("live_wallpaper_directory_dark");
+      }
       copyNode(runtime, {"wallpaper", "per_monitor_directories"}, document, {"settings", "wallpaper"}, "per_monitor_directories");
       copyNode(runtime, {"wallpaper", "fill_mode"}, document, {"settings", "wallpaper"}, "fill_mode");
       copyNode(runtime, {"wallpaper", "fill_color"}, document, {"settings", "wallpaper"}, "fill_color");
@@ -397,6 +448,20 @@ height = 720.0
       copyNode(runtime, {"shell", "launcher", "hidden_apps"}, document, {"settings", "launcher"}, "hidden_apps");
       copyNode(runtime, {"shell", "launcher", "drag_threshold"}, document, {"settings", "session"}, "drag_threshold");
       copyNode(runtime, {"shell", "launcher", "vim_keybinds"}, document, {"settings", "session"}, "vim_keybinds");
+      copyNode(runtime, {"dashboard", "enabled"}, document, {"settings", "dashboard"}, "enabled");
+      ensureTable(document, {"settings", "dashboard"})->erase("show_on_hover");
+      copyNode(runtime, {"dashboard", "drag_threshold"}, document, {"settings", "dashboard"}, "drag_threshold");
+      copyNode(runtime, {"dashboard", "show_dashboard"}, document, {"settings", "dashboard"}, "show_dashboard");
+      copyNode(runtime, {"dashboard", "show_media"}, document, {"settings", "dashboard"}, "show_media");
+      copyNode(runtime, {"dashboard", "show_performance"}, document, {"settings", "dashboard"}, "show_performance");
+      copyNode(runtime, {"dashboard", "show_weather"}, document, {"settings", "dashboard"}, "show_weather");
+      copyNode(runtime, {"dashboard", "media", "lyrics_enabled"}, document, {"settings", "dashboard", "media"}, "lyrics_enabled");
+      copyNode(runtime, {"dashboard", "performance", "show_battery"}, document, {"settings", "dashboard", "performance"}, "show_battery");
+      copyNode(runtime, {"dashboard", "performance", "show_gpu"}, document, {"settings", "dashboard", "performance"}, "show_gpu");
+      copyNode(runtime, {"dashboard", "performance", "show_cpu"}, document, {"settings", "dashboard", "performance"}, "show_cpu");
+      copyNode(runtime, {"dashboard", "performance", "show_memory"}, document, {"settings", "dashboard", "performance"}, "show_memory");
+      copyNode(runtime, {"dashboard", "performance", "show_storage"}, document, {"settings", "dashboard", "performance"}, "show_storage");
+      copyNode(runtime, {"dashboard", "performance", "show_network"}, document, {"settings", "dashboard", "performance"}, "show_network");
       copyNode(runtime, {"calendar", "show_events_card"}, document, {"settings", "calendar"}, "show_events_card");
       copyNode(runtime, {"lockscreen", "fingerprint"}, document, {"settings", "lock"}, "fingerprint");
 

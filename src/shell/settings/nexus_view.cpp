@@ -1,5 +1,6 @@
 #include "shell/settings/nexus_view.h"
 
+#include "compositors/compositor_detect.h"
 #include "compositors/compositor_platform.h"
 #include "config/atomic_file.h"
 #include "config/config_service.h"
@@ -79,8 +80,8 @@ namespace {
       {NexusPage::Apps, "defaults", "Default apps", "Terminal, audio, media and file manager"},
       {NexusPage::Apps, "favourites", "Favourite apps", "Prioritize apps in the launcher"},
       {NexusPage::Apps, "hidden", "Hidden apps", "Remove apps from launcher results"},
-      {NexusPage::Apps, "launcher", "Launcher behavior", "Results, layout, categories, Vim keys and actions"},
-      {NexusPage::Apps, "reset-usage", "Reset usage", "Clear launcher frequency and recency data"},
+      {NexusPage::Apps, "launcher", "Launcher behavior", "Results, layout, Vim keys and actions"},
+      {NexusPage::Apps, "reset-usage", "Reset usage", "Clear launcher frequency data"},
       {NexusPage::Services, "notifications", "Notification service", "Daemon and delivery preferences"},
       {NexusPage::Services, "clipboard", "Clipboard", "History, limits and confirmation behavior"},
       {NexusPage::Services, "clear-clipboard", "Clear clipboard history", "Remove saved clipboard entries"},
@@ -143,11 +144,12 @@ namespace {
       }
       return NexusPage::Panels;
     case SettingsSection::ControlCenter:
-      return std::nullopt;
+      return NexusPage::Panels;
     case SettingsSection::Hooks:
-    case SettingsSection::Niri:
     case SettingsSection::Keybinds:
       return NexusPage::Services;
+    case SettingsSection::Niri:
+      return entry.group == "backdrop" ? NexusPage::WallpaperStyle : NexusPage::Services;
     case SettingsSection::System:
     case SettingsSection::Power:
       return NexusPage::About;
@@ -194,7 +196,10 @@ namespace {
   }
 
   std::vector<settings::SettingEntry> nexusEntries(const Config& config, NexusPage page) {
-    auto registry = settings::buildSettingsRegistry(config, nullptr, nullptr, {});
+    settings::RegistryEnvironment environment;
+    environment.niriBackdropSupported = compositors::isNiri();
+    environment.niriOverviewTypeToLaunchSupported = compositors::isNiri();
+    auto registry = settings::buildSettingsRegistry(config, nullptr, nullptr, environment);
     std::vector<settings::SettingEntry> entries;
     entries.reserve(registry.size());
     for (auto& entry : registry) {

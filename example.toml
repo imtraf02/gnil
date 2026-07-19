@@ -48,9 +48,10 @@ pill = 200
 [settings.wallpaper]
 enabled = true
 overview_enabled = true
+overview_blur_intensity = 0.5
+overview_tint_intensity = 0.3
 directory = ""
-directory_light = ""
-directory_dark = ""
+live_wallpaper_directory = ""
 per_monitor_directories = false
 recursive = false
 set_for_all_monitors = true
@@ -97,6 +98,25 @@ max_wallpapers = 5
 gif = ""
 drag_threshold = 30
 vim_keybinds = false
+
+[settings.dashboard]
+enabled = true
+drag_threshold = 50
+show_dashboard = true
+show_media = true
+show_performance = true
+show_weather = true
+
+[settings.dashboard.media]
+lyrics_enabled = true
+
+[settings.dashboard.performance]
+show_battery = true
+show_gpu = true
+show_cpu = true
+show_memory = true
+show_storage = true
+show_network = true
 
 [settings.calendar]
 show_events_card = true

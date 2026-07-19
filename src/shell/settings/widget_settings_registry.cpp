@@ -56,6 +56,7 @@ namespace settings {
         {.type = "bluetooth", .labelKey = "settings.widgets.types.bluetooth", .glyph = "bluetooth"},
         {.type = "brightness", .labelKey = "settings.widgets.types.brightness", .glyph = "brightness-high"},
         {.type = "clock", .labelKey = "settings.widgets.types.clock", .glyph = "clock"},
+        {.type = "dashboard", .labelKey = "settings.widgets.types.dashboard", .glyph = "dashboard"},
         {.type = "clipboard", .labelKey = "settings.widgets.types.clipboard", .glyph = "clipboard"},
         {.type = "custom_button", .labelKey = "settings.widgets.types.custom-button", .glyph = "circuit-pushbutton"},
         {.type = "caffeine", .labelKey = "settings.widgets.types.caffeine", .glyph = "caffeine-off"},
@@ -626,6 +627,8 @@ namespace settings {
       add(stringSpec("vertical_format"));
       add(stringSpec("tooltip_format"));
       add(stringSpec("timezone", ""));
+    } else if (type == "dashboard") {
+      add(glyphSpec("glyph", "dashboard"));
     } else if (type == "clipboard") {
       add(glyphSpec("glyph", "clipboard"));
       add(stringSpec("custom_image", ""));

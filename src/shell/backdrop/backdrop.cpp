@@ -7,6 +7,7 @@
 #include "render/core/shared_texture_cache.h"
 #include "shell/backdrop/backdrop_instance.h"
 #include "shell/backdrop/backdrop_surface.h"
+#include "shell/wallpaper/wallpaper.h"
 #include "ui/palette.h"
 #include "wayland/wayland_connection.h"
 
@@ -38,12 +39,14 @@ void Backdrop::destroyInstances() {
 }
 
 bool Backdrop::initialize(
-    WaylandConnection& wayland, ConfigService* config, SharedTextureCache* textureCache, GlSharedContext* sharedGl
+    WaylandConnection& wayland, ConfigService* config, SharedTextureCache* textureCache, GlSharedContext* sharedGl,
+    Wallpaper* wallpaper
 ) {
   m_wayland = &wayland;
   m_config = config;
   m_textureCache = textureCache;
   m_sharedGl = sharedGl;
+  m_wallpaper = wallpaper;
 
   // Register reload callback unconditionally so toggling enabled in config works.
   m_config->addReloadCallback([this]() { reload(); }, "backdrop");
@@ -126,15 +129,32 @@ void Backdrop::onStateChange() {
   kLog.info("state changed, checking wallpaper updates");
 
   for (auto& inst : m_instances) {
-    auto newPath = m_config->getWallpaperPath(inst->connectorName);
-    if (newPath.empty() || newPath == inst->currentPath) {
+    const std::string newPath = wallpaperPathForConnector(inst->connectorName);
+    if (newPath == inst->currentPath) {
       continue;
     }
 
     kLog.info("updating {} → {}", inst->connectorName, newPath);
     releaseInstanceTexture(*inst);
-    loadWallpaper(*inst, newPath);
+    if (!newPath.empty()) {
+      loadWallpaper(*inst, newPath);
+    } else {
+      updateRendererState(*inst);
+      if (inst->surface != nullptr) {
+        inst->surface->requestRedraw();
+      }
+    }
   }
+}
+
+std::string Backdrop::wallpaperPathForConnector(const std::string& connector) const {
+  if (m_wallpaper != nullptr) {
+    const std::string frame = m_wallpaper->liveWallpaperFallbackFrame(connector);
+    if (!frame.empty()) {
+      return frame;
+    }
+  }
+  return m_config != nullptr ? m_config->getWallpaperPath(connector) : std::string{};
 }
 
 void Backdrop::onThemeChanged() {
@@ -239,7 +259,7 @@ void Backdrop::syncInstances() {
 }
 
 void Backdrop::createInstance(const WaylandOutput& output) {
-  auto wallpaperPath = m_config->getWallpaperPath(output.connectorName);
+  const std::string wallpaperPath = wallpaperPathForConnector(output.connectorName);
   kLog.info("creating on {} ({}), path={}", output.connectorName, output.description, wallpaperPath);
 
   auto inst = std::make_unique<BackdropInstance>();

@@ -52,6 +52,8 @@ public:
   void setFill(const ColorSpec& color);
   // Explicit fixed color.
   void setFill(const Color& color);
+  void setFillGradient(const ColorSpec& color1, const ColorSpec& color2);
+  void setFillGradient(const Color& color1, const Color& color2);
   void clearFill();
   void setRadius(float radius);
   void setRadii(const Radii& radii);
@@ -136,6 +138,7 @@ private:
   RectNode* m_background = nullptr;
   RectNode* m_shadow = nullptr;
   ColorSpec m_fill = clearColorSpec();
+  std::optional<ColorSpec> m_fillColor2;
   ColorSpec m_border = clearColorSpec();
   ColorSpec m_shadowColor = clearColorSpec();
   float m_shadowRadius = 0.0f;

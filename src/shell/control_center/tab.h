@@ -13,6 +13,8 @@ class Renderer;
 namespace control_center {
 
   void applySectionCardStyle(Flex& card, float scale = 1.0f, float fillOpacity = 1.0f, bool showBorder = true);
+  void applySeamlessSectionStyle(Flex& section, float scale = 1.0f);
+  void addDivider(Flex& parent, float scale = 1.0f);
   Label* addTitle(Flex& parent, const std::string& text, float scale = 1.0f);
   void addBody(Flex& parent, const std::string& text, float scale = 1.0f);
 

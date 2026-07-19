@@ -33,8 +33,6 @@ struct wl_output;
 
 class NotificationToast {
 public:
-  enum class RevealDirection { FromLeft, FromRight, FromTop, FromBottom };
-
   NotificationToast();
   ~NotificationToast();
 
@@ -171,8 +169,8 @@ private:
   );
   void setCardVisualHeight(Instance::CardState& card, float height) const;
   void packCardsForDisplayedHeights(Instance& inst) const;
-  void applyCardReveal(Instance::CardState& cs, float reveal, float y, float cardHeight) const;
-  [[nodiscard]] float cardReveal(const Instance::CardState& cs, float cardHeight) const;
+  void applyCardGrow(Instance& inst, uint32_t notificationId, float reveal);
+  [[nodiscard]] static float cardReveal(const Instance::CardState& cs);
   void addCardToInstance(Instance& inst, std::size_t entryIndex);
   void removeCardFromInstance(Instance& inst, std::size_t entryIndex);
   void syncEntryVisibility(std::size_t entryIndex);
@@ -200,7 +198,6 @@ private:
   [[nodiscard]] std::vector<std::string> notificationMonitors() const;
   [[nodiscard]] bool shouldRenderOnOutput(const WaylandOutput& output) const;
   [[nodiscard]] bool isBottomStacking() const;
-  [[nodiscard]] RevealDirection revealDirection() const;
   void refreshEntryGeometry(PopupEntry& entry) const;
   [[nodiscard]] float layoutBottomForSurfaceHeight(float surfaceHeight) const;
   [[nodiscard]] float maxPlacementBottom() const;

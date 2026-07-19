@@ -38,6 +38,7 @@ public:
   [[nodiscard]] float preferredHeight() const override;
   [[nodiscard]] bool usesDynamicVisualSize() const noexcept override { return true; }
   [[nodiscard]] float initialVisualHeight() const override { return scaled(160.0f); }
+  [[nodiscard]] std::optional<float> desiredVisualHeight(Renderer& renderer, float visualWidth) override;
   [[nodiscard]] PanelPlacement panelPlacement() const noexcept override { return PanelPlacement::Attached; }
   [[nodiscard]] LayerShellLayer layer() const override { return LayerShellLayer::Overlay; }
 

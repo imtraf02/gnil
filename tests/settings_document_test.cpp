@@ -33,10 +33,21 @@ int main() {
   const auto autoHide = (*runtime)["bar"]["default"]["auto_hide"].value<bool>();
   const auto showOnHover = (*runtime)["bar"]["default"]["show_on_hover"].value<bool>();
   const auto liveWallpaperOutput = (*runtime)["theme"]["live_wallpaper_output"].value<std::string>();
+  const auto overviewEnabled = (*runtime)["backdrop"]["enabled"].value<bool>();
+  const auto overviewBlur = (*runtime)["backdrop"]["blur_intensity"].value<double>();
+  const auto overviewTint = (*runtime)["backdrop"]["tint_intensity"].value<double>();
+  const auto dashboardEnabled = (*runtime)["dashboard"]["enabled"].value<bool>();
   ok &= check(frame.has_value() && near(*frame, 6.0), "frame thickness uses Ling default");
   ok &= check(barThickness == 45, "bar thickness derives from frame, inner size and padding");
   ok &= check(autoHide == true && showOnHover == false, "bar collapses into frame and uses edge drag by default");
   ok &= check(liveWallpaperOutput == "auto", "live wallpaper palette source defaults to automatic output selection");
+  ok &= check(overviewEnabled == true, "Niri overview backdrop defaults to enabled");
+  ok &= check(dashboardEnabled == true, "top-centre dashboard defaults to enabled");
+  ok &= check(
+      overviewBlur.has_value() && overviewTint.has_value()
+          && near(*overviewBlur, 0.5) && near(*overviewTint, 0.3),
+      "Niri overview backdrop intensity defaults convert to runtime settings"
+  );
 
   auto* settings = document.get_as<toml::table>("settings");
   auto* appearance = settings != nullptr ? settings->get_as<toml::table>("appearance") : nullptr;
@@ -58,6 +69,41 @@ int main() {
     gnil::settings_document::syncFromRuntimeOverrides(document, *runtime);
     const auto persistedHover = document["settings"]["bar"]["show_on_hover"].value<bool>();
     ok &= check(persistedHover == true, "runtime UI mutation writes back to the public document");
+
+    auto* backdrop = runtime->get_as<toml::table>("backdrop");
+    ok &= check(backdrop != nullptr, "backdrop runtime table exists");
+    if (backdrop != nullptr) {
+      backdrop->insert_or_assign("enabled", false);
+      backdrop->insert_or_assign("blur_intensity", 0.72);
+      backdrop->insert_or_assign("tint_intensity", 0.18);
+      gnil::settings_document::syncFromRuntimeOverrides(document, *runtime);
+      const auto persistedEnabled = document["settings"]["wallpaper"]["overview_enabled"].value<bool>();
+      const auto persistedBlur = document["settings"]["wallpaper"]["overview_blur_intensity"].value<double>();
+      const auto persistedTint = document["settings"]["wallpaper"]["overview_tint_intensity"].value<double>();
+      ok &= check(persistedEnabled == false, "overview backdrop toggle syncs back to the public document");
+      ok &= check(
+          persistedBlur.has_value() && persistedTint.has_value()
+              && near(*persistedBlur, 0.72) && near(*persistedTint, 0.18),
+          "overview backdrop intensities sync back to the public document"
+      );
+    }
+
+    auto* dashboard = runtime->get_as<toml::table>("dashboard");
+    auto* dashboardMedia = dashboard != nullptr ? dashboard->get_as<toml::table>("media") : nullptr;
+    ok &= check(dashboardMedia != nullptr, "dashboard media runtime table exists");
+    if (dashboardMedia != nullptr) {
+      document["settings"]["dashboard"].as_table()->insert_or_assign("show_on_hover", true);
+      dashboardMedia->insert_or_assign("lyrics_enabled", false);
+      gnil::settings_document::syncFromRuntimeOverrides(document, *runtime);
+      ok &= check(
+          document["settings"]["dashboard"]["media"]["lyrics_enabled"].value<bool>() == false,
+          "dashboard settings persist through the public Settings/Style document"
+      );
+      ok &= check(
+          !document["settings"]["dashboard"]["show_on_hover"],
+          "legacy dashboard hover setting is removed during synchronization"
+      );
+    }
   }
 
   toml::table networkSize;
@@ -121,6 +167,42 @@ int main() {
       gnil::settings_document::syncFromRuntimeOverrides(document, *runtime);
       const auto persistedOpacity = document["settings"]["bar"]["capsule_group"][0]["opacity"].value<double>();
       ok &= check(persistedOpacity.has_value() && near(*persistedOpacity, 0.5), "capsule_group changes sync back correctly");
+    }
+  }
+
+  // Legacy light/dark wallpaper folders collapse into one shared source.
+  {
+    auto legacyDocument = gnil::settings_document::defaults();
+    auto* wallpaper = legacyDocument.get_as<toml::table>("settings")->get_as<toml::table>("wallpaper");
+    wallpaper->insert_or_assign("directory", "");
+    wallpaper->insert_or_assign("directory_light", "/wallpapers/light");
+    wallpaper->insert_or_assign("directory_dark", "/wallpapers/shared");
+    wallpaper->insert_or_assign("live_wallpaper_directory", "");
+    wallpaper->insert_or_assign("live_wallpaper_directory_light", "/live/light");
+    wallpaper->insert_or_assign("live_wallpaper_directory_dark", "/live/shared");
+
+    auto migrated = gnil::settings_document::toRuntimeOverrides(legacyDocument);
+    ok &= check(
+        migrated.has_value()
+            && (*migrated)["wallpaper"]["directory"].value<std::string>() == "/wallpapers/shared"
+            && (*migrated)["wallpaper"]["live_wallpaper_directory"].value<std::string>() == "/live/shared",
+        "legacy light/dark wallpaper folders collapse into shared directories"
+    );
+    if (migrated.has_value()) {
+      gnil::settings_document::syncFromRuntimeOverrides(legacyDocument, *migrated);
+      ok &= check(
+          legacyDocument["settings"]["wallpaper"]["directory"].value<std::string>() == "/wallpapers/shared"
+              && !legacyDocument["settings"]["wallpaper"]["directory_light"]
+              && !legacyDocument["settings"]["wallpaper"]["directory_dark"],
+          "legacy wallpaper directory keys are removed after synchronization"
+      );
+      ok &= check(
+          legacyDocument["settings"]["wallpaper"]["live_wallpaper_directory"].value<std::string>()
+                  == "/live/shared"
+              && !legacyDocument["settings"]["wallpaper"]["live_wallpaper_directory_light"]
+              && !legacyDocument["settings"]["wallpaper"]["live_wallpaper_directory_dark"],
+          "legacy live wallpaper directory keys are removed after synchronization"
+      );
     }
   }
 

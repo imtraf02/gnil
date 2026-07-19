@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <map>
 #include <optional>
 #include <sdbus-c++/IProxy.h>
@@ -126,6 +127,19 @@ namespace {
     return seq;
   }
 
+  void executeProfileFallback(std::string_view profile) {
+    const std::string requested(profile);
+    std::string cmd;
+    if (requested == "performance") {
+      cmd = "powerprofilesctl set performance >/dev/null 2>&1 || tlp ac >/dev/null 2>&1 &";
+    } else if (requested == "power-saver") {
+      cmd = "powerprofilesctl set power-saver >/dev/null 2>&1 || tlp bat >/dev/null 2>&1 &";
+    } else {
+      cmd = "powerprofilesctl set balanced >/dev/null 2>&1 || tlp start >/dev/null 2>&1 &";
+    }
+    (void)std::system(cmd.c_str());
+  }
+
 } // namespace
 
 std::string_view profileGlyphName(std::string_view profile) {
@@ -197,11 +211,13 @@ void PowerProfilesService::refresh() {
           }
 
           if (err.has_value()) {
-            kLog.debug("power profiles refresh failed: {}", err->what());
+            m_dbusAvailable = false;
+            kLog.debug("power profiles DBus service unavailable: {}", err->what());
             if (!m_hasStateSnapshot && isTimeoutError(*err)) {
               m_refreshQueued = true;
             }
           } else {
+            m_dbusAvailable = true;
             emitChangedIfNeeded(decodeState(properties), true);
           }
 
@@ -231,30 +247,39 @@ bool PowerProfilesService::setActiveProfile(std::string_view profile) {
     m_pendingLocalActiveProfile = requested;
   }
 
+  if (!m_dbusAvailable) {
+    executeProfileFallback(requested);
+    PowerProfilesState next = m_state;
+    next.activeProfile = requested;
+    emitChangedIfNeeded(std::move(next), false);
+    return true;
+  }
+
   const std::weak_ptr<int> lifetimeToken = m_lifetimeToken;
   try {
     m_proxy->setPropertyAsync("ActiveProfile")
         .onInterface(kPowerProfilesInterface)
         .toValue(requested)
-        .uponReplyInvoke([lifetimeToken, requested](std::optional<sdbus::Error> err) {
+        .uponReplyInvoke([this, lifetimeToken, requested](std::optional<sdbus::Error> err) {
           if (lifetimeToken.expired() || !err.has_value()) {
             return;
           }
-          // The optimistic update below already reconciles via refresh(); just surface the failure.
-          kLog.warn("power profile change failed profile={} err={}", requested, err->what());
+          m_dbusAvailable = false;
+          kLog.info("DBus power profile unavailable, using TLP/CLI fallback for {}", requested);
+          executeProfileFallback(requested);
         });
   } catch (const sdbus::Error& e) {
     if (m_pendingLocalActiveProfile.has_value() && *m_pendingLocalActiveProfile == requested) {
       m_pendingLocalActiveProfile.reset();
     }
-    kLog.warn("power profile change dispatch failed profile={} err={}", requested, e.what());
-    return false;
+    m_dbusAvailable = false;
+    kLog.info("DBus power profile dispatch failed, using TLP/CLI fallback for {}", requested);
+    executeProfileFallback(requested);
   }
 
   PowerProfilesState next = m_state;
   next.activeProfile = requested;
   emitChangedIfNeeded(std::move(next), false);
-  refresh();
   return true;
 }
 

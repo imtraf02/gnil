@@ -55,6 +55,7 @@ namespace gnil::config::schema {
         t.push_back(makeSection("lockscreen", &Config::lockscreen, lockscreenSchema()));
         t.push_back(makeSection("notification", &Config::notification, notificationSchema()));
         t.push_back(makeSection("sidebar", &Config::sidebar, sidebarSchema()));
+        t.push_back(makeSection("dashboard", &Config::dashboard, dashboardSchema()));
         t.push_back(makeSection("osd", &Config::osd, osdSchema()));
         t.push_back(makeSection("system", &Config::system, systemSchema()));
         t.push_back(makeSection("weather", &Config::weather, weatherSchema()));

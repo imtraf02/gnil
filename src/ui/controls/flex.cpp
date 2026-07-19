@@ -205,14 +205,27 @@ void Flex::setPadding(float vertical, float horizontal) { setPadding(vertical, h
 
 void Flex::setFill(const ColorSpec& color) {
   m_fill = color;
+  m_fillColor2 = std::nullopt;
   ensureBackground();
   applyPalette();
 }
 
 void Flex::setFill(const Color& color) { setFill(fixedColorSpec(color)); }
 
+void Flex::setFillGradient(const ColorSpec& color1, const ColorSpec& color2) {
+  m_fill = color1;
+  m_fillColor2 = color2;
+  ensureBackground();
+  applyPalette();
+}
+
+void Flex::setFillGradient(const Color& color1, const Color& color2) {
+  setFillGradient(fixedColorSpec(color1), fixedColorSpec(color2));
+}
+
 void Flex::clearFill() {
   m_fill = clearColorSpec();
+  m_fillColor2 = std::nullopt;
   if (m_background != nullptr) {
     applyPalette();
   }
@@ -282,9 +295,20 @@ void Flex::clearShadow() {
 void Flex::applyPalette() {
   if (m_background != nullptr) {
     auto style = m_background->style();
-    style.fill = resolveColorSpec(m_fill);
+    if (m_fillColor2.has_value()) {
+      style.fillMode = FillMode::LinearGradient;
+      style.gradientDirection = GradientDirection::Horizontal;
+      style.gradientStops = {
+          GradientStop{0.0f, resolveColorSpec(m_fill)},
+          GradientStop{1.0f, resolveColorSpec(*m_fillColor2)},
+          GradientStop{1.0f, resolveColorSpec(*m_fillColor2)},
+          GradientStop{1.0f, resolveColorSpec(*m_fillColor2)}
+      };
+    } else {
+      style.fill = resolveColorSpec(m_fill);
+      style.fillMode = FillMode::Solid;
+    }
     style.border = resolveColorSpec(m_border);
-    style.fillMode = FillMode::Solid;
     m_background->setStyle(style);
   }
   if (m_shadow != nullptr) {
@@ -308,7 +332,7 @@ void Flex::setSoftness(float softness) {
 void Flex::setCardStyle(float scale, float fillOpacity, bool showBorder) {
   setFill(colorSpecFromRole(ColorRole::SurfaceVariant, fillOpacity));
   if (showBorder) {
-    setBorder(colorSpecFromRole(ColorRole::Outline), Style::borderWidth);
+    setBorder(colorSpecFromRole(ColorRole::Outline, 0.35f), Style::borderWidth);
   } else {
     clearBorder();
   }

@@ -579,18 +579,6 @@
   },
   "launcher": {
     "categories": {
-      "all": "All",
-      "applications": {
-        "development": "Development",
-        "education": "Education",
-        "games": "Games",
-        "graphics": "Graphics",
-        "internet": "Internet",
-        "multimedia": "Multimedia",
-        "office": "Office",
-        "system": "System",
-        "utilities": "Utilities"
-      },
       "emoji": {
         "activity": "Activity",
         "animals": "Animals",
@@ -601,8 +589,7 @@
         "people": "People",
         "symbols": "Symbols",
         "travel": "Travel"
-      },
-      "recently-used": "Recently Used"
+      }
     },
     "context-menu": {
       "open": "Open",
@@ -1093,7 +1080,7 @@
         "capsules": "Capsules",
         "clipboard": "Clipboard",
         "community": "Community",
-        "control-center": "Control Center",
+        "control-center": "Dashboard",
         "dead-zone": "Dead Zone",
         "directories": "Directories",
         "display": "Display",
@@ -1201,7 +1188,7 @@
         "appearance": "Customize fonts, colors, corner roundness, and animations",
         "backdrop": "Configure background blur and window shading",
         "bar": "Customize status bars, layouts, and widgets",
-        "control-center": "Configure shortcut tiles and panel layout",
+        "control-center": "Configure dashboard tabs, edge gestures, media, and performance cards",
         "desktop": "Configure desktop workspace grid and layouts",
         "dock": "Adjust taskbar dock positioning and auto-hide behaviors",
         "hooks": "Run custom scripts on session start, lock, or idle",
@@ -2218,17 +2205,13 @@
           "description": "Show a grid of application icons with labels underneath when results are apps only",
           "label": "App Grid View"
         },
-        "launcher-categories": {
-          "description": "Display category filters in the launcher; reveal with F6, then cycle with F6 and Shift+F6",
-          "label": "Show Categories"
-        },
         "launcher-compact": {
           "description": "Use smaller icons and tighter result rows",
           "label": "Compact Rows"
         },
         "launcher-reset-usage": {
           "button": "Reset",
-          "description": "Clear launch counts and recently used history used for launcher sorting",
+          "description": "Clear launch counts used for launcher sorting",
           "label": "Reset Usage Data"
         },
         "launcher-session-search": {
@@ -2816,29 +2799,9 @@
           "description": "Folder containing wallpapers",
           "label": "Wallpaper Directory"
         },
-        "directory-dark": {
-          "description": "Wallpaper folder used in dark theme mode",
-          "label": "Dark Mode Directory",
-          "placeholder": "~/Pictures/Wallpapers"
-        },
-        "directory-light": {
-          "description": "Wallpaper folder used in light theme mode",
-          "label": "Light Mode Directory",
-          "placeholder": "~/Pictures/Wallpapers"
-        },
         "live-wallpaper-directory": {
           "description": "Folder containing live (video) wallpapers",
           "label": "Live Wallpaper Directory"
-        },
-        "live-wallpaper-directory-light": {
-          "description": "Live wallpaper folder used in light theme mode",
-          "label": "Live Light Mode Directory",
-          "placeholder": "~/Videos/LiveWallpapers"
-        },
-        "live-wallpaper-directory-dark": {
-          "description": "Live wallpaper folder used in dark theme mode",
-          "label": "Live Dark Mode Directory",
-          "placeholder": "~/Videos/LiveWallpapers"
         },
         "edge-smoothness": {
           "description": "Feathering of transition edges between wallpapers",
@@ -2857,14 +2820,6 @@
         },
         "monitor-directory": {
           "label": "Wallpaper Directory"
-        },
-        "monitor-directory-dark": {
-          "label": "Dark Mode Directory",
-          "placeholder": "~/Pictures/Wallpapers"
-        },
-        "monitor-directory-light": {
-          "label": "Light Mode Directory",
-          "placeholder": "~/Pictures/Wallpapers"
         },
         "panel": {
           "button": "Open Panel",

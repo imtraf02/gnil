@@ -1,6 +1,7 @@
 #include "shell/notification/notification_card_model.h"
 #include "shell/sidebar/sidebar_edge_gesture.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <deque>
 #include <iostream>
@@ -29,6 +30,19 @@ namespace {
 
 int main() {
   using notification_card::GestureAction;
+  const float targetHeight = 240.0f;
+  expect(
+      std::abs(notification_card::displayedHeightForReveal(targetHeight, 0.0f) - 1.0f) < 0.001f,
+      "hidden notification extent must remain a one-pixel structural strip"
+  );
+  expect(
+      std::abs(notification_card::displayedHeightForReveal(targetHeight, 0.25f) - 60.0f) < 0.001f,
+      "notification extent did not follow reveal progress"
+  );
+  expect(
+      std::abs(notification_card::displayedHeightForReveal(targetHeight, 1.0f) - targetHeight) < 0.001f,
+      "fully revealed notification did not reach its measured height"
+  );
   expect(
       notification_card::classifyGesture(119.0f, 0.0f, 400.0f, false, 0.3f, 20.0f)
           == GestureAction::None,

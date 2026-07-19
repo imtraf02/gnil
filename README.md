@@ -139,8 +139,7 @@ programs.gnil = {
 
       wallpaper = {
         directory = "~/Pictures/Wallpapers";
-        directory_light = "";
-        directory_dark = "";
+        live_wallpaper_directory = "~/Videos/LiveWallpapers";
       };
 
       bar = {

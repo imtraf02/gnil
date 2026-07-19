@@ -24,7 +24,7 @@ class INetworkService;
 
 class NetworkTab : public Tab {
 public:
-  NetworkTab(INetworkService* network, NetworkSecretAgent* secrets);
+  NetworkTab(INetworkService* network, NetworkSecretAgent* secrets, bool useInternalScroll = true);
   ~NetworkTab() override;
 
   std::unique_ptr<Flex> create() override;
@@ -53,6 +53,7 @@ private:
 
   INetworkService* m_network = nullptr;
   NetworkSecretAgent* m_secrets = nullptr;
+  bool m_useInternalScroll = true;
 
   Flex* m_rootLayout = nullptr;
   Flex* m_currentCard = nullptr;

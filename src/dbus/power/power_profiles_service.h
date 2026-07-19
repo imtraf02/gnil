@@ -73,4 +73,5 @@ private:
   bool m_hasStateSnapshot = false;
   bool m_refreshInFlight = false;
   bool m_refreshQueued = false;
+  bool m_dbusAvailable = true;
 };

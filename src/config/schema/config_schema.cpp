@@ -369,6 +369,41 @@ namespace gnil::config::schema {
     return s;
   }
 
+  namespace {
+    const Schema<DashboardConfig::MediaConfig>& dashboardMediaSchema() {
+      static const Schema<DashboardConfig::MediaConfig> s = {
+          field(&DashboardConfig::MediaConfig::lyricsEnabled, "lyrics_enabled"),
+      };
+      return s;
+    }
+
+    const Schema<DashboardConfig::PerformanceConfig>& dashboardPerformanceSchema() {
+      static const Schema<DashboardConfig::PerformanceConfig> s = {
+          field(&DashboardConfig::PerformanceConfig::showBattery, "show_battery"),
+          field(&DashboardConfig::PerformanceConfig::showGpu, "show_gpu"),
+          field(&DashboardConfig::PerformanceConfig::showCpu, "show_cpu"),
+          field(&DashboardConfig::PerformanceConfig::showMemory, "show_memory"),
+          field(&DashboardConfig::PerformanceConfig::showStorage, "show_storage"),
+          field(&DashboardConfig::PerformanceConfig::showNetwork, "show_network"),
+      };
+      return s;
+    }
+  } // namespace
+
+  const Schema<DashboardConfig>& dashboardSchema() {
+    static const Schema<DashboardConfig> s = {
+        field(&DashboardConfig::enabled, "enabled"),
+        field(&DashboardConfig::dragThreshold, "drag_threshold", Range<std::int64_t>{1, 500}),
+        field(&DashboardConfig::showDashboard, "show_dashboard"),
+        field(&DashboardConfig::showMedia, "show_media"),
+        field(&DashboardConfig::showPerformance, "show_performance"),
+        field(&DashboardConfig::showWeather, "show_weather"),
+        subTable(&DashboardConfig::media, "media", dashboardMediaSchema()),
+        subTable(&DashboardConfig::performance, "performance", dashboardPerformanceSchema()),
+    };
+    return s;
+  }
+
   const Schema<DockConfig>& dockSchema() {
     static const Schema<DockConfig> s = {
         field(&DockConfig::enabled, "enabled"),
@@ -669,8 +704,6 @@ namespace gnil::config::schema {
           optionalBoolField(&WallpaperMonitorOverride::enabled, "enabled"),
           colorSpecField(&WallpaperMonitorOverride::fillColor, "fill_color", /*alwaysEmit=*/false),
           optionalPathStringField(&WallpaperMonitorOverride::directory, "directory"),
-          optionalPathStringField(&WallpaperMonitorOverride::directoryLight, "directory_light"),
-          optionalPathStringField(&WallpaperMonitorOverride::directoryDark, "directory_dark"),
       };
       return s;
     }
@@ -957,7 +990,6 @@ namespace gnil::config::schema {
           field(&ShellConfig::LauncherConfig::enableDangerousActions, "enable_dangerous_actions"),
           field(&ShellConfig::LauncherConfig::favouriteApps, "favourite_apps"),
           field(&ShellConfig::LauncherConfig::hiddenApps, "hidden_apps"),
-          field(&ShellConfig::LauncherConfig::categories, "categories"),
           field(&ShellConfig::LauncherConfig::showIcons, "show_icons"),
           field(&ShellConfig::LauncherConfig::compact, "compact"),
           field(&ShellConfig::LauncherConfig::appGrid, "app_grid"),
@@ -1176,11 +1208,7 @@ namespace gnil::config::schema {
         field(&WallpaperConfig::edgeSmoothness, "edge_smoothness", kUnitRange),
         field(&WallpaperConfig::transitionOnStartup, "transition_on_startup"),
         pathStringField(&WallpaperConfig::directory, "directory"),
-        pathStringField(&WallpaperConfig::directoryLight, "directory_light"),
-        pathStringField(&WallpaperConfig::directoryDark, "directory_dark"),
         pathStringField(&WallpaperConfig::liveWallpaperDirectory, "live_wallpaper_directory"),
-        pathStringField(&WallpaperConfig::liveWallpaperDirectoryLight, "live_wallpaper_directory_light"),
-        pathStringField(&WallpaperConfig::liveWallpaperDirectoryDark, "live_wallpaper_directory_dark"),
         field(&WallpaperConfig::perMonitorDirectories, "per_monitor_directories"),
         subTable(&WallpaperConfig::automation, "automation", wallpaperAutomationSchema()),
         namedMap<WallpaperConfig, WallpaperMonitorOverride>(

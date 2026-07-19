@@ -1,5 +1,6 @@
 #include "shell/control_center/tabs/system_tab.h"
 
+#include "config/config_service.h"
 #include "i18n/i18n.h"
 #include "shell/panel/panel_manager.h"
 #include "system/distro_info.h"
@@ -31,7 +32,8 @@ namespace {
 
   // Section card style with reduced padding, shared by the four graph cards.
   void applyGraphCardStyle(Flex& section, float scale, float opacity, bool borders) {
-    control_center::applySectionCardStyle(section, scale, opacity, borders);
+    (void)opacity; (void)borders;
+    control_center::applySeamlessSectionStyle(section, scale);
     section.setGap(Style::spaceXs * scale);
     section.setPadding(
         kGraphCardPadTop * scale, kGraphCardPadH * scale, kGraphCardPadV * scale, kGraphCardPadH * scale
@@ -167,10 +169,12 @@ namespace {
       Flex& parent, const std::string& title, float scale, float grow, float fillOpacity, bool showBorder,
       Label** outLines, int lineCount, const char* const* glyphs
   ) {
+    (void)fillOpacity;
+    (void)showBorder;
     auto card = ui::column({
         .flexGrow = grow,
-        .configure = [scale, fillOpacity, showBorder](Flex& section) {
-          applySectionCardStyle(section, scale, fillOpacity, showBorder);
+        .configure = [scale](Flex& section) {
+          applySeamlessSectionStyle(section, scale);
           section.setGap(Style::spaceXs * scale);
         },
     });
@@ -204,7 +208,8 @@ namespace {
 
 } // namespace
 
-SystemTab::SystemTab(SystemMonitorService* monitor) : m_monitor(monitor) {
+SystemTab::SystemTab(SystemMonitorService* monitor, ConfigService* config, bool dashboardMode)
+    : m_monitor(monitor), m_config(config), m_dashboardMode(dashboardMode) {
   if (m_monitor != nullptr) {
     m_monitor->retainCpuTemp();
     m_monitor->retainGpuTemp();
@@ -235,6 +240,7 @@ std::unique_ptr<Flex> SystemTab::create() {
   // Row 1: CPU, Memory
   {
     auto row = ui::row({
+        .out = &m_primaryRow,
         .align = FlexAlign::Stretch,
         .gap = Style::spaceSm * sc,
         .flexGrow = 1.0f,
@@ -288,6 +294,7 @@ std::unique_ptr<Flex> SystemTab::create() {
   // Row 2: GPU (optional), Network
   {
     auto row = ui::row({
+        .out = &m_secondaryRow,
         .align = FlexAlign::Stretch,
         .gap = Style::spaceSm * sc,
         .flexGrow = 1.0f,
@@ -349,12 +356,13 @@ std::unique_ptr<Flex> SystemTab::create() {
   // --- Info row: System, Resources ---
   {
     auto row = ui::row({
+        .out = &m_infoRow,
         .align = FlexAlign::Stretch,
         .gap = Style::spaceSm * sc,
     });
     static constexpr const char* kSystemGlyphs[] = {"cpu-usage",        "video",      "device-desktop",
                                                     "layers-intersect", "app-window", "clock"};
-    makeInfoCard(
+    m_systemCard = makeInfoCard(
         *row, i18n::tr("control-center.system.titles.system"), sc, 1.0f, panelCardOpacity(), panelBordersEnabled(),
         m_systemLines, kSystemLines, kSystemGlyphs
     );
@@ -363,6 +371,7 @@ std::unique_ptr<Flex> SystemTab::create() {
         *row, i18n::tr("control-center.system.titles.resources"), sc, 1.0f, panelCardOpacity(), panelBordersEnabled(),
         nullptr, 0, nullptr
     );
+    m_resourcesCard = resourcesCard;
 
     // Named rows with right-aligned values: load, RAM, then swap (hidden in doUpdate when absent).
     m_resourcesLines[0] = addResourceRow(
@@ -418,6 +427,8 @@ std::unique_ptr<Flex> SystemTab::create() {
     tab->addChild(std::move(row));
   }
 
+  syncDashboardCardVisibility();
+
   return tab;
 }
 
@@ -430,6 +441,9 @@ void SystemTab::setActive(bool active) {
 
 void SystemTab::onClose() {
   m_root = nullptr;
+  m_primaryRow = nullptr;
+  m_secondaryRow = nullptr;
+  m_infoRow = nullptr;
   m_cpuGraph = nullptr;
   m_ramGraph = nullptr;
   m_gpuGraph = nullptr;
@@ -438,6 +452,8 @@ void SystemTab::onClose() {
   m_ramCard = nullptr;
   m_gpuCard = nullptr;
   m_netCard = nullptr;
+  m_systemCard = nullptr;
+  m_resourcesCard = nullptr;
   m_cpuLegend = nullptr;
   m_ramLegend = nullptr;
   m_gpuLegend = nullptr;
@@ -558,6 +574,8 @@ void SystemTab::doUpdate(Renderer& renderer) {
   if (!m_active || m_monitor == nullptr) {
     return;
   }
+
+  syncDashboardCardVisibility();
 
   const bool monitorRunning = m_monitor->isRunning();
 
@@ -786,9 +804,41 @@ void SystemTab::updateGraphs(Renderer& renderer) {
 
 void SystemTab::updateGpuVisibility() {
   if (m_gpuCard != nullptr) {
-    m_gpuCard->setVisible(m_gpuVisible);
+    const bool requested = !m_dashboardMode || m_config == nullptr || m_config->config().dashboard.performance.showGpu;
+    const bool visible = m_gpuVisible && requested;
+    if (m_gpuCard->visible() == visible) {
+      return;
+    }
+    m_gpuCard->setVisible(visible);
+    m_gpuCard->setParticipatesInLayout(visible);
+    PanelManager::instance().requestLayout();
   }
-  PanelManager::instance().requestLayout();
+}
+
+void SystemTab::syncDashboardCardVisibility() {
+  if (!m_dashboardMode || m_config == nullptr) {
+    return;
+  }
+  const auto& performance = m_config->config().dashboard.performance;
+  bool changed = false;
+  const auto apply = [&changed](Flex* card, bool visible) {
+    if (card != nullptr) {
+      changed = changed || card->visible() != visible;
+      card->setVisible(visible);
+      card->setParticipatesInLayout(visible);
+    }
+  };
+  apply(m_cpuCard, performance.showCpu);
+  apply(m_ramCard, performance.showMemory);
+  apply(m_netCard, performance.showNetwork);
+  apply(m_resourcesCard, performance.showStorage);
+  updateGpuVisibility();
+  apply(m_primaryRow, performance.showCpu || performance.showMemory);
+  apply(m_secondaryRow, performance.showNetwork || (performance.showGpu && m_gpuVisible));
+  apply(m_infoRow, true);
+  if (changed) {
+    PanelManager::instance().requestLayout();
+  }
 }
 
 void SystemTab::syncLabels() {

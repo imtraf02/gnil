@@ -148,7 +148,10 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
   );
   add(
       {.id = "network", .naturalWidth = 480.0f},
-      std::make_unique<NetworkTab>(services.network, services.networkSecrets)
+      // ContentPanel already supplies the outer page scroll. Keeping the
+      // Control Center's inner network-list ScrollView here creates a nested
+      // viewport that consumes wheel events while reporting itself unscrollable.
+      std::make_unique<NetworkTab>(services.network, services.networkSecrets, false)
   );
   add(
       {.id = "bluetooth", .naturalWidth = 480.0f},

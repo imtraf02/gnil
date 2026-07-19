@@ -28,8 +28,10 @@ class Image;
 class InputArea;
 class Label;
 class Shortcut;
+class SystemMonitorService;
 class Wallpaper;
 class ClipboardService;
+class Slider;
 namespace scripting {
   class ScriptApiContext;
 }
@@ -81,6 +83,7 @@ private:
   AccountsService* m_accounts = nullptr;
   Wallpaper* m_wallpaper = nullptr;
   ThumbnailService* m_thumbnails = nullptr;
+  SystemMonitorService* m_sysmon = nullptr;
   ShortcutServices m_services;
   bool m_active = false;
 
@@ -91,6 +94,7 @@ private:
   Flex* m_mediaText = nullptr;
   Flex* m_userCard = nullptr;
   Flex* m_userMain = nullptr;
+  Flex* m_performanceCard = nullptr;
   InputArea* m_userAvatarArea = nullptr;
   Image* m_userAvatar = nullptr;
 
@@ -107,6 +111,9 @@ private:
   InputArea* m_userCardArea = nullptr;
   InputArea* m_mediaCardArea = nullptr;
   InputArea* m_dateTimeCardArea = nullptr;
+  InputArea* m_performanceCardArea = nullptr;
+  Label* m_cpuSummary = nullptr;
+  Label* m_memorySummary = nullptr;
   std::string m_loadedAvatarPath;
   int m_loadedAvatarSize = 0;
 
@@ -148,4 +155,17 @@ private:
 
   GridView* m_shortcutsGrid = nullptr;
   std::vector<ShortcutPad> m_shortcutPads;
+
+  // Sliders for Column 3
+  PipeWireService* m_audio = nullptr;
+  BrightnessService* m_brightness = nullptr;
+  Flex* m_volumeCard = nullptr;
+  Slider* m_volumeSlider = nullptr;
+  Label* m_volumeValueLabel = nullptr;
+  Flex* m_brightnessCard = nullptr;
+  Slider* m_brightnessSlider = nullptr;
+  Label* m_brightnessValueLabel = nullptr;
+
+  bool m_syncingVolumeSlider = false;
+  bool m_syncingBrightnessSlider = false;
 };

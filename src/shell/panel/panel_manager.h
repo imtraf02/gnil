@@ -182,6 +182,7 @@ private:
   void positionAttachedContentLayers(const ChromePanelState& displayed);
   void clearRetainedContentLayers();
   void syncActivePanelIntrinsicHeight(Renderer& renderer, bool animate);
+  void stabilizeActivePanelIntrinsicHeight(Renderer& renderer);
   void syncAttachedChromeGeometry();
   void publishChromePanelState(float revealProgress);
   // Submit a wl_region matching the panel body after applying the current reveal clip.
@@ -261,6 +262,7 @@ private:
   std::int32_t m_detachedBleedBottom = 0;
   AnimationManager::Id m_panelResizeAnimation = 0;
   AnimationManager::Id m_panelMorphAnimation = 0;
+  AnimationManager::Id m_attachedRevealAnimation = 0;
   AnimationManager::Id m_panelContentAnimation = 0;
   struct RetainedContentLayer {
     Panel* panel = nullptr;
@@ -297,6 +299,7 @@ private:
   // slots, even though the latter keep a separate fullscreen content surface.
   bool m_chromeHosted = false;
   bool m_attachedOpenAnimationPending = false;
+  bool m_attachedInitialGeometryReady = false;
   std::size_t m_attachedPopupCount = 0;
   std::unordered_set<wl_surface*> m_ownedPopupSurfaces;
   wl_surface* m_openTriggerSurface = nullptr;

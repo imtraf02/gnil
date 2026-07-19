@@ -68,8 +68,8 @@ namespace Style {
   // Slider geometry.
   inline constexpr float sliderDefaultWidth = 180.0f;
   // Material 3 expressive slider: 16px capsule track and a narrow 4×44px handle.
-  inline constexpr float sliderTrackHeight = 16.0f;
-  inline constexpr float sliderThumbSize = 44.0f; // Legacy name: controls handle height.
+  inline constexpr float sliderTrackHeight = 8.0f;
+  inline constexpr float sliderThumbSize = 24.0f;
   inline constexpr float sliderHandleWidth = 4.0f;
   inline constexpr float sliderHandlePressedWidth = 2.0f;
   inline constexpr float sliderHandleTrackGap = 6.0f;

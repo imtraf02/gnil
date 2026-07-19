@@ -3,6 +3,7 @@
 #include "launcher/launcher_provider.h"
 #include "launcher/command_router.h"
 #include "launcher/usage_tracker.h"
+#include "render/core/thumbnail_service.h"
 #include "shell/panel/panel.h"
 #include "system/icon_resolver.h"
 #include "ui/signal.h"
@@ -10,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,7 +32,9 @@ class Wallpaper;
 
 class LauncherPanel : public Panel {
 public:
-  LauncherPanel(ConfigService* config, AsyncTextureCache* asyncTextures, Wallpaper* wallpaper);
+  LauncherPanel(
+      ConfigService* config, AsyncTextureCache* asyncTextures, ThumbnailService* thumbnails, Wallpaper* wallpaper
+  );
   ~LauncherPanel() override;
 
   void addProvider(std::unique_ptr<LauncherProvider> provider);
@@ -67,16 +71,11 @@ public:
   [[nodiscard]] PanelPlacement panelPlacement() const noexcept override;
 
 private:
-  enum ActiveCategoryType { All, RecentlyUsed, Category };
   enum class Presentation { Applications, ProviderOverview, Wallpaper, LiveWallpaper, Emoji, Detail };
-
-  struct CategoryFilterSlot {
-    ActiveCategoryType type;
-    std::size_t categoryIndex = 0;
-  };
 
   void onPanelCardOpacityChanged(float opacity) override;
   void doLayout(Renderer& renderer, float width, float height) override;
+  void doUpdate(Renderer& renderer) override;
   void onInputChanged(const std::string& text);
   void setQuery(std::string query);
   // Re-gather the current query, preserving the selected result by identity.
@@ -91,16 +90,16 @@ private:
   bool activateCommandResult(const LauncherResult& result);
   void activateAt(std::size_t index);
   void activateSelected();
+  void selectWallpaperAt(std::size_t index);
+  bool previewWallpaperAt(std::size_t index);
+  bool applyWallpaperAt(std::size_t index, bool closePanel);
   bool handleKeyEvent(std::uint32_t sym, std::uint32_t modifiers);
   void applyEmptyState();
   void bindDetailResult();
   [[nodiscard]] bool shouldUseDetailPresentation() const;
   [[nodiscard]] std::vector<LauncherResult> providerOverviewResults(std::string_view text) const;
   void openAppActionsMenu(std::size_t index, float anchorX, float anchorY);
-  void rebuildCategoryFilter(const std::vector<LauncherCategory>& categories);
-  void setCategoryFilterVisible(bool visible);
-  void setActiveCategorySlot(std::size_t slotIndex);
-  void applyActiveCategory();
+  void publishResults();
   void syncLauncherListStyle();
   void syncLauncherViewLayout(Renderer* renderer = nullptr);
   [[nodiscard]] bool shouldUseAppGrid() const;
@@ -121,7 +120,6 @@ private:
 
   Flex* m_container = nullptr;
   Input* m_input = nullptr;
-  Segmented* m_categoryFilter = nullptr;
   Segmented* m_wallpaperModeTab = nullptr;
   Flex* m_body = nullptr;
   VirtualGridView* m_grid = nullptr;
@@ -136,13 +134,9 @@ private:
   std::string m_query;
   std::string m_scopedProviderId;
   std::string m_scopedPlaceholder;
-  ActiveCategoryType m_activeCategoryType = All;
-  std::string m_activeCategory;
-  std::vector<LauncherCategory> m_currentCategories;
-  std::vector<CategoryFilterSlot> m_categoryFilterSlots;
-  bool m_hasRecentlyUsed = false;
   std::size_t m_selectedIndex = 0;
-  bool m_categoryFilterVisible = true;
+  std::optional<std::size_t> m_pendingWallpaperSelection;
+  std::uint64_t m_wallpaperPreviewSerial = 0;
   bool m_launcherShowIcons = true;
   bool m_launcherCompact = false;
   bool m_launcherAppGrid = false;
@@ -150,10 +144,14 @@ private:
   bool m_usingWallpaperGrid = false;
   Presentation m_presentation = Presentation::Applications;
   std::uint32_t m_modeTransitionAnimation = 0;
+  std::size_t m_wallpaperModeIndex = 0;
   float m_launcherRowHeight = 0.0f;
   ConfigService* m_config = nullptr;
   AsyncTextureCache* m_asyncTextures = nullptr;
+  ThumbnailService* m_thumbnails = nullptr;
   Wallpaper* m_wallpaper = nullptr;
+  ThumbnailService::Subscription m_thumbnailPendingSub;
+  bool m_thumbnailRefreshPending = false;
   std::unique_ptr<ContextMenuPopup> m_actionsMenu;
   Signal<>::ScopedConnection m_appIconColorizeConn;
 };

@@ -9,6 +9,7 @@
 #include "shell/bar/widgets/bluetooth_widget.h"
 #include "shell/bar/widgets/brightness_widget.h"
 #include "shell/bar/widgets/clipboard_widget.h"
+#include "shell/bar/widgets/control_center_widget.h"
 #include "shell/bar/widgets/clock_widget.h"
 #include "shell/bar/widgets/custom_button_widget.h"
 #include "system/battery_warning_monitor.h"
@@ -239,6 +240,16 @@ std::unique_ptr<Widget> WidgetFactory::create(
       barGlyph = "clipboard";
     }
     auto widget = std::make_unique<ClipboardWidget>(output, std::move(barGlyph), customImageFor(wc));
+    widget->setContentScale(contentScale);
+    return widget;
+  }
+
+  if (type == "dashboard" || type == "control-center") {
+    auto barGlyph = wc != nullptr ? wc->getString("glyph", "dashboard") : std::string{"dashboard"};
+    if (barGlyph.empty()) {
+      barGlyph = "dashboard";
+    }
+    auto widget = std::make_unique<ControlCenterWidget>(output, std::move(barGlyph), customImageFor(wc));
     widget->setContentScale(contentScale);
     return widget;
   }

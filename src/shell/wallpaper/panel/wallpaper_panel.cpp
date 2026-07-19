@@ -446,7 +446,7 @@ void WallpaperPanel::create() {
     if (entry.isDir) {
       navigateInto(entry.absPath);
     } else {
-      previewSelectedEntry();
+      selectSelectedEntry();
     }
   });
   m_adapter->setOnStarToggle([this](const WallpaperEntry& entry) {
@@ -801,25 +801,24 @@ std::filesystem::path WallpaperPanel::rootDirectoryForSelection() const {
     return {};
   }
   const auto& wp = m_config->config().wallpaper;
-  const ThemeMode mode = m_config->config().theme.mode;
 
   if (m_browseMode == BrowseMode::LiveWallpapers) {
-    return std::filesystem::path(wallpaper::resolveGlobalLiveWallpaperDirectory(wp, mode));
+    return std::filesystem::path(wallpaper::resolveGlobalLiveWallpaperDirectory(wp));
   }
 
   const auto& choice = m_monitorChoices[m_selectedMonitorIndex];
   if (choice.connector.empty() || !wp.perMonitorDirectories) {
-    return std::filesystem::path(wallpaper::resolveGlobalWallpaperDirectory(wp, mode));
+    return std::filesystem::path(wallpaper::resolveGlobalWallpaperDirectory(wp));
   }
 
   if (m_wayland != nullptr) {
     for (const auto& out : m_wayland->outputs()) {
       if (out.connectorName == choice.connector) {
-        return std::filesystem::path(wallpaper::resolveWallpaperDirectory(wp, out, mode));
+        return std::filesystem::path(wallpaper::resolveWallpaperDirectory(wp, out));
       }
     }
   }
-  return std::filesystem::path(wallpaper::resolveGlobalWallpaperDirectory(wp, mode));
+  return std::filesystem::path(wallpaper::resolveGlobalWallpaperDirectory(wp));
 }
 
 std::filesystem::path WallpaperPanel::activeDirectoryForSelection() const {
@@ -1377,6 +1376,12 @@ void WallpaperPanel::finishCyclicMovement(std::size_t serial) {
   if (serial != m_cycleMoveSerial || m_grid == nullptr) {
     return;
   }
+  if (m_browseMode == BrowseMode::Images && hasVisibleSelection()) {
+    const auto& entry = m_visibleEntries[m_selectedVisibleIndex];
+    if (!entry.isDir) {
+      selectWallpaperFromEntry(entry);
+    }
+  }
   const std::size_t beforeRebase = m_cycle.physicalIndex();
   if (!m_cycle.rebase()) {
     return;
@@ -1398,6 +1403,16 @@ void WallpaperPanel::activateSelectedEntry() {
     navigateInto(entry.absPath);
   } else {
     applyWallpaperFromEntry(entry);
+  }
+}
+
+void WallpaperPanel::selectSelectedEntry() {
+  if (!hasVisibleSelection()) {
+    return;
+  }
+  const auto& entry = m_visibleEntries[m_selectedVisibleIndex];
+  if (!entry.isDir) {
+    selectWallpaperFromEntry(entry);
   }
 }
 
@@ -1432,7 +1447,7 @@ bool WallpaperPanel::handleKeyEvent(std::uint32_t sym, std::uint32_t modifiers) 
   }
 
   if (KeySymbol::isSpace(sym)) {
-    previewSelectedEntry();
+    selectSelectedEntry();
     return true;
   }
 
@@ -1651,11 +1666,28 @@ void WallpaperPanel::applyWallpaperFromEntry(const WallpaperEntry& entry) {
   if (entry.isDir) {
     return;
   }
+  const std::string path = entry.absPath.string();
+  if (m_browseMode == BrowseMode::LiveWallpapers) {
+    selectWallpaperFromEntry(entry);
+  } else {
+    if (m_wallpaper != nullptr) {
+      m_wallpaper->commitPreview();
+    }
+    applyWallpaperPath(path, favoriteThemeToApply(path));
+    kLog.info(
+        "applied wallpaper {} to {}", path,
+        m_selectedMonitorIndex == 0 ? "ALL" : m_monitorChoices[m_selectedMonitorIndex].connector
+    );
+  }
+  PanelManager::instance().closePanel();
+}
+
+void WallpaperPanel::selectWallpaperFromEntry(const WallpaperEntry& entry) {
+  if (entry.isDir) {
+    return;
+  }
 
   const std::string path = entry.absPath.string();
-  if (m_wallpaper != nullptr) {
-    m_wallpaper->commitPreview();
-  }
 
   if (m_browseMode == BrowseMode::LiveWallpapers) {
     const auto& choice = m_monitorChoices[m_selectedMonitorIndex];
@@ -1664,28 +1696,22 @@ void WallpaperPanel::applyWallpaperFromEntry(const WallpaperEntry& entry) {
     if (m_wallpaper != nullptr) {
       m_wallpaper->applyVideoWallpaper(connector, path);
     }
+    kLog.info(
+        "applied live wallpaper {} to {}", path,
+        m_selectedMonitorIndex == 0 ? "ALL" : m_monitorChoices[m_selectedMonitorIndex].connector
+    );
   } else {
-    applyWallpaperPath(path, favoriteThemeToApply(path));
+    const auto& choice = m_monitorChoices[m_selectedMonitorIndex];
+    const std::optional<std::string> connector =
+        choice.connector.empty() ? std::optional<std::string>{} : std::optional<std::string>{choice.connector};
+    if (m_wallpaper != nullptr) {
+      (void)m_wallpaper->previewWallpaperImage(connector, path);
+    }
+    kLog.info(
+        "previewed wallpaper {} on {}", path,
+        m_selectedMonitorIndex == 0 ? "ALL" : m_monitorChoices[m_selectedMonitorIndex].connector
+    );
   }
-  PanelManager::instance().closePanel();
-  kLog.info(
-      "applied wallpaper {} to {}", path,
-      m_selectedMonitorIndex == 0 ? "ALL" : m_monitorChoices[m_selectedMonitorIndex].connector
-  );
-}
-
-void WallpaperPanel::previewSelectedEntry() {
-  if (!hasVisibleSelection() || m_wallpaper == nullptr || m_selectedMonitorIndex >= m_monitorChoices.size()) {
-    return;
-  }
-  const WallpaperEntry& entry = m_visibleEntries[m_selectedVisibleIndex];
-  if (entry.isDir) {
-    return;
-  }
-  const auto& choice = m_monitorChoices[m_selectedMonitorIndex];
-  const std::optional<std::string> connector =
-      choice.connector.empty() ? std::optional<std::string>{} : std::optional<std::string>{choice.connector};
-  (void)m_wallpaper->previewWallpaperImage(connector, entry.absPath.string());
 }
 
 void WallpaperPanel::applyColorWallpaper() {

@@ -43,17 +43,6 @@ namespace {
         || id == "network" || id == "bluetooth" || id == "weather" || id == "calendar" || id == "screen-time";
   }
 
-  [[nodiscard]] std::string_view legacyControlCenterTarget(std::string_view context) noexcept {
-    if (context == "media" || context == "audio" || context == "system" || context == "network"
-        || context == "bluetooth" || context == "weather" || context == "calendar" || context == "screen-time") {
-      return context;
-    }
-    if (context == "monitor") return "brightness";
-    if (context == "power") return "battery";
-    if (context == "notifications") return "sidebar";
-    return {};
-  }
-
   [[nodiscard]] const ShellConfig::PanelConfig::SizeOverride*
   panelSizeOverride(const ConfigService* config, std::string_view panelId) noexcept {
     if (config == nullptr) {
@@ -148,10 +137,7 @@ namespace {
 
   [[nodiscard]] float panelRevealContentOpacity(float reveal) {
     const float v = std::clamp(reveal, 0.0f, 1.0f);
-    if (v <= 0.15f) {
-      return 0.0f;
-    }
-    return std::clamp((v - 0.15f) / 0.85f, 0.0f, 1.0f);
+    return applyEasing(Easing::CaelestiaSlowEffects, v);
   }
 
   [[nodiscard]] ChromePanelState hiddenChromeState(
@@ -258,7 +244,7 @@ namespace {
     if (panelId == "session") {
       return "center_right";
     }
-    if (panelId == "control-center") {
+    if (panelId == "dashboard" || panelId == "control-center") {
       return "top_center";
     }
     if (panelId == "settings") {
@@ -306,7 +292,8 @@ namespace {
   [[nodiscard]] bool keepsFixedFrameSlot(std::string_view panelId) noexcept {
     // These surfaces are continuations of the global frame, so moving them
     // to an icon would break their Caelestia-style frame joins.
-    return panelId == "launcher" || panelId == "session" || panelId == "settings" || panelId == "sidebar";
+    return panelId == "launcher" || panelId == "session" || panelId == "settings" || panelId == "sidebar"
+        || panelId == "dashboard";
   }
 
   [[nodiscard]] bool needsDismissFocusBootstrap(std::string_view panelId) noexcept {
@@ -588,13 +575,10 @@ void PanelManager::unregisterPanel(const std::string& id) {
 
 void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest request) {
   if (panelId == "control-center") {
-    const std::string_view target = legacyControlCenterTarget(request.context);
-    if (target.empty()) {
-      kLog.warn("control-center dashboard was removed; open a destination panel directly");
-      return;
-    }
-    request.context = {};
-    openPanel(std::string(target), request);
+    openPanel("dashboard", request);
+    return;
+  }
+  if (panelId == "dashboard" && m_config != nullptr && !m_config->config().dashboard.enabled) {
     return;
   }
   if (panelId == "sidebar" && m_config != nullptr && !m_config->config().sidebar.enabled) {
@@ -1047,6 +1031,7 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
     m_panelGeometryDirty = false;
     m_panelResizeAnimation = 0;
     m_panelMorphAnimation = 0;
+    m_attachedRevealAnimation = 0;
     m_panelContentAnimation = 0;
     m_retainedContentLayers.clear();
     m_activeContentVisualWidth = 1.0f;
@@ -1070,6 +1055,7 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
     m_attachedToBar = false;
     m_chromeHosted = false;
     m_attachedOpenAnimationPending = false;
+    m_attachedInitialGeometryReady = false;
     m_openTriggerSurface = nullptr;
     m_openTriggerSerial = 0;
     m_keyboardFocusBootstrapScheduled = false;
@@ -1162,6 +1148,7 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
     m_attachedBarPosition = std::string(barPosition);
     m_attachedToBar = true;
     m_chromeHosted = true;
+    m_attachedInitialGeometryReady = false;
 
     // Chrome uses output-local body geometry directly. Smooth union replaces
     // the previous manually enlarged concave-corner rectangle.
@@ -1229,11 +1216,13 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
     if (ok) {
       m_output = request.output;
       m_wlSurface = m_surface->wlSurface();
-      m_surface->setInputRegion(
-          {InputRect{m_panelInsetX, m_panelInsetY, static_cast<int>(panelWidth), static_cast<int>(panelHeight)}}
-      );
+      // The attached surface is mapped before the panel tree has been created
+      // and measured. Keep both input and shared chrome absent until the first
+      // prepared scene publishes reveal progress 0 with the resolved intrinsic
+      // dimensions. On vertical bars the old early publication exposed a 1px
+      // contact strip at the fallback height, then visibly resized it.
+      m_surface->setInputRegion({});
       m_surface->setBlurRegion({});
-      publishChromePanelState(m_attachedRevealProgress);
       m_surface->requestRedraw();
       scheduleKeyboardFocusBootstrap();
       kLog.debug("panel manager: opened \"{}\" as attached layer-shell", panelId);
@@ -1250,6 +1239,7 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
     m_layerSurface = nullptr;
     m_attachedToBar = false;
     m_chromeHosted = false;
+    m_attachedInitialGeometryReady = false;
     m_panelInsetX = 0;
     m_panelInsetY = 0;
     m_panelVisualWidth = 0;
@@ -1698,6 +1688,10 @@ void PanelManager::closePanel(bool animateClose) {
   m_inputDispatcher.setSceneRoot(nullptr);
   m_closing = true;
   m_attachedOpenAnimationPending = false;
+  if (m_attachedRevealAnimation != 0) {
+    m_animations.cancel(m_attachedRevealAnimation);
+    m_attachedRevealAnimation = 0;
+  }
   cancelKeyboardFocusBootstrap();
   // Input disappears at close start, not at the end of the visual animation;
   // transparent pixels can therefore never block the application beneath.
@@ -1818,6 +1812,7 @@ void PanelManager::destroyPanel() {
   m_panelGeometryDirty = false;
   m_panelResizeAnimation = 0;
   m_panelMorphAnimation = 0;
+  m_attachedRevealAnimation = 0;
   m_panelContentAnimation = 0;
   m_activeContentVisualWidth = 1.0f;
   m_activeContentVisualHeight = 1.0f;
@@ -1840,6 +1835,7 @@ void PanelManager::destroyPanel() {
   m_attachedToBar = false;
   m_chromeHosted = false;
   m_attachedOpenAnimationPending = false;
+  m_attachedInitialGeometryReady = false;
   if (m_platform != nullptr) {
     m_platform->stopKeyRepeat();
   }
@@ -1874,13 +1870,10 @@ void PanelManager::destroyPanel() {
 
 void PanelManager::togglePanel(const std::string& panelId, PanelOpenRequest request) {
   if (panelId == "control-center") {
-    const std::string_view target = legacyControlCenterTarget(request.context);
-    if (target.empty()) {
-      kLog.warn("control-center dashboard was removed; toggle a destination panel directly");
-      return;
-    }
-    request.context = {};
-    togglePanel(std::string(target), request);
+    togglePanel("dashboard", request);
+    return;
+  }
+  if (panelId == "dashboard" && m_config != nullptr && !m_config->config().dashboard.enabled) {
     return;
   }
   if (shouldKeepClosingOnToggle(isOpen(), m_closing, m_activePanelId == panelId)) {
@@ -2058,7 +2051,8 @@ bool PanelManager::isOpenPanel(std::string_view panelId) const noexcept {
     return false;
   }
   if (panelId == "control-center") {
-    return isStandaloneContentPanel(m_activePanelId);
+    // Compatibility query used by shared service refresh callbacks.
+    return m_activePanelId == "dashboard" || isStandaloneContentPanel(m_activePanelId);
   }
   return m_activePanelId == panelId;
 }
@@ -2199,9 +2193,7 @@ void PanelManager::requestActivePanelVisualSize(float width, float height, bool 
       (void)retargetAttachedPanel(retarget);
     } else {
       syncAttachedChromeGeometry();
-      if (m_chromePanelState.has_value()) {
-        applyAttachedMorphState(*m_chromePanelState);
-      }
+      applyAttachedReveal(m_attachedRevealProgress);
     }
     m_panelGeometryDirty = true;
     m_surface->requestLayout();
@@ -2266,6 +2258,31 @@ void PanelManager::syncActivePanelIntrinsicHeight(Renderer& renderer, bool anima
   const bool shouldAnimate = animate && m_intrinsicVisualHeightResolved;
   m_intrinsicVisualHeightResolved = true;
   requestActivePanelVisualSize(visualWidth, target, shouldAnimate);
+}
+
+void PanelManager::stabilizeActivePanelIntrinsicHeight(Renderer& renderer) {
+  if (m_activePanel == nullptr || !m_attachedToBar || !m_panelDynamicVisualSize) {
+    return;
+  }
+
+  // Intrinsic measurement can populate width-dependent controls during their
+  // first real layout. Resolve that second-pass height before the reveal is
+  // allowed to expose the shared chrome, rather than correcting it one frame
+  // into the opening animation.
+  constexpr int kMaxStabilizationPasses = 2;
+  for (int pass = 0; pass < kMaxStabilizationPasses; ++pass) {
+    const float padding = m_activePanel->hasDecoration()
+        ? m_activePanel->contentScale() * Style::panelPadding
+        : 0.0f;
+    const float contentWidth = std::max(0.0f, m_panelVisualWidthExact - padding * 2.0f);
+    const float contentHeight = std::max(0.0f, m_panelVisualHeightExact - padding * 2.0f);
+    const float previousHeight = m_panelVisualHeightExact;
+    m_activePanel->layout(renderer, contentWidth, contentHeight);
+    syncActivePanelIntrinsicHeight(renderer, false);
+    if (std::abs(previousHeight - m_panelVisualHeightExact) < 0.5f) {
+      break;
+    }
+  }
 }
 
 void PanelManager::requestRedraw() {
@@ -2627,7 +2644,11 @@ void PanelManager::applyDetachedReveal(float progress) {
 }
 
 void PanelManager::startAttachedOpenAnimation() {
-  if (!m_attachedOpenAnimationPending || !m_attachedToBar || m_attachedRevealClipNode == nullptr || m_closing) {
+  if (!m_attachedOpenAnimationPending
+      || !m_attachedInitialGeometryReady
+      || !m_attachedToBar
+      || m_attachedRevealClipNode == nullptr
+      || m_closing) {
     return;
   }
   if (m_attachedPanelBarSettledCallback != nullptr
@@ -2637,10 +2658,16 @@ void PanelManager::startAttachedOpenAnimation() {
   }
 
   m_attachedOpenAnimationPending = false;
-  m_animations.animate(
+  if (m_attachedRevealAnimation != 0) {
+    m_animations.cancel(m_attachedRevealAnimation);
+  }
+  m_attachedRevealAnimation = m_animations.animate(
       m_attachedRevealProgress, 1.0f, Style::animBarPopoutSpatial, Easing::FluidSpatial,
       [this](float v) { applyAttachedReveal(v); },
-      {},
+      [this]() {
+        m_attachedRevealAnimation = 0;
+        applyAttachedReveal(1.0f);
+      },
       m_attachedRevealClipNode
   );
 }
@@ -2699,6 +2726,7 @@ bool PanelManager::retargetAttachedPanel(const PanelOpenRequest& request) {
   // During a rapid switch the transition's displayed state is the only
   // truthful starting point. Reconstructing from the previous endpoint makes
   // the shared panel teleport before the new morph begins.
+  const float revealAtRetarget = m_attachedRevealProgress;
   const auto current = m_panelMorphAnimation != 0
       ? m_chromeTransition.displayed()
       : sampleChromeRevealState(m_attachedRevealProgress).value_or(m_chromeTransition.displayed());
@@ -2716,20 +2744,32 @@ bool PanelManager::retargetAttachedPanel(const PanelOpenRequest& request) {
   m_activeContentVisualWidth = target.rect.width;
   m_activeContentVisualHeight = target.rect.height;
   m_animations.cancelForOwner(&m_chromeTransition);
+  if (m_attachedRevealAnimation != 0) {
+    m_animations.cancel(m_attachedRevealAnimation);
+    m_attachedRevealAnimation = 0;
+  }
   if (m_panelMorphAnimation != 0) {
     m_animations.cancel(m_panelMorphAnimation);
   }
   m_panelMorphAnimation = m_animations.animate(
       0.0f, 1.0f, Style::animBarPopoutSpatial, Easing::FluidSpatial,
-      [this](float progress) {
+      [this, revealAtRetarget](float progress) {
+        m_attachedRevealProgress = std::lerp(revealAtRetarget, 1.0f, progress);
         auto displayed = m_chromeTransition.sample(progress, m_config->config().shell.chrome.deformScale);
         applyAttachedMorphState(displayed);
+        if (m_contentNode != nullptr) {
+          m_contentNode->setOpacity(panelRevealContentOpacity(m_attachedRevealProgress));
+        }
       },
       [this]() {
         m_panelMorphAnimation = 0;
+        m_attachedRevealProgress = 1.0f;
         if (m_chromePanelState.has_value()) {
           m_chromeTransition.reset(*m_chromePanelState);
           applyAttachedMorphState(*m_chromePanelState);
+        }
+        if (m_contentNode != nullptr) {
+          m_contentNode->setOpacity(1.0f);
         }
         if (m_surface != nullptr) {
           m_surface->requestRedraw();
@@ -2762,6 +2802,9 @@ std::optional<ChromePanelState> PanelManager::sampleChromeRevealState(float reve
 
 void PanelManager::publishChromePanelState(float revealProgress) {
   if (!m_chromePanelStateCallback || m_output == nullptr) {
+    return;
+  }
+  if (m_attachedToBar && !m_attachedInitialGeometryReady) {
     return;
   }
   if (const auto state = sampleChromeRevealState(revealProgress); state.has_value()) {
@@ -3141,7 +3184,9 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
 
     if (m_attachedToBar && m_attachedRevealClipNode != nullptr) {
       m_sceneRoot->setOpacity(1.0f);
-      applyAttachedReveal(0.0f);
+      // Do not publish the collapsed contact strip yet. Dynamic panels resolve
+      // their natural height below; the final applyAttachedReveal() in this
+      // build then makes the first visible strip use that measured geometry.
       m_attachedOpenAnimationPending = true;
     } else {
       applyDetachedReveal(0.0f);
@@ -3169,6 +3214,10 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
     m_activePanel->update(*renderer);
   }
   syncActivePanelIntrinsicHeight(*renderer, m_sceneRoot != nullptr && m_intrinsicVisualHeightResolved);
+  stabilizeActivePanelIntrinsicHeight(*renderer);
+  if (m_attachedToBar) {
+    m_attachedInitialGeometryReady = true;
+  }
 
   m_sceneRoot->setSize(w, h);
   if (m_attachedRevealContentNode != nullptr) {
@@ -3313,19 +3362,9 @@ void PanelManager::registerIpc(IpcService& ipc) {
     // `sidebar` is the stable public id; retain `notifications` as a compatibility alias.
     if (panelId == "notifications") {
       panelId = "sidebar";
+    } else if (panelId == "control-center") {
+      panelId = "dashboard";
     }
-  };
-  const auto routeLegacyControlCenter = [](std::string& panelId, std::string& context) -> std::optional<std::string> {
-    if (panelId != "control-center") {
-      return std::nullopt;
-    }
-    const std::string_view target = legacyControlCenterTarget(context);
-    if (target.empty()) {
-      return "error: control-center dashboard was removed; specify a destination panel\n";
-    }
-    panelId = std::string(target);
-    context.clear();
-    return std::nullopt;
   };
   auto parseOpenArgs = [](std::string_view rawArgs, std::string_view command, std::string& panelId,
                           std::string& context) -> std::optional<std::string> {
@@ -3366,7 +3405,7 @@ void PanelManager::registerIpc(IpcService& ipc) {
 
   ipc.registerHandler(
       "panel",
-      [this, unknownPanelError, canonicalPanelId, routeLegacyControlCenter](const std::string& args) -> std::string {
+      [this, unknownPanelError, canonicalPanelId](const std::string& args) -> std::string {
         const auto tokens = StringUtils::splitWhitespace(args);
         if (tokens.size() < 2) {
           return "error: panel requires <open|close|toggle> <id> [--output <name>]\n";
@@ -3397,9 +3436,6 @@ void PanelManager::registerIpc(IpcService& ipc) {
             context += context.empty() ? tokens[i] : " " + tokens[i];
           }
         }
-        if (auto error = routeLegacyControlCenter(panelId, context)) {
-          return *error;
-        }
         if (!m_panels.contains(panelId)) {
           return unknownPanelError(panelId);
         }
@@ -3424,16 +3460,13 @@ void PanelManager::registerIpc(IpcService& ipc) {
 
   ipc.registerHandler(
       "panel-toggle",
-      [this, parseOpenArgs, unknownPanelError, canonicalPanelId, routeLegacyControlCenter](const std::string& args) -> std::string {
+      [this, parseOpenArgs, unknownPanelError, canonicalPanelId](const std::string& args) -> std::string {
         std::string panelId;
         std::string context;
         if (auto error = parseOpenArgs(args, "panel-toggle", panelId, context)) {
           return *error;
         }
         canonicalPanelId(panelId);
-        if (auto error = routeLegacyControlCenter(panelId, context)) {
-          return *error;
-        }
         if (!m_panels.contains(panelId)) {
           return unknownPanelError(panelId);
         }
@@ -3451,16 +3484,13 @@ void PanelManager::registerIpc(IpcService& ipc) {
 
   ipc.registerHandler(
       "panel-open",
-      [this, parseOpenArgs, unknownPanelError, canonicalPanelId, routeLegacyControlCenter](const std::string& args) -> std::string {
+      [this, parseOpenArgs, unknownPanelError, canonicalPanelId](const std::string& args) -> std::string {
         std::string panelId;
         std::string context;
         if (auto error = parseOpenArgs(args, "panel-open", panelId, context)) {
           return *error;
         }
         canonicalPanelId(panelId);
-        if (auto error = routeLegacyControlCenter(panelId, context)) {
-          return *error;
-        }
         if (!m_panels.contains(panelId)) {
           return unknownPanelError(panelId);
         }
@@ -3489,7 +3519,7 @@ void PanelManager::registerIpc(IpcService& ipc) {
           return "error: panel-close accepts at most one panel id\n";
         }
         canonicalPanelId(panelId);
-        if (!panelId.empty() && panelId != "control-center" && !m_panels.contains(panelId)) {
+        if (!panelId.empty() && !m_panels.contains(panelId)) {
           return unknownPanelError(panelId);
         }
 

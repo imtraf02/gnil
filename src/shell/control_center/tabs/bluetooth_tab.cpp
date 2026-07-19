@@ -332,8 +332,8 @@ std::unique_ptr<Flex> BluetoothTab::create() {
   auto pairingCard = ui::column({
       .out = &m_pairingCard,
       .visible = false,
-      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
-        applySectionCardStyle(card, scale, opacity, borders);
+      .configure = [scale](Flex& card) {
+        applySeamlessSectionStyle(card, scale);
       },
   });
 
@@ -713,8 +713,8 @@ void BluetoothTab::rebuildDeviceList(Renderer& renderer) {
   // Adapter card: power + discoverable toggles
   {
     auto adapterCard = ui::column({
-        .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
-          applySectionCardStyle(card, scale, opacity, borders);
+        .configure = [scale](Flex& card) {
+          applySeamlessSectionStyle(card, scale);
         },
     });
 
@@ -851,8 +851,8 @@ void BluetoothTab::rebuildDeviceList(Renderer& renderer) {
         break;
       }
       auto card = ui::column({
-          .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& c) {
-            applySectionCardStyle(c, scale, opacity, borders);
+          .configure = [scale](Flex& c) {
+            applySeamlessSectionStyle(c, scale);
           },
       });
       card->addChild(makeCardHeaderRow(sectionText, scale));

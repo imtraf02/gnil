@@ -1426,10 +1426,10 @@ std::unique_ptr<Flex> AudioTab::createDeviceVolumeCard(DeviceVolumeCardSpec card
 
   return ui::column(
       {
-          .flexGrow = 1.0f,
+          .flexGrow = 0.0f,
           .configure =
-              [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& column) {
-                applySectionCardStyle(column, scale, opacity, borders);
+              [scale](Flex& column) {
+                applySeamlessSectionStyle(column, scale);
                 column.setGap(Style::spaceXs * scale);
               },
       },
@@ -1592,79 +1592,71 @@ std::unique_ptr<Flex> AudioTab::create() {
       {
           .out = &m_rootLayout,
           .align = FlexAlign::Stretch,
-          .gap = Style::spaceMd * scale,
+          .gap = Style::spaceSm * scale,
       },
-      ui::row(
-          {
-              .align = FlexAlign::Stretch,
-              .gap = Style::spaceSm * scale,
-              // Keep volume cards at natural content height.
-              .flexGrow = 0.0f,
-          },
-          createDeviceVolumeCard({
-              .state = m_outputDeviceVolume,
-              .deviceMenu =
-                  {
-                      .devices = [](const AudioState& state) -> std::span<const AudioNode> { return state.sinks; },
-                      .defaultDeviceId = [](const AudioState& state) { return state.defaultSinkId; },
-                      .activate = [this](std::uint32_t id) { m_audio->setDefaultSink(id); },
-                  },
-              .devicePrefixKey = "control-center.audio.output-device-prefix",
-              .noDeviceKey = "control-center.audio.no-output-selected",
-              .muteGlyph = "volume-high",
-              .queueVolume =
-                  [this](float value) {
-                    const AudioNode* sink = m_audio != nullptr ? m_audio->defaultSink() : nullptr;
-                    m_pendingSinkId = sink != nullptr ? sink->id : 0;
-                    m_pendingSinkVolume = std::clamp(value, 0.0f, sliderMaxPercent() / 100.0f);
-                  },
-              .toggleMute =
-                  [this]() {
-                    const AudioNode* sink = m_audio->defaultSink();
-                    if (sink == nullptr) {
-                      return;
-                    }
+      createDeviceVolumeCard({
+          .state = m_outputDeviceVolume,
+          .deviceMenu =
+              {
+                  .devices = [](const AudioState& state) -> std::span<const AudioNode> { return state.sinks; },
+                  .defaultDeviceId = [](const AudioState& state) { return state.defaultSinkId; },
+                  .activate = [this](std::uint32_t id) { m_audio->setDefaultSink(id); },
+              },
+          .devicePrefixKey = "control-center.audio.output-device-prefix",
+          .noDeviceKey = "control-center.audio.no-output-selected",
+          .muteGlyph = "volume-high",
+          .queueVolume =
+              [this](float value) {
+                const AudioNode* sink = m_audio != nullptr ? m_audio->defaultSink() : nullptr;
+                m_pendingSinkId = sink != nullptr ? sink->id : 0;
+                m_pendingSinkVolume = std::clamp(value, 0.0f, sliderMaxPercent() / 100.0f);
+              },
+          .toggleMute =
+              [this]() {
+                const AudioNode* sink = m_audio->defaultSink();
+                if (sink == nullptr) {
+                  return;
+                }
 
-                    m_audio->setSinkMuted(sink->id, !sink->muted);
-                    PanelManager::instance().refresh();
-                  },
-          }),
-          createDeviceVolumeCard({
-              .state = m_inputDeviceVolume,
-              .deviceMenu =
-                  {
-                      .devices = [](const AudioState& state) -> std::span<const AudioNode> { return state.sources; },
-                      .defaultDeviceId = [](const AudioState& state) { return state.defaultSourceId; },
-                      .activate = [this](std::uint32_t id) { m_audio->setDefaultSource(id); },
-                  },
-              .devicePrefixKey = "control-center.audio.input-device-prefix",
-              .noDeviceKey = "control-center.audio.no-input-selected",
-              .muteGlyph = "microphone",
-              .queueVolume =
-                  [this](float value) {
-                    const AudioNode* source = m_audio != nullptr ? m_audio->defaultSource() : nullptr;
-                    m_pendingSourceId = source != nullptr ? source->id : 0;
-                    m_pendingSourceVolume = std::clamp(value, 0.0f, sliderMaxPercent() / 100.0f);
-                  },
-              .toggleMute =
-                  [this]() {
-                    const AudioNode* source = m_audio->defaultSource();
-                    if (source == nullptr) {
-                      return;
-                    }
+                m_audio->setSinkMuted(sink->id, !sink->muted);
+                PanelManager::instance().refresh();
+              },
+      }),
+      createDeviceVolumeCard({
+          .state = m_inputDeviceVolume,
+          .deviceMenu =
+              {
+                  .devices = [](const AudioState& state) -> std::span<const AudioNode> { return state.sources; },
+                  .defaultDeviceId = [](const AudioState& state) { return state.defaultSourceId; },
+                  .activate = [this](std::uint32_t id) { m_audio->setDefaultSource(id); },
+              },
+          .devicePrefixKey = "control-center.audio.input-device-prefix",
+          .noDeviceKey = "control-center.audio.no-input-selected",
+          .muteGlyph = "microphone",
+          .queueVolume =
+              [this](float value) {
+                const AudioNode* source = m_audio != nullptr ? m_audio->defaultSource() : nullptr;
+                m_pendingSourceId = source != nullptr ? source->id : 0;
+                m_pendingSourceVolume = std::clamp(value, 0.0f, sliderMaxPercent() / 100.0f);
+              },
+          .toggleMute =
+              [this]() {
+                const AudioNode* source = m_audio->defaultSource();
+                if (source == nullptr) {
+                  return;
+                }
 
-                    m_audio->setSourceMuted(source->id, !source->muted);
-                    PanelManager::instance().refresh();
-                  },
-          })
-      )
+                m_audio->setSourceMuted(source->id, !source->muted);
+                PanelManager::instance().refresh();
+              },
+      })
   );
 
   auto programCard = ui::column({
       .out = &m_programCard,
       .flexGrow = 1.0f,
-      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
-        applySectionCardStyle(card, scale, opacity, borders);
+      .configure = [scale](Flex& card) {
+        applySeamlessSectionStyle(card, scale);
       },
   });
   addTitle(*programCard, i18n::tr("control-center.audio.application-volumes"), scale);
@@ -1948,15 +1940,20 @@ void AudioTab::rebuildProgramVolumes(Renderer& renderer) {
   auto identityKey = [](const std::vector<AudioNode>& devices) -> std::string {
     std::string key;
     const auto sorted = sortedDevices(devices);
-    key.reserve(sorted.size() * 48);
+    key.reserve(sorted.size() * 64);
     for (const auto& node : sorted) {
       key += std::to_string(node.id);
+      key.push_back(':');
+      key += (node.muted ? "1:" : "0:");
+      key += std::to_string(node.volume);
       key.push_back(':');
       key += node.applicationId;
       key.push_back(':');
       key += node.applicationBinary;
       key.push_back(':');
       key += node.applicationName;
+      key.push_back(':');
+      key += node.streamTitle;
       key.push_back('\n');
     }
     return key;
@@ -1999,7 +1996,7 @@ void AudioTab::rebuildProgramVolumes(Renderer& renderer) {
           [this, sinkId = sink.id](float value) { queueProgramSinkVolume(sinkId, value); },
           [this]() { flushPendingProgramVolumes(true); }
       );
-      row->syncFromNode(sink, player, false, sliderMax, !sink.muted, players.size());
+      row->syncFromNode(sink, player, false, sliderMax, true, players.size());
       m_programRows.push_back(row.get());
       m_programList->addChild(std::move(row));
     }
@@ -2036,7 +2033,7 @@ void AudioTab::syncProgramVolumeRows() {
       continue;
     }
     const MprisPlayerInfo* player = findMatchingPlayer(players, *it->second, it->second->applicationName);
-    row->syncFromNode(*it->second, player, false, sliderMax, !it->second->muted, players.size());
+    row->syncFromNode(*it->second, player, false, sliderMax, true, players.size());
   }
 }
 

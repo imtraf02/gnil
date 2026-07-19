@@ -287,6 +287,7 @@ namespace {
         && a.osd == b.osd
         && a.notification == b.notification
         && a.sidebar == b.sidebar
+        && a.dashboard == b.dashboard
         && a.weather == b.weather
         && a.calendar == b.calendar
         && a.system == b.system
@@ -631,6 +632,7 @@ ConfigChangeSet computeConfigChangeSet(const Config& prev, const Config& next) {
       .osd = !(prev.osd == next.osd),
       .notification = !(prev.notification == next.notification),
       .sidebar = !(prev.sidebar == next.sidebar),
+      .dashboard = !(prev.dashboard == next.dashboard),
       .weather = !(prev.weather == next.weather),
       .calendar = !(prev.calendar == next.calendar),
       .system = !(prev.system == next.system),

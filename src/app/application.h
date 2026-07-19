@@ -31,6 +31,7 @@
 #include "shell/backdrop/backdrop.h"
 #include "shell/bar/bar.h"
 #include "shell/desktop/desktop_widgets_controller.h"
+#include "shell/dashboard/dashboard_edge_trigger.h"
 #include "shell/hot_corners/hot_corners.h"
 #include "shell/lockscreen/lock_screen.h"
 #include "shell/notification/notification_toast.h"
@@ -263,6 +264,7 @@ private:
   NexusRoute m_nexusRoute;
   NexusHostCoordinator m_nexusHostCoordinator;
   PanelManager m_panelManager;
+  DashboardEdgeTrigger m_dashboardEdgeTrigger{m_panelManager};
   SidebarEdgeTrigger m_sidebarEdgeTrigger{m_panelManager};
   // Owned by m_panelManager; kept raw so config-driven launcher providers can be re-applied.
   LauncherPanel* m_launcherPanel = nullptr;

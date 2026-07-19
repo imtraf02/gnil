@@ -11,6 +11,7 @@ class ConfigService;
 class GlSharedContext;
 class SharedTextureCache;
 class WaylandConnection;
+class Wallpaper;
 struct WaylandOutput;
 
 class Backdrop {
@@ -19,7 +20,8 @@ public:
   ~Backdrop();
 
   bool initialize(
-      WaylandConnection& wayland, ConfigService* config, SharedTextureCache* textureCache, GlSharedContext* sharedGl
+      WaylandConnection& wayland, ConfigService* config, SharedTextureCache* textureCache, GlSharedContext* sharedGl,
+      Wallpaper* wallpaper
   );
   void onOutputChange();
   void onFontChanged();
@@ -42,11 +44,13 @@ private:
   void loadWallpaper(BackdropInstance& inst, const std::string& path);
   void updateRendererState(BackdropInstance& inst);
   void releaseInstanceTexture(BackdropInstance& inst, bool clearPath = true);
+  [[nodiscard]] std::string wallpaperPathForConnector(const std::string& connector) const;
 
   WaylandConnection* m_wayland = nullptr;
   ConfigService* m_config = nullptr;
   SharedTextureCache* m_textureCache = nullptr;
   GlSharedContext* m_sharedGl = nullptr;
+  Wallpaper* m_wallpaper = nullptr;
   BackdropConfig m_lastBackdropConfig{};
   bool m_lastShouldHaveInstances = false;
   bool m_lastWallpaperEnabled = true;

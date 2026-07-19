@@ -59,7 +59,10 @@ void TrayMenu::create() {
   m_scrollView = scroll.get();
   scroll->setViewportPaddingH(0.0f);
   scroll->setViewportPaddingV(0.0f);
-  scroll->setScrollbarVisible(true);
+  // Tray menus keep wheel/touchpad scrolling for exceptionally long menus,
+  // but their compact contextual surface does not need persistent scrollbar
+  // chrome. Normal menus are sized to their full intrinsic height below.
+  scroll->setScrollbarVisible(false);
   scroll->clearFill();
   scroll->clearBorder();
   scroll->setRadius(0.0f);
@@ -152,6 +155,14 @@ float TrayMenu::preferredHeight() const {
   }
   const float content = ContextMenuControl::preferredHeight(converted, kVisibleItems, contentScale());
   return std::clamp(content + Style::panelPadding * contentScale() * 2.0f, scaled(80.0f), scaled(720.0f));
+}
+
+std::optional<float> TrayMenu::desiredVisualHeight(Renderer& /*renderer*/, float /*visualWidth*/) {
+  // PanelManager asks dynamic destinations for this value after create() and
+  // onOpen(). At that point the DBus menu entries are available, so returning
+  // the real menu height prevents a panel-to-tray switch from falling back to
+  // initialVisualHeight() and briefly constraining the menu to 160 px.
+  return preferredHeight();
 }
 
 void TrayMenu::onTrayChanged() {

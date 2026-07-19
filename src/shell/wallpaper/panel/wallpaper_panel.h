@@ -83,7 +83,7 @@ private:
   void navigateInto(const std::filesystem::path& dir);
   void navigateUp();
   void applyWallpaperFromEntry(const WallpaperEntry& entry);
-  void previewSelectedEntry();
+  void selectWallpaperFromEntry(const WallpaperEntry& entry);
   void applyWallpaperPath(const std::string& path, const WallpaperFavorite* applyTheme);
   [[nodiscard]] const WallpaperFavorite* favoriteThemeToApply(std::string_view path) const;
   [[nodiscard]] WallpaperFavorite themeFromControls() const;
@@ -116,6 +116,7 @@ private:
   void stepCyclicSelection(int direction);
   void finishCyclicMovement(std::size_t serial);
   void activateSelectedEntry();
+  void selectSelectedEntry();
   [[nodiscard]] bool handleKeyEvent(std::uint32_t sym, std::uint32_t modifiers);
   [[nodiscard]] std::filesystem::path activeDirectoryForSelection() const;
   [[nodiscard]] std::filesystem::path rootDirectoryForSelection() const;

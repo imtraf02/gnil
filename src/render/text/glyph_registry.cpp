@@ -53,7 +53,7 @@ namespace {
       {"memory", "memory"}, {"cpu", "memory"}, {"storage", "database"},
       {"database", "database"}, {"busy", "hourglass_empty"}, {"hourglass-empty", "hourglass_empty"},
       {"performance", "speed"}, {"gauge", "speed"}, {"balanced", "balance"},
-      {"activity-heartbeat", "cardiology"}, {"activity", "monitoring"},
+      {"activity-heartbeat", "cardiology"}, {"activity", "monitoring"}, {"heart", "favorite"}, {"heart-filled", "favorite"},
       {"temperature", "device_thermostat"}, {"temperature-sun", "thermostat"},
       {"layers-intersect", "layers"}, {"arrows-exchange", "sync_alt"},
       {"tool", "build"}, {"bug", "bug_report"},

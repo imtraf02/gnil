@@ -554,7 +554,11 @@ void Button::ensureGlyph() {
 }
 
 void Button::applyColors(const Color& bg, const Color& border, const Color& label) {
-  setFill(bg);
+  if (m_variant == ButtonVariant::Primary) {
+    setFillGradient(colorSpecFromRole(ColorRole::Primary), colorSpecFromRole(ColorRole::Secondary));
+  } else {
+    setFill(bg);
+  }
   setBorder(border, effectiveBorderWidth());
   if (m_label != nullptr) {
     m_label->setColor(label);
