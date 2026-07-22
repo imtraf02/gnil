@@ -467,6 +467,7 @@ _gnil_sources = files(
   'src/shell/desktop/editor/desktop_widgets_editor_settings.cpp',
   'src/shell/desktop/desktop_widgets_host.cpp',
   'src/shell/lockscreen/lockscreen_login_box.cpp',
+  'src/shell/lockscreen/lockscreen_layout.cpp',
   'src/shell/desktop/widgets/desktop_audio_visualizer_widget.cpp',
   'src/shell/desktop/widgets/desktop_button_widget.cpp',
   'src/shell/desktop/widgets/desktop_clock_widget.cpp',
@@ -484,10 +485,12 @@ _gnil_sources = files(
   'src/shell/control_center/content_panel.cpp',
   'src/shell/control_center/tabs/home_tab.cpp',
   'src/shell/dashboard/dashboard_panel.cpp',
+  'src/shell/dashboard/performance_tab.cpp',
   'src/shell/dashboard/dashboard_edge_trigger.cpp',
   'src/shell/control_center/shortcut_registry.cpp',
   'src/system/lyrics_service.cpp',
   'src/shell/control_center/tabs/monitor_tab.cpp',
+  'src/shell/control_center/tabs/night_light_tab.cpp',
   'src/shell/control_center/tabs/media_tab.cpp',
   'src/shell/control_center/tabs/network_tab.cpp',
   'src/shell/control_center/tabs/power_tab.cpp',
@@ -930,6 +933,16 @@ chrome_geometry_test = executable('chrome_geometry_test',
 )
 
 test('chrome_geometry', chrome_geometry_test)
+
+lockscreen_layout_test = executable('lockscreen_layout_test',
+  sources: files(
+    'tests/lockscreen_layout_test.cpp',
+    'src/shell/lockscreen/lockscreen_layout.cpp',
+  ),
+  include_directories: _gnil_inc,
+)
+
+test('lockscreen_layout', lockscreen_layout_test)
 
 cyclic_picker_test = executable('cyclic_picker_test',
   sources: files('tests/cyclic_picker_test.cpp'),

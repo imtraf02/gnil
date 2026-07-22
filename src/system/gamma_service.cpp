@@ -131,6 +131,15 @@ bool GammaService::active() const {
   return isNightPhase();
 }
 
+bool GammaService::scheduleAvailable() const {
+  if (day_night_schedule::isManualMode(m_location)) {
+    return day_night_schedule::hasUsableCustomTimes(m_location);
+  }
+  const auto coordinates =
+      day_night_schedule::resolveCoordinates(m_location, m_resolvedLatitude, m_resolvedLongitude);
+  return coordinates.latitude.has_value() && coordinates.longitude.has_value();
+}
+
 void GammaService::onOutputsChanged() {
   if (!effectiveEnabled()) {
     return;

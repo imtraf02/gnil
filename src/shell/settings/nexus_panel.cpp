@@ -36,7 +36,7 @@ NexusPanel::NexusPanel(NexusRoute& route, NexusHostCoordinator& coordinator, Nex
 
 void NexusPanel::create() {
   setRoot(m_view.build(
-      contentScale(),
+      contentScale(), NexusNavigationMode::CompactIcons,
       [this]() {
         const std::string section = settingsSectionFor(m_route.page());
         (void)m_coordinator.activate(NexusHost::Window, m_coordinator.output());

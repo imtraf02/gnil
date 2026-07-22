@@ -227,8 +227,8 @@ namespace gnil::config {
           auto& shell = ensureTable(root, "shell");
           auto& panel = ensureTable(shell, "panel");
           auto& sizes = ensureTable(panel, "size");
-          constexpr std::array<std::string_view, 10> panelIds = {
-              "media", "audio", "brightness", "system", "battery",
+          constexpr std::array<std::string_view, 11> panelIds = {
+              "media", "audio", "brightness", "night-light", "system", "battery",
               "network", "bluetooth", "weather", "calendar", "screen-time",
           };
           for (const std::string_view id : panelIds) {

@@ -9,6 +9,7 @@
 #include "shell/control_center/tabs/media_tab.h"
 #include "shell/control_center/tabs/monitor_tab.h"
 #include "shell/control_center/tabs/network_tab.h"
+#include "shell/control_center/tabs/night_light_tab.h"
 #include "shell/control_center/tabs/power_tab.h"
 #include "shell/control_center/tabs/screen_time_tab.h"
 #include "shell/control_center/tabs/system_tab.h"
@@ -34,7 +35,11 @@ void ContentPanel::create() {
   m_scrollView = root.get();
   root->setViewportPaddingH(0.0f);
   root->setViewportPaddingV(0.0f);
-  root->setScrollbarVisible(true);
+  root->setScrollbarVisible(m_spec.dynamicHeight && m_spec.scrollable);
+  if (!m_spec.scrollable) {
+    root->setDragScrollingEnabled(false);
+    root->setWheelHandler([](float) { return true; });
+  }
   auto body = m_content->create();
   m_body = body.get();
   root->content()->addChild(std::move(body));
@@ -71,6 +76,9 @@ bool ContentPanel::deferExternalRefresh() const {
   if (const auto* brightness = dynamic_cast<const MonitorTab*>(m_content.get()); brightness != nullptr) {
     return brightness->dragging();
   }
+  if (const auto* nightLight = dynamic_cast<const NightLightTab*>(m_content.get()); nightLight != nullptr) {
+    return nightLight->dragging();
+  }
   return false;
 }
 
@@ -84,7 +92,16 @@ void ContentPanel::doLayout(Renderer& renderer, float width, float height) {
   }
   m_scrollView->setSize(width, height);
   m_scrollView->layout(renderer);
-  m_content->layout(renderer, m_body->width(), m_body->height());
+
+  // Fixed-viewport panels (notably Network and Media) own their scrolling
+  // internally.  Passing the outer ScrollView's intrinsic child height here
+  // leaves an inner flex-grow ScrollView with no remaining height, so its list
+  // is laid out below the visible panel or at zero height.  Give these tabs the
+  // actual viewport contract instead; the outer host remains only a clip/input
+  // surface and never competes for scrolling.
+  const float contentWidth = m_spec.scrollable ? m_body->width() : m_scrollView->contentViewportWidth();
+  const float contentHeight = m_spec.scrollable ? m_body->height() : m_scrollView->contentViewportHeight();
+  m_content->layout(renderer, std::max(1.0f, contentWidth), std::max(1.0f, contentHeight));
 }
 
 void ContentPanel::doUpdate(Renderer& renderer) {
@@ -92,6 +109,9 @@ void ContentPanel::doUpdate(Renderer& renderer) {
 }
 
 std::optional<float> ContentPanel::desiredVisualHeight(Renderer& renderer, float visualWidth) {
+  if (!m_spec.dynamicHeight) {
+    return preferredHeight();
+  }
   if (m_body == nullptr) {
     return std::nullopt;
   }
@@ -112,7 +132,7 @@ std::optional<float> ContentPanel::desiredVisualHeight(Renderer& renderer, float
 
 std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& services) {
   std::vector<NamedContentPanel> panels;
-  panels.reserve(10);
+  panels.reserve(11);
 
   WaylandConnection* wayland = services.platform != nullptr ? &services.platform->wayland() : nullptr;
   RenderContext* renderContext = PanelManager::instance().renderContext();
@@ -122,10 +142,12 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
   };
 
   add(
-      {.id = "media", .naturalWidth = 360.0f,
+      {.id = "media", .naturalWidth = 680.0f, .naturalHeight = 580.0f, .dynamicHeight = true,
+       .scrollable = false,
        .onOpen = [mpris = services.mpris]() { if (mpris != nullptr) mpris->refreshPlayers(); }},
       std::make_unique<MediaTab>(
-          services.mpris, services.httpClient, services.spectrum, services.config, wayland, renderContext
+          services.mpris, services.httpClient, services.spectrum, services.config, wayland, renderContext,
+          MediaTabPresentation::ReferencePanel
       )
   );
   add(
@@ -139,6 +161,10 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
       std::make_unique<MonitorTab>(services.brightness, services.config)
   );
   add(
+      {.id = "night-light", .naturalWidth = 440.0f, .naturalHeight = 610.0f, .dynamicHeight = true},
+      std::make_unique<NightLightTab>(services.nightLight, services.config, services.platform)
+  );
+  add(
       {.id = "system", .naturalWidth = 480.0f},
       std::make_unique<SystemTab>(services.sysmon)
   );
@@ -147,11 +173,12 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
       std::make_unique<PowerTab>(services.upower, services.powerProfiles)
   );
   add(
-      {.id = "network", .naturalWidth = 480.0f},
-      // ContentPanel already supplies the outer page scroll. Keeping the
-      // Control Center's inner network-list ScrollView here creates a nested
-      // viewport that consumes wheel events while reporting itself unscrollable.
-      std::make_unique<NetworkTab>(services.network, services.networkSecrets, false)
+      {.id = "network", .naturalWidth = 620.0f, .naturalHeight = 640.0f, .dynamicHeight = false,
+       .scrollable = false},
+      std::make_unique<NetworkTab>(
+          services.network, services.networkSecrets, services.config, wayland, renderContext,
+          NetworkTabPresentation::ReferencePanel
+      )
   );
   add(
       {.id = "bluetooth", .naturalWidth = 480.0f},
@@ -174,5 +201,6 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
 
 bool isContentPanelId(std::string_view id) noexcept {
   return id == "media" || id == "audio" || id == "brightness" || id == "system" || id == "battery"
-      || id == "network" || id == "bluetooth" || id == "weather" || id == "calendar" || id == "screen-time";
+      || id == "night-light" || id == "network" || id == "bluetooth" || id == "weather" || id == "calendar"
+      || id == "screen-time";
 }

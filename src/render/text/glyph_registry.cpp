@@ -22,6 +22,9 @@ namespace {
   // clang-format off
   const std::unordered_map<std::string, std::string_view> kAliases = {
       {"x", "close"}, {"close", "close"}, {"plus", "add"}, {"add", "add"},
+      {"map-pin", "location_on"}, {"droplet", "humidity_percentage"},
+      {"shield", "shield"}, {"shield-check", "verified_user"}, {"network", "lan"},
+      {"sparkles", "auto_awesome"},
       {"dots-vertical", "more_vert"}, {"more-vertical", "more_vert"},
       {"user", "person"}, {"person", "person"}, {"info", "info"},
       {"mood-smile-beam", "sentiment_very_satisfied"}, {"sort-a-z", "sort_by_alpha"},

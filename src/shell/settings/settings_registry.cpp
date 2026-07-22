@@ -506,9 +506,10 @@ namespace settings {
         PanelSizeCatalogEntry{"media", "Media", 360},
         PanelSizeCatalogEntry{"audio", "Audio", 400},
         PanelSizeCatalogEntry{"brightness", "Brightness", 400},
+        PanelSizeCatalogEntry{"night-light", "Night Light", 440},
         PanelSizeCatalogEntry{"system", "System monitor", 480},
         PanelSizeCatalogEntry{"battery", "Battery", 400},
-        PanelSizeCatalogEntry{"network", "Network", 480},
+        PanelSizeCatalogEntry{"network", "Network", 620},
         PanelSizeCatalogEntry{"bluetooth", "Bluetooth", 480},
         PanelSizeCatalogEntry{"weather", "Weather", 480},
         PanelSizeCatalogEntry{"calendar", "Calendar", 360},
@@ -1486,6 +1487,15 @@ namespace settings {
           SettingsSection::Security, "lock-screen", tr("settings.schema.lockscreen.tint-intensity.label"),
           tr("settings.schema.lockscreen.tint-intensity.description"), {"lockscreen", "tint_intensity"},
           sliderFor(cfg.lockscreen.tintIntensity, gnil::config::schema::kUnitRange, false), "lock screen tint"
+      );
+      e.visibleWhen = lockscreenOn;
+      entries.push_back(std::move(e));
+    }
+    {
+      auto e = makeEntry(
+          SettingsSection::Security, "lock-screen", tr("settings.schema.lockscreen.show-notifications.label"),
+          tr("settings.schema.lockscreen.show-notifications.description"), {"lockscreen", "show_notifications"},
+          ToggleSetting{cfg.lockscreen.showNotifications}, "lock screen notification preview privacy"
       );
       e.visibleWhen = lockscreenOn;
       entries.push_back(std::move(e));

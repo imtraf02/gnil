@@ -5,6 +5,7 @@
 #include "ui/palette.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -14,6 +15,12 @@
 class Button;
 class InputArea;
 class Separator;
+
+enum class SegmentedPresentation : std::uint8_t {
+  Joined,
+  Expressive,
+  Underline,
+};
 
 class Segmented : public Flex {
 public:
@@ -40,9 +47,11 @@ public:
   void setPadding(float top, float right, float bottom, float left);
 
   void setEnabled(bool enabled);
+  void setPresentation(SegmentedPresentation presentation);
   void setSurfaceOpacity(float opacity);
   void setSurfaceRole(ColorRole role);
   [[nodiscard]] bool enabled() const noexcept { return m_enabled; }
+  [[nodiscard]] SegmentedPresentation presentation() const noexcept { return m_presentation; }
 
   // When true, each segment gets flexGrow 1 so the group fills the available width (e.g. full bar).
   void setEqualSegmentWidths(bool equalWidths);
@@ -61,6 +70,9 @@ private:
   void applyButtonMetrics(Button& button) const;
   void refreshVariants();
   void applyOuterStyle();
+  void refreshSeparatorVisibility();
+  void animatePressedSegment(std::optional<std::size_t> index, bool pressed);
+  void applyPressedSegment(float progress);
   [[nodiscard]] float effectiveFontSize() const noexcept;
 
   RovingListNavController m_rovingNav;
@@ -79,4 +91,8 @@ private:
   float m_surfaceOpacity = 1.0f;
   ColorRole m_surfaceRole = ColorRole::SurfaceVariant;
   bool m_enabled = true;
+  SegmentedPresentation m_presentation = SegmentedPresentation::Joined;
+  std::optional<std::size_t> m_pressedIndex;
+  float m_pressProgress = 0.0f;
+  std::uint32_t m_pressAnimId = 0;
 };

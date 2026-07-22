@@ -876,7 +876,6 @@ namespace {
       setBorder(colorSpecFromRole(ColorRole::Outline, 0.4f), 1.0f * scale);
 
       constexpr float kIconSizeSm = 28.0f;
-      constexpr float kCompactSliderControlHeight = 20.0f;
       m_iconSize = kIconSizeSm * scale;
       m_iconContentGap = Style::spaceSm * scale;
       m_valueLabelMinWidth = kValueLabelWidth * scale;
@@ -944,9 +943,10 @@ namespace {
                       .minValue = 0.0f,
                       .maxValue = sliderMax,
                       .step = 0.01f,
-                      .trackHeight = 8.0f * scale,
-                      .thumbSize = 20.0f * scale,
-                      .controlHeight = kCompactSliderControlHeight * scale,
+                      .presentation = SliderPresentation::LevelCompact,
+                      .trackHeight = 18.0f * scale,
+                      .thumbSize = 33.0f * scale,
+                      .controlHeight = 33.0f * scale,
                       .wheelAdjustEnabled = true,
                       .flexGrow = 1.0f,
                       .onValueChanged =
@@ -1499,9 +1499,10 @@ std::unique_ptr<Flex> AudioTab::createDeviceVolumeCard(DeviceVolumeCardSpec card
               .minValue = 0.0f,
               .maxValue = sliderMax,
               .step = 0.01f,
-              .trackHeight = 8.0f * scale,
-              .thumbSize = 20.0f * scale,
-              .controlHeight = Style::controlHeight * scale,
+              .presentation = SliderPresentation::LevelCompact,
+              .trackHeight = 18.0f * scale,
+              .thumbSize = 33.0f * scale,
+              .controlHeight = 33.0f * scale,
               .wheelAdjustEnabled = true,
               .flexGrow = 1.0f,
               .onValueChanged =

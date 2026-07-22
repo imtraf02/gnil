@@ -111,7 +111,8 @@ namespace {
 
   class NightlightShortcut final : public Shortcut {
   public:
-    NightlightShortcut(GammaService* svc, CompositorPlatform* platform) : m_svc(svc), m_platform(platform) {}
+    NightlightShortcut(GammaService* svc, ConfigService* config, CompositorPlatform* platform)
+        : m_svc(svc), m_config(config), m_platform(platform) {}
     std::string_view id() const override { return "nightlight"; }
     std::string defaultLabel() const override { return i18n::tr("control-center.shortcuts.nightlight"); }
     bool enabled() const override { return m_platform != nullptr && m_platform->hasGammaControl(); }
@@ -147,20 +148,32 @@ namespace {
       // drop force and land on scheduled-on so force is reversible without
       // also losing the master enable.
       if (m_svc->forceEnabled()) {
-        m_svc->clearForceOverride();
-        m_svc->setEnabled(true);
+        if (m_config != nullptr) {
+          (void)m_config->setOverrides({
+              {{"nightlight", "enabled"}, true},
+              {{"nightlight", "force"}, false},
+          });
+        } else {
+          m_svc->clearForceOverride();
+          m_svc->setEnabled(true);
+        }
       } else {
-        m_svc->toggleEnabled();
+        if (m_config != nullptr) {
+          (void)m_config->setOverride({"nightlight", "enabled"}, !m_svc->enabled());
+        } else {
+          m_svc->toggleEnabled();
+        }
       }
     }
     void onRightClick() override {
-      if (enabled() && m_svc != nullptr) {
-        m_svc->toggleForceEnabled();
+      if (enabled()) {
+        PanelManager::instance().togglePanel("night-light");
       }
     }
 
   private:
     GammaService* m_svc;
+    ConfigService* m_config;
     CompositorPlatform* m_platform;
   };
 
@@ -538,7 +551,7 @@ std::unique_ptr<Shortcut> ShortcutRegistry::create(std::string_view type, const 
   if (type == "bluetooth")
     return std::make_unique<BluetoothShortcut>(s.bluetooth);
   if (type == "nightlight")
-    return std::make_unique<NightlightShortcut>(s.nightLight, s.platform);
+    return std::make_unique<NightlightShortcut>(s.nightLight, s.config, s.platform);
   if (type == "notification")
     return std::make_unique<NotificationShortcut>(s.notifications);
   if (type == "dark_mode")

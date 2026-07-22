@@ -5,6 +5,7 @@
 #include "compositors/compositor_platform.h"
 #include "config/config_service.h"
 #include "config/config_types.h"
+#include "core/files/resource_paths.h"
 #include "core/deferred_call.h"
 #include "core/input/key_chord.h"
 #include "core/input/keybind_matcher.h"
@@ -19,13 +20,18 @@
 #include "shell/bar/widgets/keyboard_layout_widget.h"
 #include "shell/lockscreen/lock_surface.h"
 #include "system/system_monitor_service.h"
+#include "system/distro_info.h"
 #include "system/weather_service.h"
+#include "time/time_format.h"
 #include "ui/palette.h"
 #include "wayland/wayland_connection.h"
 #include "wayland/wayland_seat.h"
 
 #include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <format>
+#include <ranges>
 #include <string>
 #include <thread>
 
@@ -48,6 +54,37 @@ namespace {
       .locked = &LockScreen::handleLocked,
       .finished = &LockScreen::handleFinished,
   };
+
+  std::string lockscreenDistroAssetPath() {
+    const auto distro = DistroDetector::detect();
+    if (!distro.has_value()) {
+      return {};
+    }
+    std::string id = distro->id;
+    std::ranges::transform(id, id.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    const std::pair<std::string_view, std::string_view> mappings[] = {
+        {"arch", "arch.svg"},
+        {"archlinux", "arch.svg"},
+        {"cachyos", "cachy.svg"},
+        {"debian", "debian.svg"},
+        {"endeavouros", "endeavour.svg"},
+        {"fedora", "fedora.svg"},
+        {"gentoo", "gentoo.svg"},
+        {"kaos", "kaos.svg"},
+        {"nixos", "nixos.svg"},
+        {"opensuse", "opensuse.svg"},
+        {"opensuse-tumbleweed", "opensuse.svg"},
+        {"void", "void.svg"},
+    };
+    for (const auto& [candidate, asset] : mappings) {
+      if (id == candidate) {
+        const auto path = paths::assetPath(std::string("images/distros/") + std::string(asset));
+        std::error_code ec;
+        return std::filesystem::exists(path, ec) ? path.string() : std::string{};
+      }
+    }
+    return {};
+  }
 
 } // namespace
 
@@ -142,6 +179,7 @@ bool LockScreen::lock() {
 
   m_lockPending = true;
   m_locked = false;
+  retainDashboardSampling();
   clearSensitiveString(m_password);
   m_status = i18n::tr("lockscreen.waiting");
   m_statusIsError = false;
@@ -215,6 +253,7 @@ void LockScreen::finishUnlock() {
   clearSensitiveString(m_password);
   m_status.clear();
   m_statusIsError = false;
+  releaseDashboardSampling();
   if (m_wayland != nullptr) m_wayland->stopKeyRepeat();
   m_desktopCaptures.clear();
   m_desktopCapturesPrimed = false;
@@ -503,6 +542,7 @@ void LockScreen::handleFinished(void* data, ext_session_lock_v1* /*lock*/) {
   clearSensitiveString(self->m_password);
   self->m_status.clear();
   self->m_statusIsError = false;
+  self->releaseDashboardSampling();
   self->m_desktopCaptures.clear();
   self->m_desktopCapturesPrimed = false;
   if (self->m_onSessionUnlocked) {
@@ -716,6 +756,15 @@ void LockScreen::createInstance(const WaylandOutput& output) {
   surface->setOnLogin([this]() { tryAuthenticate(); });
   surface->setOnCycleLayout([this]() { cycleKeyboardLayout(); });
   surface->setOnPasswordChanged([this](const std::string& value) { handlePasswordEdited(value); });
+  surface->setOnMediaPrevious([this]() {
+    if (m_services.mpris != nullptr && m_services.mpris->previousActive()) updateDashboardOnSurfaces();
+  });
+  surface->setOnMediaPlayPause([this]() {
+    if (m_services.mpris != nullptr && m_services.mpris->playPauseActive()) updateDashboardOnSurfaces();
+  });
+  surface->setOnMediaNext([this]() {
+    if (m_services.mpris != nullptr && m_services.mpris->nextActive()) updateDashboardOnSurfaces();
+  });
   surface->setPromptState(m_user, m_password, m_status, m_statusIsError, m_authenticating);
   applyIndicatorsToSurface(*surface);
 
@@ -738,6 +787,7 @@ void LockScreen::createInstance(const WaylandOutput& output) {
 }
 
 void LockScreen::resetLockState() {
+  releaseDashboardSampling();
   m_pendingAfterLocked = {};
   m_suspendTimeoutTimer.stop();
   m_lockDeferred = false;
@@ -762,61 +812,121 @@ void LockScreen::updatePromptOnSurfaces() {
   }
 }
 
+void LockScreen::retainDashboardSampling() {
+  if (m_dashboardSamplingRetained || m_services.sysmon == nullptr) {
+    return;
+  }
+  m_services.sysmon->retainCpuTemp();
+  m_services.sysmon->retainDiskPath("/");
+  m_dashboardSamplingRetained = true;
+}
+
+void LockScreen::releaseDashboardSampling() {
+  if (!m_dashboardSamplingRetained || m_services.sysmon == nullptr) {
+    return;
+  }
+  m_services.sysmon->releaseCpuTemp();
+  m_services.sysmon->releaseDiskPath("/");
+  m_dashboardSamplingRetained = false;
+}
+
 void LockScreen::updateDashboardOnSurfaces() {
   LockscreenDashboardState state;
-  state.weatherTitle = "Weather unavailable";
-  state.weatherDetail = "Location or weather data is not available";
+  state.weatherTemperature = "—";
+  state.weatherCondition = i18n::tr("lockscreen.dashboard.weather-unavailable");
+  state.weatherDetail = i18n::tr("lockscreen.dashboard.weather-detail-unavailable");
   if (m_services.weather != nullptr && m_services.weather->hasData()) {
     const auto& weather = m_services.weather->snapshot();
-    state.weatherTitle = weather.locationName.empty() ? "Weather" : weather.locationName;
-    state.weatherDetail = std::format(
-        "{:.0f}{} · {}", m_services.weather->displayTemperature(weather.current.temperatureC),
-        m_services.weather->displayTemperatureUnit(), WeatherService::shortDescriptionForCode(weather.current.weatherCode)
+    state.weatherAvailable = true;
+    state.weatherGlyph = WeatherService::glyphForCode(weather.current.weatherCode, weather.current.isDay);
+    state.weatherTemperature = std::format(
+        "{:.0f}{}", m_services.weather->displayTemperature(weather.current.temperatureC),
+        m_services.weather->displayTemperatureUnit()
     );
+    state.weatherCondition = WeatherService::shortDescriptionForCode(weather.current.weatherCode);
+    const int humidity = weather.forecastHours.empty() ? -1 : weather.forecastHours.front().relativeHumidityPercent;
+    state.weatherDetail = humidity >= 0
+        ? i18n::tr(
+              "lockscreen.dashboard.weather-detail", "humidity", humidity, "wind",
+              std::format("{:.0f}", weather.current.windSpeedKmh)
+          )
+        : i18n::tr(
+              "lockscreen.dashboard.weather-wind", "wind", std::format("{:.0f}", weather.current.windSpeedKmh)
+          );
   }
 
-  state.fetch = std::format("gnilfetch\nUSER: {}\nSTATUS: locked", m_user.empty() ? "user" : m_user);
+  state.systemIdentity = std::format("{}@{}", m_user.empty() ? "user" : m_user, hostName());
+  const auto uptime = systemUptime();
+  const std::string uptimeText = uptime.has_value() ? formatDuration(*uptime) : "—";
+  const std::string batteryText = m_services.upower != nullptr && m_services.upower->state().isPresent
+      ? std::format("{:.0f}%", m_services.upower->state().percentage)
+      : i18n::tr("lockscreen.dashboard.no-battery");
+  state.systemDetails = i18n::tr(
+      "lockscreen.dashboard.system-details", "distro", distroLabel(), "uptime", uptimeText, "battery", batteryText
+  );
+  state.distroAssetPath = lockscreenDistroAssetPath();
   if (m_services.accounts != nullptr) {
     state.avatarPath = m_services.accounts->iconFile();
   }
-  if (m_services.upower != nullptr && m_services.upower->state().isPresent) {
-    state.fetch += std::format("\nBATT: {:.0f}%", m_services.upower->state().percentage);
-  }
 
-  state.mediaTitle = "Nothing playing";
-  state.mediaArtist = "Try playing some music";
+  state.mediaTitle = i18n::tr("lockscreen.dashboard.nothing-playing");
+  state.mediaArtist = i18n::tr("lockscreen.dashboard.media-idle");
   if (m_services.mpris != nullptr) {
     if (const auto player = m_services.mpris->activePlayer(); player.has_value()) {
-      state.mediaTitle = player->title.empty() ? "Unknown track" : player->title;
+      state.mediaAvailable = true;
+      state.mediaTitle = player->title.empty() ? i18n::tr("lockscreen.dashboard.unknown-track") : player->title;
       state.mediaArtist = player->artists.empty() ? player->identity : joinedArtists(player->artists);
+      state.mediaPlaying = player->playbackStatus == "Playing";
+      state.mediaCanPrevious = player->canGoPrevious;
+      state.mediaCanPlayPause = player->canPlay || player->canPause;
+      state.mediaCanNext = player->canGoNext;
     }
   }
 
-  state.cpu = "CPU\n--";
-  state.memory = "RAM\n--";
-  state.storage = "DISK\n--";
-  if (m_services.sysmon != nullptr) {
+  state.metrics = {
+      LockscreenMetricState{.glyph = "cpu", .value = "—", .progress = 0.0f, .available = false},
+      LockscreenMetricState{.glyph = "temperature", .value = "—", .progress = 0.0f, .available = false},
+      LockscreenMetricState{.glyph = "memory", .value = "—", .progress = 0.0f, .available = false},
+      LockscreenMetricState{.glyph = "storage", .value = "—", .progress = 0.0f, .available = false},
+  };
+  if (m_services.sysmon != nullptr && m_services.sysmon->isRunning()) {
     const SystemStats stats = m_services.sysmon->latest();
-    state.cpu = std::format("CPU\n{:.0f}%", stats.cpuUsagePercent);
-    state.memory = std::format("RAM\n{:.0f}%", stats.ramUsagePercent);
-    state.storage = std::format("DISK\n{:.0f}%", m_services.sysmon->diskUsagePercent("/"));
+    const float cpu = static_cast<float>(std::clamp(stats.cpuUsagePercent, 0.0, 100.0));
+    const float ram = static_cast<float>(std::clamp(stats.ramUsagePercent, 0.0, 100.0));
+    const float disk = std::clamp(m_services.sysmon->diskUsagePercent("/"), 0.0f, 100.0f);
+    state.metrics[0] = LockscreenMetricState{
+        .glyph = "cpu", .value = std::format("{:.0f}%", cpu), .progress = cpu / 100.0f, .available = true
+    };
+    if (stats.cpuTempAvailable && stats.cpuTempC.has_value()) {
+      const float temperature = static_cast<float>(std::clamp(*stats.cpuTempC, 0.0, 100.0));
+      state.metrics[1] = LockscreenMetricState{
+          .glyph = "temperature",
+          .value = std::format("{:.0f}°", temperature),
+          .progress = temperature / 100.0f,
+          .available = true,
+      };
+    }
+    state.metrics[2] = LockscreenMetricState{
+        .glyph = "memory", .value = std::format("{:.0f}%", ram), .progress = ram / 100.0f, .available = true
+    };
+    state.metrics[3] = LockscreenMetricState{
+        .glyph = "storage", .value = std::format("{:.0f}%", disk), .progress = disk / 100.0f, .available = true
+    };
   }
 
   state.showNotifications = m_configService == nullptr || m_configService->config().lockscreen.showNotifications;
-  state.notifications = "Notifications";
-  if (m_services.notifications != nullptr) {
+  if (state.showNotifications && m_services.notifications != nullptr) {
     const auto& items = m_services.notifications->all();
-    if (items.empty()) {
-      state.notifications = "Notifications\n\nNo notifications";
-    } else {
-      state.notifications = std::format("{} notification{}", items.size(), items.size() == 1 ? "" : "s");
-      std::size_t shown = 0;
-      for (auto it = items.rbegin(); it != items.rend() && shown < 4; ++it, ++shown) {
-        state.notifications += "\n\n" + (it->appName.empty() ? std::string("System") : it->appName);
-        state.notifications += "\n" + (it->summary.empty() ? it->body : it->summary);
-      }
+    state.notificationCount = items.size();
+    std::size_t index = 0;
+    for (auto it = items.rbegin(); it != items.rend() && index < state.notificationPreviews.size(); ++it, ++index) {
+      state.notificationPreviews[index] = LockscreenNotificationPreview{
+          .app = it->appName.empty() ? i18n::tr("lockscreen.dashboard.system") : it->appName,
+          .summary = it->summary.empty() ? i18n::tr("lockscreen.dashboard.notification") : it->summary,
+      };
     }
   }
+
   for (auto& instance : m_instances) {
     if (instance.surface != nullptr) {
       instance.surface->setDashboardState(state);

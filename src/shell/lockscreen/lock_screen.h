@@ -116,6 +116,8 @@ private:
   void clearInstances();
   void updatePromptOnSurfaces();
   void updateDashboardOnSurfaces();
+  void retainDashboardSampling();
+  void releaseDashboardSampling();
   void finishUnlock();
   void updateIndicatorsOnSurfaces();
   void applyIndicatorsToSurface(LockSurface& surface) const;
@@ -153,6 +155,7 @@ private:
   bool m_desktopCapturesPrimed = false;
   bool m_lockDeferred = false;
   bool m_unlockAnimating = false;
+  bool m_dashboardSamplingRetained = false;
   int m_pendingUnlockAnimations = 0;
   std::function<void()> m_pendingAfterLocked;
   std::function<void()> m_onSessionLocked;

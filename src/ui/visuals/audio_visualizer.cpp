@@ -88,6 +88,12 @@ void AudioVisualizer::setCentered(bool centered) {
   setStyle(next);
 }
 
+void AudioVisualizer::setReflection(bool reflection) {
+  auto next = style();
+  next.reflection = reflection;
+  setStyle(next);
+}
+
 void AudioVisualizer::syncPalette() {
   auto next = style();
   next.color1 = resolveColorSpec(m_color1);

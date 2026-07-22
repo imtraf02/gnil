@@ -316,6 +316,9 @@ namespace ui {
     std::optional<double> step = std::nullopt;
     std::optional<double> value = std::nullopt;
     std::optional<bool> enabled = std::nullopt;
+    std::optional<SliderPresentation> presentation = std::nullopt;
+    std::optional<std::string> glyph = std::nullopt;
+    std::optional<float> glyphSize = std::nullopt;
     std::optional<float> trackHeight = std::nullopt;
     std::optional<float> thumbSize = std::nullopt;
     std::optional<float> controlHeight = std::nullopt;
@@ -368,6 +371,7 @@ namespace ui {
     std::optional<float> scale = std::nullopt;
     std::optional<bool> compact = std::nullopt;
     std::optional<bool> enabled = std::nullopt;
+    std::optional<SegmentedPresentation> presentation = std::nullopt;
     std::optional<float> surfaceOpacity = std::nullopt;
     std::optional<ColorRole> surfaceRole = std::nullopt;
     std::optional<bool> equalSegmentWidths = std::nullopt;

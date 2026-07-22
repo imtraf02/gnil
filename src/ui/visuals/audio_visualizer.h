@@ -16,6 +16,7 @@ public:
   void setOrientation(AudioSpectrumOrientation orientation);
   void setMirrored(bool mirrored);
   void setCentered(bool centered);
+  void setReflection(bool reflection);
   void setSmoothingTimeMs(float tauMs) noexcept { m_smoothingTauMs = std::max(0.0f, tauMs); }
 
   void tick(float deltaMs);

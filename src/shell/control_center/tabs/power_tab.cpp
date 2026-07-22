@@ -229,6 +229,7 @@ void PowerTab::buildProfilesCard(Flex& root, float scale) {
           .options = std::move(options),
           .fontSize = Style::fontSizeTitle * scale,
           .scale = scale,
+          .presentation = SegmentedPresentation::Expressive,
           .surfaceOpacity = 0.2f,
           .surfaceRole = ColorRole::SurfaceVariant,
           .equalSegmentWidths = true,

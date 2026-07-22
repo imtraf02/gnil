@@ -2,13 +2,18 @@
 
 #include "config/config_service.h"
 #include "core/deferred_call.h"
+#include "core/files/resource_paths.h"
 #include "core/log.h"
 #include "dbus/mpris/mpris_art.h"
 #include "dbus/mpris/mpris_service.h"
 #include "i18n/i18n.h"
 #include "net/http_client.h"
 #include "pipewire/pipewire_spectrum.h"
+#include "render/animation/animation_manager.h"
+#include "render/animation/motion_service.h"
+#include "render/core/image_decoder.h"
 #include "render/core/renderer.h"
+#include "render/core/texture_manager.h"
 #include "render/scene/node.h"
 #include "shell/control_center/tab.h"
 #include "shell/panel/panel_manager.h"
@@ -17,7 +22,9 @@
 #include "ui/controls/button.h"
 #include "ui/controls/context_menu.h"
 #include "ui/controls/context_menu_popup.h"
+#include "ui/controls/glyph.h"
 #include "ui/visuals/audio_visualizer.h"
+#include "util/file_utils.h"
 
 #include <algorithm>
 #include <chrono>
@@ -35,17 +42,24 @@ namespace {
 
   const Logger kLog{"media_tab"};
 
-  // Layout-grid unit for the media tab. Calibrated visual size, decoupled from
-  // Style::controlHeightLg which is a control-row height — bumping that token to
-  // a roomier value would otherwise inflate the artwork, card, and menu widths
-  // and overflow the panel content area.
+  // Layout-grid unit for the media tab. Artwork uses its own deliberate large
+  // bound so the dashboard reads as an album player, not a compact toolbar.
   constexpr float kMediaUnit = 36.0f;
 
-  constexpr float kArtworkSize = kMediaUnit * 6;
+  constexpr float kArtworkSize = kMediaUnit * 13;
   constexpr float kMediaNowCardMinHeight = kMediaUnit * 11 + Style::spaceSm * 2;
   constexpr float kMediaControlsHeight = kMediaUnit + Style::spaceXs;
   constexpr float kMediaPlayPauseHeight = kMediaUnit + Style::spaceSm;
   constexpr float kMediaArtworkMinHeight = kMediaUnit * 4;
+  // The standalone reference player uses a roomy, two-column 680px canvas.
+  // ContentPanel contributes 16px of outer inset on both sides.
+  constexpr float kReferenceCanvasWidth = 648.0f;
+  constexpr float kReferenceCardPadding = 24.0f;
+  constexpr float kReferenceCardGap = 16.0f;
+  constexpr float kReferenceArtworkSize = 264.0f;
+  constexpr float kReferenceBongoWidth = 190.0f;
+  constexpr float kReferenceBongoSlotHeight = 150.0f;
+  constexpr float kReferenceVisualizerHeight = 190.0f;
   constexpr auto kNoActivePlayerGrace = std::chrono::milliseconds(2000);
   constexpr auto kTransientPositionRegressionWindow = std::chrono::milliseconds(1500);
   constexpr std::int64_t kTransientPositionRegressionFloorUs = 5'000'000;
@@ -62,13 +76,16 @@ namespace {
 
   [[nodiscard]] int mediaTabArtDecodeSize(float scale) {
     // Match the widest artwork layout bound (see mediaWidth in doLayout).
-    return static_cast<int>(std::round(kMediaUnit * 11.0f * scale));
+    return static_cast<int>(std::round(kArtworkSize * scale));
   }
 
   std::string repeatGlyph(const std::string& loopStatus) { return loopStatus == "Track" ? "repeat-once" : "repeat"; }
 
   ButtonVariant toggleVariant(bool active) { return active ? ButtonVariant::Primary : ButtonVariant::Ghost; }
   constexpr int kVisualizerBandCount = 32;
+  constexpr float kBongoNaturalWidth = 260.0f;
+  constexpr int kMaxBongoFrames = 128;
+  constexpr std::size_t kMaxBongoRgbaBytes = 32ull * 1024 * 1024;
 
   Color trackDominantColor(std::string_view title, std::string_view artist) {
     if (title.empty()) {
@@ -82,27 +99,40 @@ namespace {
     return hsl(hue, 0.8f, 0.6f, 1.0f);
   }
 
+  std::string formatDuration(std::int64_t us) {
+    if (us <= 0) return "0:00";
+    const auto totalSeconds = us / 1'000'000;
+    const auto hours = totalSeconds / 3600;
+    const auto minutes = (totalSeconds % 3600) / 60;
+    const auto seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return std::format("{}:{}:{:02d}", hours, minutes, seconds);
+    }
+    return std::format("{}:{:02d}", minutes, seconds);
+  }
+
 } // namespace
 
 MediaTab::MediaTab(
     MprisService* mpris, HttpClient* httpClient, PipeWireSpectrum* spectrum, ConfigService* config,
-    WaylandConnection* wayland, RenderContext* renderContext, bool dashboardMode
+    WaylandConnection* wayland, RenderContext* renderContext, MediaTabPresentation presentation
 )
     : m_mpris(mpris), m_httpClient(httpClient), m_spectrum(spectrum), m_config(config), m_wayland(wayland),
-      m_renderContext(renderContext), m_dashboardMode(dashboardMode) {
-  if (m_dashboardMode) {
-    const std::weak_ptr<void> alive = m_aliveGuard;
-    m_lyricsService = std::make_unique<LyricsService>(m_httpClient, [alive]() {
-      if (alive.expired()) {
-        return;
-      }
-      PanelManager::instance().requestUpdateOnly();
-      PanelManager::instance().requestRedraw();
-    });
-  }
+      m_renderContext(renderContext), m_presentation(presentation) {
+  const std::weak_ptr<void> alive = m_aliveGuard;
+  m_lyricsService = std::make_unique<LyricsService>(m_httpClient, [alive]() {
+    if (alive.expired()) {
+      return;
+    }
+    PanelManager::instance().requestUpdateOnly();
+    PanelManager::instance().requestRedraw();
+  });
 }
 
-MediaTab::~MediaTab() { m_aliveGuard.reset(); }
+MediaTab::~MediaTab() {
+  m_aliveGuard.reset();
+  unloadBongoFrames();
+}
 
 void MediaTab::openPlayerMenu() {
   if (m_playerMenuPopup == nullptr || m_mpris == nullptr || m_playerMenuButton == nullptr) {
@@ -192,6 +222,7 @@ void MediaTab::openPlayerMenu() {
 
 std::unique_ptr<Flex> MediaTab::create() {
   const float scale = contentScale();
+  const bool referenceLayout = m_presentation == MediaTabPresentation::ReferencePanel;
 
   auto tab = ui::row({
       .out = &m_rootLayout,
@@ -203,7 +234,7 @@ std::unique_ptr<Flex> MediaTab::create() {
       .out = &m_mediaColumn,
       .align = FlexAlign::Stretch,
       .gap = Style::spaceMd * scale,
-      .flexGrow = 4.0f,
+      .flexGrow = 7.0f,
   });
 
   auto nowCard = ui::column({
@@ -211,101 +242,105 @@ std::unique_ptr<Flex> MediaTab::create() {
       .gap = Style::spaceMd * scale,
       .minHeight = kMediaNowCardMinHeight * scale,
       .flexGrow = 1.0f,
-      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
-        applySectionCardStyle(card, scale, opacity, borders);
+      .configure = [scale, opacity = panelCardOpacity()](Flex& card) {
+        applySectionCardStyle(card, scale, opacity, /*showBorder=*/false);
+        card.setRadius(28.0f * scale);
       },
   });
-
-  auto nowHeader = ui::row(
-      {.align = FlexAlign::Center,
-       .justify = FlexJustify::SpaceBetween,
-       .gap = Style::spaceSm * scale,
-       .minHeight = Style::controlHeightSm * scale},
-      ui::label({
-          .text = i18n::tr("control-center.media.now-playing"),
-          .fontSize = Style::fontSizeTitle * scale,
-          .fontWeight = FontWeight::Bold,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
-          .flexGrow = 1.0f,
-      }),
-      ui::button({
-          .out = &m_playerMenuButton,
-          .glyph = "headphones",
-          .glyphSize = Style::fontSizeBody * scale,
-          .enabled = false,
-          .variant = ButtonVariant::Ghost,
-          .minWidth = Style::controlHeightSm * scale,
-          .minHeight = Style::controlHeightSm * scale,
-          .padding = Style::spaceXs * scale,
-          .onClick = [this]() {
-            if (m_playerBusNames.empty()) {
-              return;
-            }
-            if (m_playerMenuPopup != nullptr && m_playerMenuPopup->isOpen()) {
-              m_playerMenuPopup->close();
-              PanelManager::instance().clearActivePopup();
-            } else {
-              openPlayerMenu();
-            }
-          },
-      })
-  );
-  nowCard->addChild(std::move(nowHeader));
 
   auto mediaStack = ui::column({
       .out = &m_mediaStack,
       .align = FlexAlign::Stretch,
-      .gap = Style::spaceMd * scale,
+      .gap = Style::spaceSm * scale,
       .flexGrow = 1.0f,
   });
 
+  auto artContainer = ui::column({
+      .out = &m_artContainer,
+      .align = FlexAlign::Center,
+      .justify = FlexJustify::Center,
+      .configure = [scale](Flex& box) {
+        box.setFill(colorSpecFromRole(ColorRole::SurfaceVariant, 0.45f));
+        box.setRadius(22.0f * scale);
+      },
+  });
+  artContainer->addChild(ui::image({
+      .out = &m_artwork,
+      .fit = ImageFit::Cover,
+      .radius = 22.0f * scale,
+      .width = kArtworkSize * scale,
+      .height = kArtworkSize * scale,
+  }));
+  artContainer->addChild(ui::glyph({
+      .out = &m_artFallbackGlyph,
+      .glyph = "disc-filled",
+      .glyphSize = 64.0f * scale,
+      .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+  }));
+
   auto artworkRow = ui::row(
       {.out = &m_artworkRow, .align = FlexAlign::Center, .justify = FlexJustify::Center, .gap = 0.0f, .flexGrow = 1.0f},
-      ui::image({
-          .out = &m_artwork,
-          .fit = ImageFit::Cover,
-          .radius = Style::scaledRadiusXl(scale),
-          .width = kArtworkSize * scale,
-          .height = kArtworkSize * scale,
-      })
+      std::move(artContainer)
   );
   mediaStack->addChild(std::move(artworkRow));
 
-  mediaStack->addChild(
-      ui::column(
-          {.align = FlexAlign::Stretch, .gap = Style::spaceSm * scale},
-          ui::label({
-              .out = &m_trackTitle,
-              .text = i18n::tr("control-center.media.nothing-playing"),
-              .fontSize = Style::fontSizeTitle * scale,
-              .fontWeight = FontWeight::Bold,
-              .color = colorSpecFromRole(ColorRole::Primary),
-          }),
-          ui::label({
-              .out = &m_trackArtist,
-              .text = i18n::tr("control-center.media.start-playback"),
-              .fontSize = Style::fontSizeBody * scale,
-              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-          }),
-          ui::label({
-              .out = &m_trackAlbum,
-              .text = "",
-              .fontSize = Style::fontSizeCaption * scale,
-              .color = colorSpecFromRole(ColorRole::Secondary),
-              .visible = false,
-          })
-      )
+  auto titleRow = ui::row(
+      {.align = FlexAlign::Center,
+       .justify = referenceLayout ? FlexJustify::Start : FlexJustify::Center,
+       .fillWidth = true},
+      ui::label({
+          .out = &m_trackTitle,
+          .text = i18n::tr("control-center.media.nothing-playing"),
+          .fontSize = Style::fontSizeHeader * scale,
+          .fontWeight = FontWeight::Bold,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+          .maxLines = 1,
+          .ellipsize = TextEllipsize::End,
+      })
   );
 
-  mediaStack->addChild(
+  auto infoColumn = ui::column(
+      {.align = referenceLayout ? FlexAlign::Start : FlexAlign::Center,
+       .gap = Style::spaceXs * 0.5f * scale,
+       .fillWidth = true},
+      std::move(titleRow),
+      ui::label({
+          .out = &m_trackArtist,
+          .text = i18n::tr("control-center.media.start-playback"),
+          .fontSize = Style::fontSizeBody * 0.95f * scale,
+          .fontWeight = FontWeight::Medium,
+          .color = colorSpecFromRole(referenceLayout ? ColorRole::OnSurfaceVariant : ColorRole::Primary),
+          .maxLines = 1,
+          .ellipsize = TextEllipsize::End,
+      }),
+      ui::label({
+          .out = &m_trackAlbum,
+          .text = " ",
+          .fontSize = Style::fontSizeBody * 0.9f * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          .maxLines = 1,
+          .ellipsize = TextEllipsize::End,
+      })
+  );
+  mediaStack->addChild(std::move(infoColumn));
+
+  auto progressRow = ui::row(
+      {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
+      ui::label({
+          .out = &m_timeElapsedLabel,
+          .text = "0:00",
+          .fontSize = Style::fontSizeCaption * 0.9f * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      }),
       ui::slider({
           .out = &m_progressSlider,
           .minValue = 0.0f,
           .maxValue = 100.0f,
           .step = 1.0f,
-          .trackHeight = 8.0f * scale,
-          .thumbSize = 20.0f * scale,
+          .trackHeight = 6.0f * scale,
+          .thumbSize = 16.0f * scale,
           .controlHeight = (Style::controlHeight + Style::spaceXs) * scale,
+          .flexGrow = 1.0f,
           .onValueChanged =
               [this](double value) {
                 if (m_syncingProgress || m_mpris == nullptr) {
@@ -330,18 +365,27 @@ std::unique_ptr<Flex> MediaTab::create() {
                 }
                 commitPendingSeek(m_progressSlider->value());
               },
+      }),
+      ui::label({
+          .out = &m_timeRemainingLabel,
+          .text = "0:00",
+          .fontSize = Style::fontSizeCaption * 0.9f * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
       })
   );
+  mediaStack->addChild(std::move(progressRow));
 
   auto controls = ui::row({
       .align = FlexAlign::Center,
-      .gap = Style::spaceMd * scale,
+      .justify = FlexJustify::Center,
+      .gap = Style::spaceLg * scale,
+      .fillWidth = true,
   });
 
   controls->addChild(
       ui::button({
-          .out = &m_repeatButton,
-          .glyph = "repeat",
+          .out = &m_shuffleButton,
+          .glyph = "shuffle",
           .variant = ButtonVariant::Ghost,
           .minWidth = kMediaControlsHeight * scale,
           .minHeight = kMediaControlsHeight * scale,
@@ -353,9 +397,8 @@ std::unique_ptr<Flex> MediaTab::create() {
               if (aliveGuard.expired() || m_mpris == nullptr) {
                 return;
               }
-              const auto current = m_mpris->loopStatusActive().value_or("None");
-              const std::string next = current == "None" ? "Playlist" : (current == "Playlist" ? "Track" : "None");
-              (void)m_mpris->setLoopStatusActive(next);
+              const bool enabled = m_mpris->shuffleActive().value_or(false);
+              (void)m_mpris->setShuffleActive(!enabled);
               PanelManager::instance().refresh();
             });
           },
@@ -389,10 +432,10 @@ std::unique_ptr<Flex> MediaTab::create() {
           .out = &m_playPauseButton,
           .glyph = "media-play",
           .variant = ButtonVariant::Primary,
-          .minWidth = kMediaPlayPauseHeight * scale,
-          .minHeight = kMediaPlayPauseHeight * scale,
+          .minWidth = 52.0f * scale,
+          .minHeight = 52.0f * scale,
           .padding = Style::spaceSm * scale,
-          .radius = Style::scaledRadiusLg(scale),
+          .radius = 28.0f * scale,
           .onClick = [this]() {
             const std::weak_ptr<void> aliveGuard = m_aliveGuard;
             DeferredCall::callLater([this, aliveGuard]() {
@@ -430,8 +473,8 @@ std::unique_ptr<Flex> MediaTab::create() {
 
   controls->addChild(
       ui::button({
-          .out = &m_shuffleButton,
-          .glyph = "shuffle",
+          .out = &m_repeatButton,
+          .glyph = "repeat",
           .variant = ButtonVariant::Ghost,
           .minWidth = kMediaControlsHeight * scale,
           .minHeight = kMediaControlsHeight * scale,
@@ -443,22 +486,54 @@ std::unique_ptr<Flex> MediaTab::create() {
               if (aliveGuard.expired() || m_mpris == nullptr) {
                 return;
               }
-              const bool enabled = m_mpris->shuffleActive().value_or(false);
-              (void)m_mpris->setShuffleActive(!enabled);
+              const auto current = m_mpris->loopStatusActive().value_or("None");
+              const std::string next = current == "None" ? "Playlist" : (current == "Playlist" ? "Track" : "None");
+              (void)m_mpris->setLoopStatusActive(next);
               PanelManager::instance().refresh();
             });
           },
       })
   );
 
-  auto controlsRow = ui::row({
+  mediaStack->addChild(std::move(controls));
+
+  auto volumePill = ui::row({
       .align = FlexAlign::Center,
-      .justify = FlexJustify::Center,
-      .gap = 0.0f,
-      .fillWidth = true,
+      .gap = Style::spaceXs * scale,
+      .padding = 0.0f,
   });
-  controlsRow->addChild(std::move(controls));
-  mediaStack->addChild(std::move(controlsRow));
+  volumePill->addChild(ui::slider({
+      .out = &m_volumeSlider,
+      .minValue = 0.0f,
+      .maxValue = 100.0f,
+      .step = 1.0f,
+      .value = 80.0f,
+      .presentation = SliderPresentation::LevelCompact,
+      .glyph = "volume-high",
+      .glyphSize = Style::fontSizeCaption * scale,
+      .trackHeight = 18.0f * scale,
+      .thumbSize = 33.0f * scale,
+      .controlHeight = 33.0f * scale,
+      .flexGrow = 1.0f,
+      .onValueChanged =
+          [this](double value) {
+            if (m_mpris == nullptr) {
+              return;
+            }
+            (void)m_mpris->setVolumeActive(value / 100.0);
+            if (m_volumeLabel != nullptr) {
+              m_volumeLabel->setText(std::to_string(static_cast<int>(std::round(value))) + "%");
+            }
+          },
+  }));
+  volumePill->addChild(ui::label({
+      .out = &m_volumeLabel,
+      .text = "80%",
+      .fontSize = Style::fontSizeCaption * 0.85f * scale,
+      .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+  }));
+
+  mediaStack->addChild(std::move(volumePill));
 
   nowCard->addChild(std::move(mediaStack));
   mediaColumn->addChild(std::move(nowCard));
@@ -468,69 +543,244 @@ std::unique_ptr<Flex> MediaTab::create() {
       .align = FlexAlign::Stretch,
       .gap = Style::spaceSm * scale,
       .clipChildren = true,
-      .flexGrow = 2.0f,
-      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& column) {
-        applySectionCardStyle(column, scale, opacity, borders);
+      .flexGrow = 4.0f,
+  });
+
+  {
+    auto lyricsCard = ui::column({
+        .out = &m_lyricsCard,
+        .align = FlexAlign::Center,
+        .justify = FlexJustify::Center,
+        .gap = Style::spaceSm * scale,
+        .fillWidth = true,
+        .flexGrow = referenceLayout ? 0.0f : 1.0f,
+        .configure = [scale, opacity = panelCardOpacity()](Flex& card) {
+          applySectionCardStyle(card, scale, opacity, /*showBorder=*/false);
+          card.setAlign(FlexAlign::Center);
+          card.setJustify(FlexJustify::Center);
+          card.setRadius(20.0f * scale);
+        },
+    });
+
+    auto optionBtn = ui::button({
+        .out = &m_playerMenuButton,
+        .glyph = "more-vertical",
+        .glyphSize = Style::fontSizeBody * scale,
+        .enabled = false,
+        .variant = ButtonVariant::Ghost,
+        .minWidth = Style::controlHeightSm * scale,
+        .minHeight = Style::controlHeightSm * scale,
+        .padding = Style::spaceXs * scale,
+        .onClick = [this]() {
+          if (m_playerBusNames.empty()) {
+            return;
+          }
+          if (m_playerMenuPopup != nullptr && m_playerMenuPopup->isOpen()) {
+            m_playerMenuPopup->close();
+            PanelManager::instance().clearActivePopup();
+          } else {
+            openPlayerMenu();
+          }
+        },
+    });
+    if (referenceLayout) {
+      auto goodVibesHeader = ui::row({
+          .align = FlexAlign::Center,
+          .gap = Style::spaceSm * scale,
+          .fillWidth = true,
+      });
+      goodVibesHeader->addChild(ui::glyph({
+          .glyph = "sparkles",
+          .glyphSize = Style::fontSizeTitle * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+      }));
+      goodVibesHeader->addChild(ui::label({
+          .text = i18n::tr("control-center.media.good-vibes"),
+          .fontSize = Style::fontSizeTitle * scale,
+          .fontWeight = FontWeight::Bold,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+          .flexGrow = 1.0f,
+      }));
+      goodVibesHeader->addChild(std::move(optionBtn));
+      lyricsCard->addChild(std::move(goodVibesHeader));
+    } else {
+      optionBtn->setParticipatesInLayout(false);
+      lyricsCard->addChild(std::move(optionBtn));
+    }
+
+    if (!referenceLayout) {
+      auto lyricsHeader = ui::row(
+          {.align = FlexAlign::Center,
+           .justify = FlexJustify::SpaceBetween,
+           .gap = Style::spaceSm * scale,
+           .minHeight = Style::controlHeightSm * scale},
+          ui::label({
+              .text = "Sync Lyrics",
+              .fontSize = Style::fontSizeHeader * scale,
+              .fontWeight = FontWeight::Bold,
+              .color = colorSpecFromRole(ColorRole::OnSurface),
+          }),
+          ui::glyph({
+              .glyph = "more-vertical",
+              .glyphSize = Style::fontSizeBody * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          })
+      );
+      lyricsCard->addChild(std::move(lyricsHeader));
+      lyricsCard->addChild(ui::box({
+          .fill = colorSpecFromRole(ColorRole::Outline, 0.15f),
+          .height = 1.0f * scale,
+      }));
+    }
+
+    auto lyricsCenterBox = ui::column({
+        .align = FlexAlign::Center,
+        .justify = FlexJustify::Center,
+        .gap = Style::spaceSm * scale,
+        .fillWidth = true,
+        .flexGrow = referenceLayout ? 0.0f : 1.0f,
+    });
+
+    auto lyricsEmptyState = ui::column({
+        .out = &m_lyricsEmptyState,
+        .align = FlexAlign::Center,
+        .justify = FlexJustify::Center,
+        .gap = Style::spaceSm * scale,
+        .fillWidth = true,
+        .flexGrow = 1.0f,
+    });
+    lyricsEmptyState->addChild(
+        ui::row(
+            {.align = FlexAlign::Center,
+             .justify = FlexJustify::Center,
+             .minHeight = (referenceLayout ? kReferenceBongoSlotHeight : 170.0f) * scale,
+             .fillWidth = true},
+            ui::image({
+                .out = &m_bongoCat,
+                .fit = ImageFit::Contain,
+            })
+        )
+    );
+
+    lyricsCenterBox->addChild(std::move(lyricsEmptyState));
+    if (!referenceLayout) {
+      auto lyricsLines = ui::column({
+          .out = &m_lyricsLines,
+          .align = FlexAlign::Center,
+          .justify = FlexJustify::Center,
+          .gap = Style::spaceSm * scale,
+          .fillWidth = true,
+          .flexGrow = 1.0f,
+          .visible = false,
+          .participatesInLayout = false,
+      });
+      lyricsLines->addChild(ui::label({
+          .out = &m_lyricsPrevious,
+          .text = "",
+          .fontSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.65f),
+          .visible = false,
+      }));
+      lyricsLines->addChild(ui::label({
+          .out = &m_lyricsCurrent,
+          .text = "",
+          .fontSize = Style::fontSizeTitle * scale,
+          .fontWeight = FontWeight::Bold,
+          .color = colorSpecFromRole(ColorRole::Primary),
+          .visible = false,
+      }));
+      lyricsLines->addChild(ui::label({
+          .out = &m_lyricsNext,
+          .text = "",
+          .fontSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          .visible = false,
+      }));
+      lyricsCenterBox->addChild(std::move(lyricsLines));
+    }
+    lyricsCard->addChild(std::move(lyricsCenterBox));
+    if (referenceLayout) {
+      lyricsCard->addChild(ui::label({
+          .text = i18n::tr("control-center.media.have-a-nice-day"),
+          .fontSize = Style::fontSizeBody * scale,
+          .fontWeight = FontWeight::Medium,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+          .maxLines = 1,
+          .textAlign = TextAlign::Center,
+      }));
+    }
+    visualizerColumn->addChild(std::move(lyricsCard));
+
+  }
+
+  auto visualizerCard = ui::column({
+      .align = FlexAlign::Stretch,
+      .minHeight = 108.0f * scale,
+      .fillWidth = true,
+      .flexGrow = 1.0f,
+      .configure = [scale, opacity = panelCardOpacity()](Flex& card) {
+        applySectionCardStyle(card, scale, opacity, /*showBorder=*/false);
+        card.setRadius(20.0f * scale);
       },
   });
 
-  if (m_dashboardMode) {
-    visualizerColumn->addChild(ui::label({
-        .text = "Synced lyrics",
-        .fontSize = Style::fontSizeTitle * scale,
-        .fontWeight = FontWeight::Bold,
-        .color = colorSpecFromRole(ColorRole::OnSurface),
-    }));
-    visualizerColumn->addChild(ui::label({
-        .out = &m_lyricsStatus,
-        .text = "No active track",
-        .fontSize = Style::fontSizeCaption * scale,
-        .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-        .flexGrow = 1.0f,
-    }));
-    visualizerColumn->addChild(ui::label({
-        .out = &m_lyricsPrevious,
-        .text = "",
-        .fontSize = Style::fontSizeCaption * scale,
-        .color = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.65f),
-        .visible = false,
-    }));
-    visualizerColumn->addChild(ui::label({
-        .out = &m_lyricsCurrent,
-        .text = "",
-        .fontSize = Style::fontSizeBody * scale,
-        .fontWeight = FontWeight::Bold,
-        .color = colorSpecFromRole(ColorRole::Primary),
-        .visible = false,
-    }));
-    visualizerColumn->addChild(ui::label({
-        .out = &m_lyricsNext,
-        .text = "",
-        .fontSize = Style::fontSizeCaption * scale,
-        .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-        .visible = false,
-    }));
+  if (referenceLayout) {
+    visualizerCard->addChild(ui::row(
+        {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
+        ui::glyph({
+            .glyph = "wave-sine",
+            .glyphSize = Style::fontSizeTitle * scale,
+            .color = colorSpecFromRole(ColorRole::OnSurface),
+        }),
+        ui::label({
+            .text = i18n::tr("control-center.media.now-playing"),
+            .fontSize = Style::fontSizeTitle * scale,
+            .fontWeight = FontWeight::Bold,
+            .color = colorSpecFromRole(ColorRole::OnSurface),
+        })
+    ));
   }
 
   auto visualizerBody = ui::row({
       .out = &m_visualizerBody,
-      .align = FlexAlign::Stretch,
-      .justify = FlexJustify::Start,
+      .align = FlexAlign::End,
+      .justify = FlexJustify::Center,
+      .minHeight = 75.0f * scale,
       .fillWidth = true,
       .flexGrow = 1.0f,
   });
 
   auto visualizerSpectrum = std::make_unique<AudioVisualizer>();
   visualizerSpectrum->setGradient(colorForRole(ColorRole::Secondary), colorForRole(ColorRole::Tertiary));
-  visualizerSpectrum->setOrientation(AudioSpectrumOrientation::Vertical);
-  visualizerSpectrum->setMirrored(true);
-  visualizerSpectrum->setCentered(true);
+  visualizerSpectrum->setOrientation(AudioSpectrumOrientation::Horizontal);
+  visualizerSpectrum->setMirrored(false);
+  visualizerSpectrum->setCentered(false);
+  visualizerSpectrum->setReflection(referenceLayout);
   visualizerSpectrum->setValues(std::vector<float>(kVisualizerBandCount, 0.0f));
   visualizerSpectrum->tick(0.0f);
   visualizerSpectrum->setFlexGrow(1.0f);
   m_visualizerSpectrum = visualizerSpectrum.get();
   visualizerBody->addChild(std::move(visualizerSpectrum));
-  visualizerColumn->addChild(std::move(visualizerBody));
+  visualizerCard->addChild(std::move(visualizerBody));
+
+  if (referenceLayout) {
+    visualizerCard->addChild(ui::row(
+        {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
+        ui::glyph({
+            .glyph = "wave-sine",
+            .glyphSize = Style::fontSizeBody * scale,
+            .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+        }),
+        ui::label({
+            .out = &m_visualizerStatus,
+            .text = i18n::tr("control-center.media.waiting-for-audio"),
+            .fontSize = Style::fontSizeCaption * scale,
+            .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+        })
+    ));
+  }
+
+  visualizerColumn->addChild(std::move(visualizerCard));
   tab->addChild(std::move(mediaColumn));
   tab->addChild(std::move(visualizerColumn));
 
@@ -564,12 +814,46 @@ void MediaTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight
   }
 
   const float scale = contentScale();
-  m_rootLayout->setSize(contentWidth, bodyHeight);
+  const bool referenceLayout = m_presentation == MediaTabPresentation::ReferencePanel;
+  const float referenceScale = referenceLayout ? contentWidth / kReferenceCanvasWidth : scale;
+  ensureBongoLoaded(renderer);
+
+  if (referenceLayout) {
+    const float cardPadding = kReferenceCardPadding * referenceScale;
+    m_rootLayout->setGap(kReferenceCardGap * referenceScale);
+    m_mediaColumn->setGap(0.0f);
+    m_nowCard->setPadding(cardPadding, cardPadding);
+    m_nowCard->setGap(kReferenceCardGap * referenceScale);
+    m_visualizerColumn->setGap(kReferenceCardGap * referenceScale);
+    m_mediaStack->setGap(6.0f * referenceScale);
+    if (m_artworkRow != nullptr) {
+      const float artSide = kReferenceArtworkSize * referenceScale;
+      m_artworkRow->setMinHeight(artSide);
+      m_artworkRow->setMaxHeight(artSide);
+    }
+    if (m_visualizerBody != nullptr) {
+      m_visualizerBody->setMinHeight(kReferenceVisualizerHeight * referenceScale);
+    }
+    if (m_progressSlider != nullptr) {
+      m_progressSlider->setControlHeight(28.0f * referenceScale);
+      m_progressSlider->setTrackHeight(4.0f * referenceScale);
+      m_progressSlider->setThumbSize(12.0f * referenceScale);
+    }
+    if (m_volumeSlider != nullptr) {
+      m_volumeSlider->setControlHeight(24.0f * referenceScale);
+      m_volumeSlider->setTrackHeight(4.0f * referenceScale);
+      m_volumeSlider->setThumbSize(10.0f * referenceScale);
+    }
+  }
+  m_rootLayout->setSize(contentWidth, std::max(0.0f, bodyHeight));
+  if (bodyHeight <= 0.0f) {
+    m_rootLayout->setHeightPolicy(FlexSizePolicy::Content);
+  }
   m_rootLayout->layout(renderer);
 
   const float cardInnerWidth =
       std::max(0.0f, m_nowCard->width() - (m_nowCard->paddingLeft() + m_nowCard->paddingRight()));
-  const float mediaWidth = std::clamp(cardInnerWidth, 1.0f, kMediaUnit * 11.0f * scale);
+  const float mediaWidth = referenceLayout ? cardInnerWidth : std::clamp(cardInnerWidth, 1.0f, kArtworkSize * scale);
   const float mediaStackHeight = m_mediaStack->height();
   m_mediaStack->setSize(mediaWidth, mediaStackHeight);
 
@@ -580,17 +864,20 @@ void MediaTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight
   }
 
   if (m_artwork != nullptr) {
-    const float sideButtonSize = kMediaControlsHeight * scale;
-    const float playPauseButtonSize = kMediaPlayPauseHeight * scale;
-    const float sideGlyphSize = Style::fontSizeTitle * scale;
-    const float playPauseGlyphSize = (Style::fontSizeTitle + Style::spaceXs) * scale;
+    const float sideButtonSize = referenceLayout ? 32.0f * referenceScale : kMediaControlsHeight * scale;
+    const float playPauseButtonSize = referenceLayout ? 56.0f * referenceScale : kMediaPlayPauseHeight * scale;
+    const float sideGlyphSize = referenceLayout ? 20.0f * referenceScale : Style::fontSizeTitle * scale;
+    const float playPauseGlyphSize = referenceLayout
+        ? 26.0f * referenceScale
+        : (Style::fontSizeTitle + Style::spaceXs) * scale;
 
     for (auto* button : {m_repeatButton, m_prevButton, m_nextButton, m_shuffleButton}) {
       if (button != nullptr) {
         button->setMinWidth(sideButtonSize);
         button->setMinHeight(sideButtonSize);
         button->setGlyphSize(sideGlyphSize);
-        button->setPadding(Style::spaceSm * scale, Style::spaceSm * scale);
+        button->setPadding(referenceLayout ? 4.0f * referenceScale : Style::spaceSm * scale,
+                           referenceLayout ? 4.0f * referenceScale : Style::spaceSm * scale);
         button->setRadius(Style::scaledRadiusLg(scale));
       }
     }
@@ -598,8 +885,9 @@ void MediaTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight
       m_playPauseButton->setMinWidth(playPauseButtonSize);
       m_playPauseButton->setMinHeight(playPauseButtonSize);
       m_playPauseButton->setGlyphSize(playPauseGlyphSize);
-      m_playPauseButton->setPadding(Style::spaceSm * scale, Style::spaceSm * scale);
-      m_playPauseButton->setRadius(Style::scaledRadiusLg(scale));
+      m_playPauseButton->setPadding(referenceLayout ? 10.0f * referenceScale : Style::spaceSm * scale,
+                                    referenceLayout ? 10.0f * referenceScale : Style::spaceSm * scale);
+      m_playPauseButton->setRadius(playPauseButtonSize * 0.5f);
     }
   }
 
@@ -621,14 +909,36 @@ void MediaTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight
   if (m_artwork != nullptr && m_artworkRow != nullptr) {
     const float artWidth =
         std::max(1.0f, m_artworkRow->width() - (m_artworkRow->paddingLeft() + m_artworkRow->paddingRight()));
-    const float artHeight = std::max(
-        kMediaArtworkMinHeight * scale,
-        m_artworkRow->height() - (m_artworkRow->paddingTop() + m_artworkRow->paddingBottom())
-    );
+    const float artHeight = referenceLayout
+        ? kReferenceArtworkSize * referenceScale
+        : std::max(
+              kMediaArtworkMinHeight * scale,
+              m_artworkRow->height() - (m_artworkRow->paddingTop() + m_artworkRow->paddingBottom())
+          );
     // Media art is always presented as a square (album-art convention).
     const float side = std::min(artWidth, artHeight);
-    m_artwork->setSize(side, side);
-    m_artwork->setRadius(Style::scaledRadiusXl(scale));
+    if (m_artContainer != nullptr) {
+      m_artContainer->setSize(side, side);
+      m_artContainer->setRadius(22.0f * scale);
+    }
+    if (m_artwork != nullptr) {
+      m_artwork->setSize(side, side);
+      m_artwork->setRadius(22.0f * scale);
+      m_artwork->setVisible(m_artwork->hasImage());
+    }
+    if (m_artFallbackGlyph != nullptr) {
+      m_artFallbackGlyph->setVisible(m_artwork == nullptr || !m_artwork->hasImage());
+    }
+    if (!referenceLayout && m_playerMenuButton != nullptr && m_lyricsCard != nullptr) {
+      const float btnSize = referenceLayout ? 26.0f * referenceScale : kMediaControlsHeight * scale;
+      const float offsetX = 12.0f * (referenceLayout ? referenceScale : scale);
+      const float offsetY = 10.0f * (referenceLayout ? referenceScale : scale);
+      m_playerMenuButton->setSize(btnSize, btnSize);
+      m_playerMenuButton->setPosition(
+          std::max(0.0f, m_lyricsCard->width() - btnSize - offsetX),
+          offsetY
+      );
+    }
     m_mediaStack->layout(renderer);
   }
 
@@ -644,6 +954,37 @@ void MediaTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight
     m_visualizerSpectrum->setSize(spectrumWidth, spectrumHeight);
     m_visualizerBody->layout(renderer);
   }
+
+  if (m_bongoCat != nullptr && m_bongoCat->hasImage() && m_bongoCat->parent() != nullptr) {
+    auto* parentFlex = static_cast<Flex*>(m_bongoCat->parent());
+    if (referenceLayout) {
+      const float bongoSlotHeight = kReferenceBongoSlotHeight * referenceScale;
+      parentFlex->setMinHeight(bongoSlotHeight);
+      parentFlex->setMaxHeight(bongoSlotHeight);
+    }
+    const float parentWidth = std::max(1.0f, parentFlex->width());
+    const float parentHeight = std::max(1.0f, parentFlex->height());
+    float catWidth = referenceLayout
+        ? std::min(kReferenceBongoWidth * referenceScale, parentWidth * 0.9f)
+        : std::min(kBongoNaturalWidth * scale, parentWidth * 0.9f);
+    float catHeight = catWidth / std::max(0.01f, m_bongoCat->aspectRatio());
+    if (catHeight > parentHeight && parentHeight > 0.0f) {
+      catHeight = parentHeight;
+      catWidth = catHeight * m_bongoCat->aspectRatio();
+    }
+    m_bongoCat->setSize(catWidth, catHeight);
+    parentFlex->layout(renderer);
+    if (auto* grandParent = parentFlex->parent(); grandParent != nullptr) {
+      grandParent->layout(renderer);
+    }
+  }
+}
+
+void MediaTab::doPrepareIntrinsicLayout(Renderer& renderer, float contentWidth, float maxBodyHeight) {
+  (void)maxBodyHeight;
+  // Pass height 0.0f so m_rootLayout measures intrinsic height based on content
+  // instead of forcing maxBodyHeight.
+  doLayout(renderer, contentWidth, 0.0f);
 }
 
 void MediaTab::doUpdate(Renderer& renderer) {
@@ -713,6 +1054,7 @@ void MediaTab::setActive(bool active) {
     }
   }
   if (!active) {
+    m_bongoTimer.stop();
     m_progressTimer.stop();
     m_positionSampleAt = {};
     m_positionTrackSignature.clear();
@@ -723,9 +1065,13 @@ void MediaTab::setActive(bool active) {
   if (becameActive && m_mpris != nullptr) {
     m_positionSampleAt = {};
   }
+  if (active) {
+    syncBongoPlayback(m_bongoPlaying);
+  }
 }
 
 void MediaTab::onClose() {
+  m_bongoTimer.stop();
   m_progressTimer.stop();
   if (m_spectrum != nullptr) {
     if (m_spectrumListenerId != 0) {
@@ -738,8 +1084,18 @@ void MediaTab::onClose() {
   m_mediaColumn = nullptr;
   m_visualizerColumn = nullptr;
   m_visualizerBody = nullptr;
+  m_lyricsEmptyState = nullptr;
+  m_lyricsLines = nullptr;
   m_visualizerSpectrum = nullptr;
+  if (m_bongoCat != nullptr && m_bongoRenderer != nullptr) {
+    m_bongoCat->clear(*m_bongoRenderer);
+  }
+  m_bongoCat = nullptr;
+  unloadBongoFrames();
+  m_bongoLoadAttempted = false;
+  m_bongoPlaying = false;
   m_artwork = nullptr;
+  m_artContainer = nullptr;
   m_artworkRow = nullptr;
   m_nowCard = nullptr;
   m_mediaStack = nullptr;
@@ -752,16 +1108,18 @@ void MediaTab::onClose() {
   m_trackTitle = nullptr;
   m_trackArtist = nullptr;
   m_trackAlbum = nullptr;
-  m_lyricsStatus = nullptr;
   m_lyricsPrevious = nullptr;
   m_lyricsCurrent = nullptr;
   m_lyricsNext = nullptr;
+  m_visualizerStatus = nullptr;
   m_progressSlider = nullptr;
   m_prevButton = nullptr;
   m_playPauseButton = nullptr;
   m_nextButton = nullptr;
   m_repeatButton = nullptr;
   m_shuffleButton = nullptr;
+  m_volumeSlider = nullptr;
+  m_volumeLabel = nullptr;
   m_lastArtPath.clear();
   m_lastBusName.clear();
   m_lastPlaybackStatus.clear();
@@ -786,7 +1144,14 @@ bool MediaTab::dismissTransientUi() {
 }
 
 void MediaTab::syncLyrics(const std::optional<MprisPlayerInfo>& active) {
-  if (!m_dashboardMode || m_lyricsService == nullptr) {
+  if (m_presentation == MediaTabPresentation::ReferencePanel) {
+    if (m_lyricsEmptyState != nullptr) {
+      m_lyricsEmptyState->setVisible(true);
+      m_lyricsEmptyState->setParticipatesInLayout(true);
+    }
+    return;
+  }
+  if (m_lyricsService == nullptr) {
     return;
   }
   const bool enabled = m_config == nullptr || m_config->config().dashboard.media.lyricsEnabled;
@@ -795,10 +1160,13 @@ void MediaTab::syncLyrics(const std::optional<MprisPlayerInfo>& active) {
   const auto current = active.has_value() ? m_lyricsService->currentLine(active->positionUs) : std::nullopt;
   const auto& lines = m_lyricsService->lines();
   const bool hasCurrent = current.has_value() && *current < lines.size();
-  if (m_lyricsStatus != nullptr) {
-    m_lyricsStatus->setText(hasCurrent ? "" : m_lyricsService->status());
-    m_lyricsStatus->setVisible(!hasCurrent);
-    m_lyricsStatus->setParticipatesInLayout(!hasCurrent);
+  if (m_lyricsEmptyState != nullptr) {
+    m_lyricsEmptyState->setVisible(!hasCurrent);
+    m_lyricsEmptyState->setParticipatesInLayout(!hasCurrent);
+  }
+  if (m_lyricsLines != nullptr) {
+    m_lyricsLines->setVisible(hasCurrent);
+    m_lyricsLines->setParticipatesInLayout(hasCurrent);
   }
   const auto syncLine = [&lines](Label* label, std::optional<std::size_t> line) {
     if (label == nullptr) {
@@ -820,7 +1188,121 @@ void MediaTab::syncLyrics(const std::optional<MprisPlayerInfo>& active) {
 void MediaTab::clearArt(Renderer& renderer) {
   if (m_artwork != nullptr) {
     m_artwork->clear(renderer);
+    m_artwork->setOpacity(1.0f);
+    m_artwork->setVisible(false);
   }
+  if (m_artFallbackGlyph != nullptr) {
+    m_artFallbackGlyph->setVisible(true);
+  }
+}
+
+void MediaTab::ensureBongoLoaded(Renderer& renderer) {
+  if (m_bongoCat == nullptr) {
+    return;
+  }
+
+  // External textures are intentionally dropped by Image after a GPU reset.
+  // Recreate the small bundled animation when that happens.
+  if (!m_bongoFrames.empty() && !m_bongoCat->hasImage()) {
+    unloadBongoFrames();
+    m_bongoLoadAttempted = false;
+  }
+  m_bongoRenderer = &renderer;
+  if (m_bongoLoadAttempted) {
+    return;
+  }
+  m_bongoLoadAttempted = true;
+
+  const auto gifPath = paths::assetPath("images/bongocat.gif");
+  const auto bytes = FileUtils::readBinaryFile(gifPath.string());
+  if (bytes.empty()) {
+    kLog.warn("bongocat asset is missing: {}", gifPath.string());
+    return;
+  }
+
+  auto decoded = decodeAnimatedGif(bytes.data(), bytes.size(), kMaxBongoFrames, kMaxBongoRgbaBytes);
+  if (!decoded) {
+    kLog.warn("failed to decode bongocat GIF: {}", decoded.error());
+    return;
+  }
+  if (decoded->truncated) {
+    kLog.warn("bongocat GIF truncated at {} frames (resource cap)", decoded->frames.size());
+  }
+
+  m_bongoFrames.reserve(decoded->frames.size());
+  for (const auto& frame : decoded->frames) {
+    auto texture =
+        renderer.textureManager().loadFromRgba(frame.rgba.data(), decoded->width, decoded->height, /*mipmap=*/false);
+    if (!texture.valid()) {
+      kLog.warn("failed to upload a bongocat GIF frame");
+      unloadBongoFrames();
+      return;
+    }
+    m_bongoFrames.push_back(
+        BongoFrame{
+            .texture = texture,
+            .duration = std::chrono::milliseconds(frame.durationMs),
+        }
+    );
+  }
+
+  if (m_bongoFrames.empty()) {
+    return;
+  }
+  m_bongoFrame = 0;
+  m_bongoCat->setExternalTexture(renderer, m_bongoFrames.front().texture);
+  syncBongoPlayback(m_bongoPlaying);
+}
+
+void MediaTab::unloadBongoFrames() {
+  m_bongoTimer.stop();
+  if (m_bongoRenderer != nullptr) {
+    for (auto& frame : m_bongoFrames) {
+      m_bongoRenderer->textureManager().unload(frame.texture);
+    }
+  }
+  m_bongoFrames.clear();
+  m_bongoFrame = 0;
+  m_bongoRenderer = nullptr;
+}
+
+void MediaTab::syncBongoPlayback(bool playing) {
+  m_bongoPlaying = playing;
+  const bool shouldAnimate = m_active && playing && m_bongoFrames.size() > 1 && MotionService::instance().enabled();
+  if (!shouldAnimate) {
+    m_bongoTimer.stop();
+    return;
+  }
+  if (!m_bongoTimer.active()) {
+    scheduleNextBongoFrame();
+  }
+}
+
+void MediaTab::scheduleNextBongoFrame() {
+  if (!m_active || !m_bongoPlaying || m_bongoFrames.size() <= 1 || !MotionService::instance().enabled()) {
+    return;
+  }
+  const float speed = MotionService::instance().speed();
+  const auto nativeMs = m_bongoFrames[m_bongoFrame].duration.count();
+  const auto adjustedMs = static_cast<std::int64_t>(std::llround(static_cast<double>(nativeMs) / speed));
+  m_bongoTimer.start(std::chrono::milliseconds(std::max<std::int64_t>(10, adjustedMs)), [this]() {
+    advanceBongoFrame();
+  });
+}
+
+void MediaTab::advanceBongoFrame() {
+  if (m_bongoCat == nullptr
+      || m_bongoRenderer == nullptr
+      || !m_active
+      || !m_bongoPlaying
+      || m_bongoFrames.size() <= 1
+      || !MotionService::instance().enabled()) {
+    return;
+  }
+  m_bongoFrame = (m_bongoFrame + 1) % m_bongoFrames.size();
+  m_bongoCat->setExternalTexture(*m_bongoRenderer, m_bongoFrames[m_bongoFrame].texture);
+  PanelManager::instance().requestRedraw();
+  scheduleNextBongoFrame();
 }
 
 void MediaTab::commitPendingSeek(double valueSeconds) {
@@ -982,27 +1464,37 @@ void MediaTab::refresh(Renderer& renderer) {
     m_trackTitle->setText(player.title.empty() ? player.identity : player.title);
     m_trackArtist->setText(joinArtists(player.artists).empty() ? player.identity : joinArtists(player.artists));
     if (m_trackAlbum != nullptr) {
-      m_trackAlbum->setText(player.album);
-      m_trackAlbum->setVisible(!player.album.empty());
+      m_trackAlbum->setText(player.album.empty() ? " " : player.album);
+      const bool showAlbum = m_presentation != MediaTabPresentation::ReferencePanel || !player.album.empty();
+      m_trackAlbum->setVisible(showAlbum);
+      m_trackAlbum->setParticipatesInLayout(showAlbum);
+    }
+    if (m_volumeSlider != nullptr && m_volumeLabel != nullptr && !m_volumeSlider->dragging()) {
+      const int volPct = std::clamp(static_cast<int>(std::round(player.volume * 100.0)), 0, 100);
+      m_volumeSlider->setValue(static_cast<double>(volPct));
+      m_volumeLabel->setText(std::to_string(volPct) + "%");
     }
 
     if (!player.title.empty()) {
       const Color glowColor = trackDominantColor(player.title, joinArtists(player.artists));
+      if (m_artContainer != nullptr) {
+        m_artContainer->clearShadow();
+      }
       if (m_artworkRow != nullptr) {
-        m_artworkRow->setShadow(glowColor, 24.0f * contentScale(), 0.0f, 6.0f * contentScale());
+        m_artworkRow->clearShadow();
       }
       if (m_visualizerSpectrum != nullptr) {
         m_visualizerSpectrum->setGradient(glowColor, colorForRole(ColorRole::Secondary));
       }
       if (m_playPauseButton != nullptr) {
-        auto palette = Button::defaultPalette(ButtonVariant::Primary);
-        palette.normal.bg = fixedColorSpec(glowColor);
-        palette.normal.label = fixedColorSpec(readableTextColorForBackground(glowColor));
-        palette.hover.bg = fixedColorSpec(brighten(glowColor, 0.9f));
-        palette.hover.label = palette.normal.label;
-        palette.pressed.bg = fixedColorSpec(brighten(glowColor, 0.8f));
-        palette.pressed.label = palette.normal.label;
-        m_playPauseButton->setCustomPalette(palette);
+        auto controlPalette = Button::defaultPalette(ButtonVariant::Primary);
+        controlPalette.normal.bg = fixedColorSpec(glowColor);
+        controlPalette.normal.label = fixedColorSpec(readableTextColorForBackground(glowColor));
+        controlPalette.hover.bg = fixedColorSpec(brighten(glowColor, 0.9f));
+        controlPalette.hover.label = controlPalette.normal.label;
+        controlPalette.pressed.bg = fixedColorSpec(brighten(glowColor, 0.8f));
+        controlPalette.pressed.label = controlPalette.normal.label;
+        m_playPauseButton->setCustomPalette(controlPalette);
       }
     } else {
       if (m_artworkRow != nullptr) {
@@ -1039,6 +1531,24 @@ void MediaTab::refresh(Renderer& renderer) {
         kLog.debug(R"(artwork loaded url="{}" path="{}")", resolvedArtUrl, artPath);
         loaded = true;
       }
+      if (m_artwork != nullptr) {
+        m_artwork->setVisible(loaded);
+        if (loaded) {
+          if (auto* animations = m_artwork->animationManager(); animations != nullptr) {
+            m_artwork->setOpacity(0.0f);
+            animations->animate(
+                0.0f, 1.0f, static_cast<float>(Style::animNormal), Easing::CaelestiaDefaultEffects,
+                [artwork = m_artwork](float value) { artwork->setOpacity(value); }, {}, m_artwork
+            );
+            PanelManager::instance().requestFrameTick();
+          } else {
+            m_artwork->setOpacity(1.0f);
+          }
+        }
+      }
+      if (m_artFallbackGlyph != nullptr) {
+        m_artFallbackGlyph->setVisible(!loaded);
+      }
 
       // Only lock this URL once we actually have an image.
       // Otherwise keep retrying while metadata/download catches up.
@@ -1073,6 +1583,18 @@ void MediaTab::refresh(Renderer& renderer) {
     }
     m_syncingProgress = false;
 
+    if (m_timeElapsedLabel != nullptr) {
+      m_timeElapsedLabel->setText(formatDuration(displayPositionUs));
+    }
+    if (m_timeRemainingLabel != nullptr) {
+      if (trackLengthUs > 0) {
+        const std::int64_t remainingUs = std::max<std::int64_t>(0, trackLengthUs - displayPositionUs);
+        m_timeRemainingLabel->setText("-" + formatDuration(remainingUs));
+      } else {
+        m_timeRemainingLabel->setText("0:00");
+      }
+    }
+
     m_playPauseButton->setGlyph(playPauseGlyph(player.playbackStatus));
     m_playPauseButton->setVariant(ButtonVariant::Primary);
     if (m_prevButton != nullptr) {
@@ -1084,6 +1606,13 @@ void MediaTab::refresh(Renderer& renderer) {
     m_repeatButton->setGlyph(repeatGlyph(player.loopStatus));
     m_repeatButton->setVariant(toggleVariant(player.loopStatus != "None"));
     m_shuffleButton->setVariant(toggleVariant(player.shuffle));
+    syncBongoPlayback(player.playbackStatus == "Playing");
+    if (m_visualizerStatus != nullptr) {
+      const bool live = player.playbackStatus == "Playing" && m_spectrum != nullptr;
+      m_visualizerStatus->setText(i18n::tr(
+          live ? "control-center.media.live-visualization" : "control-center.media.waiting-for-audio"
+      ));
+    }
 
     m_lastBusName = player.busName;
     m_lastPlaybackStatus = player.playbackStatus;
@@ -1105,11 +1634,16 @@ void MediaTab::refresh(Renderer& renderer) {
   m_trackTitle->setText(i18n::tr("control-center.media.nothing-playing"));
   m_trackArtist->setText(i18n::tr("control-center.media.start-playback"));
   if (m_trackAlbum != nullptr) {
-    m_trackAlbum->setText("");
-    m_trackAlbum->setVisible(false);
+    m_trackAlbum->setText(" ");
+    const bool showAlbum = m_presentation != MediaTabPresentation::ReferencePanel;
+    m_trackAlbum->setVisible(showAlbum);
+    m_trackAlbum->setParticipatesInLayout(showAlbum);
   }
   clearArt(renderer);
   m_lastArtPath.clear();
+  if (m_artContainer != nullptr) {
+    m_artContainer->clearShadow();
+  }
   if (m_artworkRow != nullptr) {
     m_artworkRow->clearShadow();
   }
@@ -1124,6 +1658,12 @@ void MediaTab::refresh(Renderer& renderer) {
   m_progressSlider->setRange(0.0f, 100.0f);
   m_progressSlider->setValue(0.0f);
   m_syncingProgress = false;
+  if (m_timeElapsedLabel != nullptr) {
+    m_timeElapsedLabel->setText("0:00");
+  }
+  if (m_timeRemainingLabel != nullptr) {
+    m_timeRemainingLabel->setText("0:00");
+  }
   m_playPauseButton->setGlyph("media-play");
   if (m_prevButton != nullptr) {
     m_prevButton->setEnabled(false);
@@ -1134,6 +1674,10 @@ void MediaTab::refresh(Renderer& renderer) {
   m_repeatButton->setGlyph("repeat");
   m_repeatButton->setVariant(ButtonVariant::Ghost);
   m_shuffleButton->setVariant(ButtonVariant::Ghost);
+  syncBongoPlayback(false);
+  if (m_visualizerStatus != nullptr) {
+    m_visualizerStatus->setText(i18n::tr("control-center.media.waiting-for-audio"));
+  }
   m_lastBusName.clear();
   m_lastPlaybackStatus.clear();
   m_lastLoopStatus.clear();

@@ -244,19 +244,28 @@
     },
     "media": {
       "active-player": "Active player",
+      "good-vibes": "Good Vibes",
+      "have-a-nice-day": "Have a nice day!",
+      "live-visualization": "Live visualization",
       "nothing-playing": "Nothing playing",
       "now-playing": "Now Playing",
-      "start-playback": "Start playback in an MPRIS app"
+      "start-playback": "Start playback in an MPRIS app",
+      "waiting-for-audio": "Waiting for audio"
     },
     "network": {
       "connect": "Connect",
+      "connected": "Connected",
       "current-connection": "Current Connection",
+      "disconnect": "Disconnect",
       "external-ip": "WAN {ip}",
+      "forget-network": "Forget network",
       "no-networks": "No networks in range",
+      "no-vpn-profiles": "No VPN profiles",
       "not-connected": "Not connected",
       "password": "Password",
       "password-prompt": "Enter password",
       "password-prompt-for": "Enter password for {ssid}",
+      "scan": "Scan for networks",
       "unavailable-detail": "Install and enable NetworkManager, wpa_supplicant, or iwd to manage networks from here.",
       "unavailable-title": "Network service unavailable",
       "vpns": "VPNs",
@@ -265,6 +274,41 @@
       "wifi-off": "Wi-Fi is off",
       "wifi-on": "Wi-Fi is on",
       "wired-connection": "Wired connection"
+    },
+    "night-light": {
+      "mode": {
+        "always": "Always on",
+        "scheduled": "Scheduled",
+        "title": "Mode"
+      },
+      "schedule": {
+        "custom": "Custom time",
+        "invalid": "Use a valid 24-hour time in HH:MM format.",
+        "location": "Sunset to sunrise",
+        "location-missing": "Add coordinates in Location settings to use sunset and sunrise.",
+        "location-ready": "Using your configured location for sunset and sunrise.",
+        "location-resolving": "Finding the configured location…",
+        "sunrise": "Sunrise",
+        "sunset": "Sunset",
+        "title": "Schedule"
+      },
+      "status": {
+        "active": "Active now",
+        "always": "Always on",
+        "needs-schedule": "Schedule needs attention",
+        "off": "Off",
+        "scheduled": "Scheduled",
+        "waiting": "Waiting for sunset"
+      },
+      "subtitle": "Warms display colors to reduce blue light at night.",
+      "temperature": {
+        "day": "Day temperature",
+        "night": "Night temperature",
+        "title": "Color temperature"
+      },
+      "title": "Night Light",
+      "unavailable-body": "Your compositor does not expose the gamma-control protocol.",
+      "unavailable-title": "Night Light unavailable"
     },
     "notifications": {
       "clear-all": "Clear all notifications",
@@ -643,6 +687,25 @@
     "authenticating": "Authenticating…",
     "authentication-failed": "Authentication failed",
     "caps-lock-on": "Caps Lock is on",
+    "dashboard": {
+      "media-idle": "Playback controls will appear here",
+      "no-battery": "AC power",
+      "no-notifications": "No notifications",
+      "nothing-playing": "Nothing playing",
+      "notification": "New notification",
+      "notifications": "Notifications",
+      "notifications-private": "Unlock to view notifications",
+      "now-playing": "Now playing",
+      "system": "System",
+      "system-details": "DISTRO: {distro}\nWM: Niri\nUP: {uptime}\nBATT: {battery}",
+      "unavailable": "Unavailable",
+      "unknown-track": "Unknown track",
+      "weather": "Weather",
+      "weather-detail": "Humidity {humidity}%  •  Wind {wind} km/h",
+      "weather-detail-unavailable": "Location or weather data is unavailable",
+      "weather-unavailable": "Weather unavailable",
+      "weather-wind": "Wind {wind} km/h"
+    },
     "password-cleared": "Password cleared",
     "password-placeholder": "Password",
     "ready": "Type your password and press Enter.",
@@ -809,6 +872,62 @@
   "settings": {
     "actions": {
       "reset": "Reset"
+    },
+    "nexus": {
+      "available": "Available",
+      "back": "Back",
+      "confirm-reset": "Confirm reset",
+      "groups": {
+        "behavior": "Behavior",
+        "clipboard": "Clipboard",
+        "directories": "Directories",
+        "font": "Font",
+        "frame": "Frame",
+        "general": "General",
+        "keybinds": "Keybinds",
+        "layout": "Layout",
+        "live": "Live",
+        "location": "Location",
+        "media": "Media",
+        "network": "Network",
+        "night-light": "Night light",
+        "notifications": "Notifications",
+        "panel-sizes": "Panel sizes",
+        "performance": "Performance",
+        "pinned-apps": "Pinned apps",
+        "privacy": "Privacy",
+        "profile": "Profile",
+        "security": "Security",
+        "system": "System",
+        "tabs": "Tabs",
+        "theme": "Theme",
+        "time": "Time",
+        "transition": "Transition",
+        "visibility": "Visibility",
+        "weather": "Weather",
+        "widgets": "Widgets"
+      },
+      "pages": {
+        "appearance": "Appearance",
+        "apps": "Apps",
+        "audio": "Audio",
+        "automation-services": "Automation & Services",
+        "connected-devices": "Connected Devices",
+        "desktop-chrome": "Desktop & Chrome",
+        "language-region": "Language & Region",
+        "network": "Network",
+        "system-security": "System & Security"
+      },
+      "open-panel": "Open Settings panel",
+      "open-window": "Open full Settings",
+      "reset-page": "Reset page",
+      "search-placeholder": "Search settings",
+      "search-results": "Search results",
+      "unavailable": "Unavailable",
+      "wallpaper": {
+        "description": "Search, sort, favourite and apply wallpapers",
+        "title": "Wallpaper browser"
+      }
     },
     "badges": {
       "advanced": "Advanced",
@@ -2059,6 +2178,10 @@
         "monitors": {
           "description": "Choose which monitors show the lock screen; leave empty to show on all monitors",
           "label": "Monitors"
+        },
+        "show-notifications": {
+          "description": "Show app names and notification summaries while the session is locked",
+          "label": "Notification Previews"
         },
         "tint-intensity": {
           "description": "Surface-color tint over the lock screen background",
@@ -3595,6 +3718,61 @@
         "search-placeholder": "Search glyphs…",
         "title": "Pick a Glyph"
       }
+    }
+  },
+  "dashboard": {
+    "home": {
+      "audio": {
+        "microphone": "Microphone",
+        "mute-all": "Mute all",
+        "no-output": "No output device",
+        "unmute-all": "Unmute all"
+      },
+      "brightness": {
+        "nightlight-description": "Warms the display after sunset"
+      },
+      "media": {
+        "now-playing": "Now Playing",
+        "open": "Open Media"
+      },
+      "shortcuts": {
+        "vpn": "VPN"
+      },
+      "storage": "Storage",
+      "weather": {
+        "current-location": "Current location",
+        "sunset": "Sunset {time}"
+      }
+    },
+    "performance": {
+      "battery": {
+        "title": "Battery"
+      },
+      "disk": {
+        "title": "Disk"
+      },
+      "memory": {
+        "available": "available",
+        "cache": "cache",
+        "committed": "committed"
+      },
+      "network": {
+        "connected": "Connected",
+        "disconnected": "Disconnected",
+        "wired": "Wired"
+      },
+      "process-count": "{count} processes",
+      "processes": {
+        "all-title": "All processes",
+        "title": "Processes",
+        "view-all": "View all processes"
+      },
+      "sensors": {
+        "all-title": "All sensors",
+        "title": "Sensors",
+        "view-all": "View all sensors"
+      },
+      "unavailable": "Unavailable"
     }
   },
   "wallpaper": {

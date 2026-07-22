@@ -288,6 +288,32 @@ void TestPanel::create() {
     row->addChild(std::move(slider));
     row->addChild(std::move(valueLabel));
     section->addChild(std::move(row));
+    section->addChild(ui::slider({
+        .minValue = 0.0f,
+        .maxValue = 100.0f,
+        .step = 1.0f,
+        .value = 30.0f,
+        .presentation = SliderPresentation::LevelCompact,
+        .glyph = "volume-high",
+        .glyphSize = Style::fontSizeCaption * scale,
+        .trackHeight = 18.0f * scale,
+        .thumbSize = 33.0f * scale,
+        .controlHeight = 33.0f * scale,
+        .width = Style::sliderDefaultWidth * scale,
+    }));
+    section->addChild(ui::slider({
+        .minValue = 0.0f,
+        .maxValue = 100.0f,
+        .step = 1.0f,
+        .value = 90.0f,
+        .presentation = SliderPresentation::LevelProminent,
+        .glyph = "brightness-high",
+        .glyphSize = Style::fontSizeBody * scale,
+        .trackHeight = 30.0f * scale,
+        .thumbSize = 39.0f * scale,
+        .controlHeight = 39.0f * scale,
+        .width = Style::sliderDefaultWidth * scale,
+    }));
     colA->addChild(std::move(section));
   }
 
@@ -314,6 +340,8 @@ void TestPanel::create() {
     auto section = makeSection("Toggle");
     auto row = makeRow();
     row->addChild(std::move(toggle));
+    row->addChild(ui::toggle({.checked = true, .toggleSize = ToggleSize::Medium, .scale = scale}));
+    row->addChild(ui::toggle({.checked = false, .enabled = false, .toggleSize = ToggleSize::Medium, .scale = scale}));
     row->addChild(std::move(valueLabel));
     section->addChild(std::move(row));
     colB->addChild(std::move(section));
@@ -345,6 +373,22 @@ void TestPanel::create() {
     row->addChild(std::move(segmented));
     row->addChild(std::move(valueLabel));
     section->addChild(std::move(row));
+    section->addChild(ui::segmented({
+        .options = std::vector<ui::SegmentedOption>{{.label = "Day"}, {.label = "Week"}, {.label = "Month"}},
+        .selectedIndex = 1,
+        .scale = scale,
+        .presentation = SegmentedPresentation::Expressive,
+        .equalSegmentWidths = true,
+        .width = 260.0f * scale,
+    }));
+    section->addChild(ui::segmented({
+        .options = std::vector<ui::SegmentedOption>{{.label = "Overview"}, {.label = "Details"}},
+        .selectedIndex = 0,
+        .scale = scale,
+        .presentation = SegmentedPresentation::Underline,
+        .equalSegmentWidths = true,
+        .width = 260.0f * scale,
+    }));
     colB->addChild(std::move(section));
   }
 

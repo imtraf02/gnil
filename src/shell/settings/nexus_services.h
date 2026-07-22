@@ -24,5 +24,6 @@ struct NexusServices {
   DependencyService* dependencies = nullptr;
   Wallpaper* wallpaper = nullptr;
   ClipboardService* clipboard = nullptr;
+  std::function<void()> openWallpaperPanel;
   std::function<void()> resetLauncherUsage;
 };

@@ -1,6 +1,7 @@
 #include "ui/controls/segmented.h"
 
 #include "render/core/render_styles.h"
+#include "render/animation/animation_manager.h"
 #include "render/scene/input_area.h"
 #include "ui/controls/button.h"
 #include "ui/controls/flex.h"
@@ -51,6 +52,7 @@ std::size_t Segmented::addOption(std::string_view label, std::string_view glyph)
   m_buttons.push_back(raw);
   m_rovingNav.registerItem(raw, [this, index]() { setSelectedIndex(index); });
   addChild(std::move(btn));
+  refreshSeparatorVisibility();
   refreshVariants();
   return index;
 }
@@ -141,6 +143,12 @@ void Segmented::setOptionTooltip(std::size_t index, std::string_view text) {
 }
 
 void Segmented::clearOptions() {
+  if (m_pressAnimId != 0 && animationManager() != nullptr) {
+    animationManager()->cancel(m_pressAnimId);
+    m_pressAnimId = 0;
+  }
+  m_pressProgress = 0.0f;
+  m_pressedIndex.reset();
   for (Button* btn : m_buttons) {
     if (btn != nullptr) {
       (void)removeChild(btn);
@@ -181,6 +189,15 @@ void Segmented::setEnabled(bool enabled) {
   if (m_enabled == enabled) {
     return;
   }
+  if (!enabled && m_pressedIndex.has_value()) {
+    if (m_pressAnimId != 0 && animationManager() != nullptr) {
+      animationManager()->cancel(m_pressAnimId);
+      m_pressAnimId = 0;
+    }
+    m_pressProgress = 0.0f;
+    m_pressedIndex.reset();
+    applyPressedSegment(0.0f);
+  }
   m_enabled = enabled;
   for (Button* btn : m_buttons) {
     if (btn != nullptr) {
@@ -188,6 +205,26 @@ void Segmented::setEnabled(bool enabled) {
     }
   }
   setOpacity(enabled ? 1.0f : 0.55f);
+}
+
+void Segmented::setPresentation(SegmentedPresentation presentation) {
+  if (m_presentation == presentation) {
+    return;
+  }
+  m_presentation = presentation;
+  m_underlineSelection = presentation == SegmentedPresentation::Underline;
+  if (presentation != SegmentedPresentation::Expressive) {
+    if (m_pressAnimId != 0 && animationManager() != nullptr) {
+      animationManager()->cancel(m_pressAnimId);
+      m_pressAnimId = 0;
+    }
+    m_pressProgress = 0.0f;
+    m_pressedIndex.reset();
+  }
+  applyOuterStyle();
+  refreshSeparatorVisibility();
+  refreshVariants();
+  markLayoutDirty();
 }
 
 std::unique_ptr<Separator> Segmented::makeSegmentSeparator() {
@@ -212,6 +249,9 @@ Segmented::makeSegmentButton(std::string_view label, std::string_view glyph, std
   }
   applyButtonMetrics(*btn);
   btn->setOnClick([this, index]() { setSelectedIndex(index); });
+  btn->setOnPress([this, index](float /*x*/, float /*y*/, bool pressed) {
+    animatePressedSegment(index, pressed);
+  });
   btn->setTabStop(false);
   btn->setFlexGrow(m_equalSegmentWidths ? 1.0f : 0.0f);
   btn->setContentAlign(ButtonContentAlign::Center);
@@ -240,15 +280,16 @@ void Segmented::setEqualSegmentWidths(bool equalWidths) {
       b->setFlexGrow(m_equalSegmentWidths ? 1.0f : 0.0f);
     }
   }
+  applyPressedSegment(m_pressProgress);
   markLayoutDirty();
 }
 
 void Segmented::setUnderlineSelection(bool underline) {
-  if (m_underlineSelection == underline) {
+  const auto next = underline ? SegmentedPresentation::Underline : SegmentedPresentation::Joined;
+  if (m_presentation == next) {
     return;
   }
-  m_underlineSelection = underline;
-  refreshVariants();
+  setPresentation(next);
 }
 
 void Segmented::setShowSeparators(bool show) {
@@ -256,25 +297,22 @@ void Segmented::setShowSeparators(bool show) {
     return;
   }
   m_showSeparators = show;
-  for (Separator* separator : m_separators) {
-    if (separator != nullptr) {
-      separator->setVisible(show);
-      separator->setParticipatesInLayout(show);
-    }
-  }
-  markLayoutDirty();
+  refreshSeparatorVisibility();
 }
 
 void Segmented::refreshVariants() {
   const std::size_t n = m_buttons.size();
   const float r = Style::scaledRadiusMd(m_scale);
+  const float expressiveRadius = Style::scaledRadiusLg(m_scale);
   for (std::size_t i = 0; i < n; ++i) {
     if (m_buttons[i] == nullptr) {
       continue;
     }
     m_buttons[i]->setVariant(i == m_selected && !m_underlineSelection ? ButtonVariant::TabActive : ButtonVariant::Tab);
     Radii radii;
-    if (n == 1) {
+    if (m_presentation == SegmentedPresentation::Expressive) {
+      radii = Radii{expressiveRadius};
+    } else if (n == 1) {
       radii = Radii{r, r, r, r};
     } else if (i == 0) {
       radii = Radii{r, 0.0f, 0.0f, r};
@@ -285,13 +323,113 @@ void Segmented::refreshVariants() {
     }
     m_buttons[i]->setRadii(radii);
   }
+  applyPressedSegment(m_pressProgress);
 }
 
 void Segmented::applyOuterStyle() {
   Flex::setPadding(m_outerPadding);
-  setFill(colorSpecFromRole(m_surfaceRole, m_surfaceOpacity));
+  if (m_presentation == SegmentedPresentation::Expressive) {
+    setFill(colorSpecFromRole(m_surfaceRole, 0.0f));
+    setGap(5.0f * m_scale);
+  } else {
+    setFill(colorSpecFromRole(m_surfaceRole, m_surfaceOpacity));
+    setGap(0.0f);
+  }
   clearBorder();
-  setRadius(Style::scaledRadiusMd(m_scale));
+  setRadius(
+      m_presentation == SegmentedPresentation::Expressive ? Style::scaledRadiusLg(m_scale)
+                                                          : Style::scaledRadiusMd(m_scale)
+  );
+}
+
+void Segmented::refreshSeparatorVisibility() {
+  const bool visible = m_showSeparators && m_presentation == SegmentedPresentation::Joined;
+  for (Separator* separator : m_separators) {
+    if (separator != nullptr) {
+      separator->setVisible(visible);
+      separator->setParticipatesInLayout(visible);
+    }
+  }
+  markLayoutDirty();
+}
+
+void Segmented::animatePressedSegment(std::optional<std::size_t> index, bool pressedState) {
+  if (m_presentation != SegmentedPresentation::Expressive || !m_enabled) {
+    return;
+  }
+  if (pressedState) {
+    m_pressedIndex = index;
+  }
+  const float target = pressedState ? 1.0f : 0.0f;
+  if (m_pressAnimId != 0 && animationManager() != nullptr) {
+    animationManager()->cancel(m_pressAnimId);
+    m_pressAnimId = 0;
+  }
+  if (animationManager() == nullptr) {
+    m_pressProgress = target;
+    applyPressedSegment(target);
+    if (!pressedState) {
+      m_pressedIndex.reset();
+    }
+    return;
+  }
+  m_pressAnimId = animationManager()->animate(
+      m_pressProgress, target, static_cast<float>(Style::animNormal), Easing::FluidSpatial,
+      [this](float value) {
+        m_pressProgress = value;
+        applyPressedSegment(value);
+      },
+      [this, target]() {
+        m_pressProgress = target;
+        m_pressAnimId = 0;
+        applyPressedSegment(target);
+        if (target <= 0.0f) {
+          m_pressedIndex.reset();
+        }
+      },
+      this
+  );
+  markPaintDirty();
+}
+
+void Segmented::applyPressedSegment(float progress) {
+  const std::size_t count = m_buttons.size();
+  if (count == 0) {
+    return;
+  }
+  const bool activePress = m_presentation == SegmentedPresentation::Expressive && m_pressedIndex.has_value()
+      && *m_pressedIndex < count;
+  const std::size_t pressedIndex = activePress ? *m_pressedIndex : 0;
+  const float amount = activePress ? std::clamp(progress, 0.0f, 1.0f) : 0.0f;
+  const float largeRadius = Style::scaledRadiusLg(m_scale);
+  const float smallRadius = Style::scaledRadiusSm(m_scale);
+
+  for (std::size_t i = 0; i < count; ++i) {
+    Button* button = m_buttons[i];
+    if (button == nullptr) {
+      continue;
+    }
+    float grow = m_equalSegmentWidths ? 1.0f : 0.0f;
+    if (m_equalSegmentWidths && activePress && count > 1) {
+      if (i == pressedIndex) {
+        grow += 0.35f * amount;
+      } else {
+        const bool leftNeighbor = pressedIndex > 0 && i == pressedIndex - 1;
+        const bool rightNeighbor = pressedIndex + 1 < count && i == pressedIndex + 1;
+        if (leftNeighbor || rightNeighbor) {
+          const bool hasTwoNeighbors = pressedIndex > 0 && pressedIndex + 1 < count;
+          grow -= (hasTwoNeighbors ? 0.175f : 0.35f) * amount;
+        }
+      }
+    }
+    button->setFlexGrow(m_equalSegmentWidths ? std::max(0.05f, grow) : 0.0f);
+
+    if (m_presentation == SegmentedPresentation::Expressive) {
+      const float radius = i == pressedIndex ? largeRadius + (smallRadius - largeRadius) * amount : largeRadius;
+      button->setRadii(Radii{radius});
+    }
+  }
+  markLayoutDirty();
 }
 
 void Segmented::doLayout(Renderer& renderer) {

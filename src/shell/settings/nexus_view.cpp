@@ -5,9 +5,11 @@
 #include "config/atomic_file.h"
 #include "config/config_service.h"
 #include "core/build_info.h"
+#include "core/deferred_call.h"
 #include "dbus/bluetooth/bluetooth_agent.h"
 #include "dbus/bluetooth/bluetooth_service.h"
 #include "dbus/network/inetwork_service.h"
+#include "i18n/i18n.h"
 #include "pipewire/pipewire_service.h"
 #include "render/animation/animation_manager.h"
 #include "render/core/renderer.h"
@@ -26,6 +28,7 @@
 #include "ui/controls/toggle.h"
 #include "ui/dialogs/file_dialog.h"
 #include "ui/palette.h"
+#include "ui/scroll_into_view.h"
 #include "ui/style.h"
 #include "util/file_utils.h"
 #include "util/string_utils.h"
@@ -48,6 +51,65 @@ namespace {
     std::string_view title;
     std::string_view description;
   };
+
+  struct GroupPresentation {
+    NexusPage page;
+    std::string_view id;
+    std::string_view titleKey;
+    std::string_view glyph;
+  };
+
+  constexpr auto kGroupPresentations = std::to_array<GroupPresentation>({
+      {NexusPage::WallpaperStyle, "theme", "settings.nexus.groups.theme", "palette"},
+      {NexusPage::WallpaperStyle, "font", "settings.nexus.groups.font", "text_fields"},
+      {NexusPage::WallpaperStyle, "profile", "settings.nexus.groups.profile", "person"},
+      {NexusPage::WallpaperStyle, "transition", "settings.nexus.groups.transition", "animation"},
+      {NexusPage::WallpaperStyle, "directories", "settings.nexus.groups.directories", "folder"},
+      {NexusPage::WallpaperStyle, "live", "settings.nexus.groups.live", "motion_photos_on"},
+      {NexusPage::Panels, "frame", "settings.nexus.groups.frame", "crop_free"},
+      {NexusPage::Panels, "panel-sizes", "settings.nexus.groups.panel-sizes", "aspect_ratio"},
+      {NexusPage::Panels, "visibility", "settings.nexus.groups.visibility", "visibility"},
+      {NexusPage::Panels, "layout", "settings.nexus.groups.layout", "dashboard"},
+      {NexusPage::Panels, "widgets", "settings.nexus.groups.widgets", "widgets"},
+      {NexusPage::Panels, "general", "settings.nexus.groups.general", "tune"},
+      {NexusPage::Panels, "tabs", "settings.nexus.groups.tabs", "tab"},
+      {NexusPage::Panels, "media", "settings.nexus.groups.media", "music-note"},
+      {NexusPage::Panels, "performance", "settings.nexus.groups.performance", "speed"},
+      {NexusPage::Apps, "pinned-apps", "settings.nexus.groups.pinned-apps", "push_pin"},
+      {NexusPage::Apps, "behavior", "settings.nexus.groups.behavior", "tune"},
+      {NexusPage::Apps, "keybinds", "settings.nexus.groups.keybinds", "keyboard"},
+      {NexusPage::Services, "clipboard", "settings.nexus.groups.clipboard", "clipboard"},
+      {NexusPage::Services, "network", "settings.nexus.groups.network", "shield"},
+      {NexusPage::Services, "privacy", "settings.nexus.groups.privacy", "shield-lock"},
+      {NexusPage::Services, "toasts", "settings.nexus.groups.notifications", "bell"},
+      {NexusPage::LanguageRegion, "time", "settings.nexus.groups.time", "clock"},
+      {NexusPage::LanguageRegion, "location", "settings.nexus.groups.location", "map-pin"},
+      {NexusPage::LanguageRegion, "weather", "settings.nexus.groups.weather", "weather-sun"},
+      {NexusPage::LanguageRegion, "night-light", "settings.nexus.groups.night-light", "weather-moon"},
+      {NexusPage::About, "system", "settings.nexus.groups.system", "monitor"},
+      {NexusPage::About, "security", "settings.nexus.groups.security", "shield-lock"},
+  });
+
+  std::string humanizeGroupId(std::string_view id) {
+    std::string title(id);
+    std::ranges::replace(title, '-', ' ');
+    if (!title.empty()) {
+      title.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(title.front())));
+    }
+    return title;
+  }
+
+  std::pair<std::string, std::string> groupPresentation(NexusPage page, std::string_view id) {
+    const auto found = std::ranges::find_if(kGroupPresentations, [page, id](const GroupPresentation& item) {
+      return item.page == page && item.id == id;
+    });
+    if (found == kGroupPresentations.end()) {
+      return {humanizeGroupId(id), "tune"};
+    }
+    return {i18n::tr(found->titleKey), std::string(found->glyph)};
+  }
+
+  std::string pageTitle(const NexusPageDescriptor& descriptor) { return i18n::tr(descriptor.titleKey); }
 
   constexpr auto kControls = std::to_array<ControlDescriptor>({
       {NexusPage::WallpaperStyle, "wallpaper", "Wallpaper browser", "Search, sort, favourite and apply wallpapers"},
@@ -274,160 +336,300 @@ namespace {
 NexusView::NexusView(NexusRoute& route, NexusServices services) : m_route(route), m_services(services) {}
 
 std::unique_ptr<Node> NexusView::build(
-    float scale, std::function<void()> requestPip, std::function<void()> requestRefresh,
-    std::function<void()> requestClose
+    float scale, NexusNavigationMode navigationMode, std::function<void()> requestPip,
+    std::function<void()> requestRefresh, std::function<void()> requestClose
 ) {
+  (void)requestClose;
   m_scale = scale;
+  m_navigationMode = navigationMode;
+  m_aliveGuard = std::make_shared<int>(0);
+  m_contentMutationPending = false;
   m_requestRefresh = std::move(requestRefresh);
   m_requestPip = std::move(requestPip);
   m_navButtons.clear();
-  auto root = ui::column({
+  auto root = ui::row({
       .out = &m_root,
       .align = FlexAlign::Stretch,
-      .gap = Style::spaceMd * scale,
-      .padding = Style::spaceMd * scale,
+      .gap = 0.0f,
       .fill = colorSpecFromRole(ColorRole::Surface),
       .radius = Style::scaledRadiusXl(scale),
       .fillWidth = true,
       .fillHeight = true,
+      .clipChildren = true,
   });
 
-  auto header = ui::row({
-      .align = FlexAlign::Center,
-      .gap = Style::spaceSm * scale,
-      .fillWidth = true,
-  });
-  header->addChild(
-      ui::label({
-          .text = "Settings",
-          .fontSize = Style::fontSizeTitle * scale,
-          .fontWeight = FontWeight::Bold,
-          .color = colorSpecFromRole(ColorRole::Primary),
-      })
-  );
-  header->addChild(ui::row({.flexGrow = 1.0f}));
-  header->addChild(
-      ui::input({
-          .out = &m_search,
-          .value = m_route.query(),
-          .placeholder = "Search settings",
-          .fontSize = Style::fontSizeBody * scale,
-          .controlHeight = Style::controlHeight * scale,
-          .horizontalPadding = Style::spaceMd * scale,
-          .clearButtonEnabled = true,
-          .width = 320.0f * scale,
-          .onChange = [this](const std::string& query) { search(query); },
-          .configure =
-              [this](Input& input) {
-                input.setFlatSurfaceFrame(true);
-                input.setFrameRadius(Style::controlHeight * 0.5f);
-                input.setOnFocusGain([this]() { m_route.setFocusKey("settings.search"); });
-                if (input.inputArea() != nullptr) {
-                  input.inputArea()->setTabFocusKey("settings.search");
-                }
-              },
-      })
-  );
-  header->addChild(
-      ui::button({
-          .glyph = "picture_in_picture_alt",
-          .variant = ButtonVariant::Ghost,
-          .tooltip = "Move Settings to a window",
-          .minWidth = Style::controlHeight * scale,
-          .minHeight = Style::controlHeight * scale,
-          .radius = Style::controlHeight * 0.5f,
-          .onClick = [this]() {
-            if (m_requestPip) {
-              m_requestPip();
-            }
-          },
-      })
-  );
-  if (requestClose) {
-    header->addChild(
-        ui::button({
-            .glyph = "close",
-            .variant = ButtonVariant::Ghost,
-            .tooltip = "Close Settings",
-            .minWidth = Style::controlHeight * scale,
-            .minHeight = Style::controlHeight * scale,
-            .radius = Style::controlHeight * 0.5f,
-            .onClick = std::move(requestClose),
-        })
-    );
+  constexpr float kCompactNavigationWidth = 80.0f;
+  constexpr float kLabeledNavigationWidth = 224.0f;
+  constexpr float kNavigationControlHeight = 44.0f;
+  const bool labeledNavigation = navigationMode == NexusNavigationMode::LabeledSidebar;
+  const float navigationWidth =
+      (labeledNavigation ? kLabeledNavigationWidth : kCompactNavigationWidth) * scale;
+
+  ScrollView* navigationScroll = nullptr;
+  std::unique_ptr<ScrollView> navigationViewport;
+  std::function<void(const Node*)> scrollNavigationIntoView;
+  if (labeledNavigation) {
+    navigationViewport = ui::scrollView({
+        .out = &navigationScroll,
+        .scrollbarVisible = true,
+        .viewportPaddingH = 0.0f,
+        .viewportPaddingV = 0.0f,
+        .fill = colorSpecFromRole(ColorRole::Surface),
+        .minWidth = navigationWidth,
+        .fillHeight = true,
+        .width = navigationWidth,
+        .height = 0.0f,
+        .configure = [](ScrollView& view) { view.clearBorder(); },
+    });
+    scrollNavigationIntoView = [navigationScroll, scale](const Node* node) {
+      if (navigationScroll != nullptr && node != nullptr) {
+        scrollNodeIntoScrollView(*navigationScroll, nullptr, *node, Style::spaceXs * scale);
+      }
+    };
   }
-  root->addChild(std::move(header));
 
-  auto body = ui::row({
-      .align = FlexAlign::Stretch,
-      .gap = Style::spaceLg * scale,
-      .fillWidth = true,
-      .flexGrow = 1.0f,
-  });
   auto nav = std::make_unique<RovingListNavHost>(RovingListNavController::Options{
       .axis = RovingListNavAxis::Vertical,
       .mode = RovingListNavMode::FollowFocus,
       .keepItemsInTabOrder = false,
       .wrap = false,
+      .scrollIntoView = std::move(scrollNavigationIntoView),
       .syncIndexFromSelection = [this]() { return static_cast<std::size_t>(m_route.page()); },
   });
   nav->setTabFocusKey("settings.navigation");
   m_navigationFocus = nav->focusArea();
   nav->setGap(Style::spaceXs * scale);
-  nav->setPadding(Style::spaceSm * scale);
-  nav->setFill(colorSpecFromRole(ColorRole::SurfaceVariant, 0.55f));
-  nav->setRadius(Style::scaledRadiusLg(scale));
-  nav->setMinWidth(260.0f * scale);
-  nav->setMaxWidth(260.0f * scale);
-  for (const auto& descriptor : nexusPages()) {
+  nav->setPadding(Style::spaceMd * scale, Style::spaceSm * scale);
+  nav->setFill(colorSpecFromRole(ColorRole::Surface));
+  nav->setMinWidth(navigationWidth);
+  nav->setMaxWidth(navigationWidth);
+
+  const auto requestHostHandoff = [this]() {
+    if (m_requestPip) {
+      m_requestPip();
+    }
+  };
+  if (labeledNavigation) {
+    const float buttonWidth =
+        (kLabeledNavigationWidth - Style::spaceSm * 2.0f) * scale;
+    nav->addChild(ui::button({
+        .text = i18n::tr("settings.nexus.open-panel"),
+        .glyph = "settings",
+        .fontSize = Style::fontSizeCaption * scale,
+        .glyphSize = Style::fontSizeTitle * scale,
+        .controlHeight = kNavigationControlHeight * scale,
+        .contentAlign = ButtonContentAlign::Start,
+        .variant = ButtonVariant::Ghost,
+        .tooltip = i18n::tr("settings.nexus.open-panel"),
+        .minWidth = buttonWidth,
+        .maxWidth = buttonWidth,
+        .paddingH = Style::spaceSm * scale,
+        .gap = Style::spaceSm * scale,
+        .radius = Style::scaledRadiusLg(scale),
+        .onClick = requestHostHandoff,
+        .configure = [](Button& button) {
+          if (button.label() != nullptr) {
+            button.label()->setFontWeight(FontWeight::SemiBold);
+          }
+        },
+    }));
+  } else {
+    nav->addChild(ui::button({
+        .glyph = "settings",
+        .glyphSize = Style::fontSizeTitle * scale,
+        .variant = ButtonVariant::Ghost,
+        .tooltip = i18n::tr("settings.nexus.open-window"),
+        .minWidth = kNavigationControlHeight * scale,
+        .minHeight = kNavigationControlHeight * scale,
+        .padding = Style::spaceSm * scale,
+        .radius = Style::scaledRadiusLg(scale),
+        .onClick = requestHostHandoff,
+    }));
+  }
+  nav->addChild(ui::box({
+      .fill = colorSpecFromRole(ColorRole::Outline, 0.18f),
+      .height = Style::borderWidth,
+  }));
+
+  const auto addNavItem = [this, nav = nav.get(), scale, labeledNavigation](NexusPage page) {
+    const auto& descriptor = nexusPageDescriptor(page);
+    const std::string title = pageTitle(descriptor);
     Button* button = nullptr;
     auto activate = [this, page = descriptor.page]() {
       m_route.setFocusKey("settings.navigation");
       selectPage(page);
     };
-    nav->addChild(
-        ui::button({
-            .out = &button,
-            .text = std::string(descriptor.title),
-            .glyph = std::string(descriptor.glyph),
-            .fontSize = Style::fontSizeCaption * scale,
-            .glyphSize = Style::fontSizeBody * scale,
-            .contentAlign = ButtonContentAlign::Start,
-            .variant = descriptor.page == m_route.page() ? ButtonVariant::TabActive : ButtonVariant::Tab,
-            .minHeight = Style::controlHeightSm * scale,
-            .paddingH = Style::spaceSm * scale,
-            .radius = Style::scaledRadiusMd(scale),
-            .onClick = activate,
-        })
-    );
+    if (labeledNavigation) {
+      constexpr float kLabeledButtonWidth = kLabeledNavigationWidth - Style::spaceSm * 2.0f;
+      nav->addChild(ui::button({
+          .out = &button,
+          .text = title,
+          .glyph = std::string(descriptor.glyph),
+          .fontSize = Style::fontSizeCaption * scale,
+          .glyphSize = Style::fontSizeBody * scale,
+          .controlHeight = kNavigationControlHeight * scale,
+          .contentAlign = ButtonContentAlign::Start,
+          .variant = descriptor.page == m_route.page() ? ButtonVariant::TabActive : ButtonVariant::Ghost,
+          .tooltip = title,
+          .minWidth = kLabeledButtonWidth * scale,
+          .maxWidth = kLabeledButtonWidth * scale,
+          .paddingH = Style::spaceSm * scale,
+          .gap = Style::spaceSm * scale,
+          .radius = Style::scaledRadiusLg(scale),
+          .onClick = activate,
+          .configure = [](Button& configuredButton) {
+            if (configuredButton.label() != nullptr) {
+              configuredButton.label()->setFontWeight(FontWeight::SemiBold);
+            }
+          },
+      }));
+    } else {
+      nav->addChild(ui::button({
+          .out = &button,
+          .glyph = std::string(descriptor.glyph),
+          .glyphSize = Style::fontSizeBody * scale,
+          .variant = descriptor.page == m_route.page() ? ButtonVariant::TabActive : ButtonVariant::Ghost,
+          .tooltip = title,
+          .minWidth = kNavigationControlHeight * scale,
+          .minHeight = kNavigationControlHeight * scale,
+          .padding = Style::spaceSm * scale,
+          .radius = Style::scaledRadiusLg(scale),
+          .onClick = activate,
+      }));
+    }
     nav->registerItem(button, activate);
     m_navButtons.push_back(button);
-  }
-  body->addChild(std::move(nav));
+  };
 
-  auto contentFrame = ui::column({
+  for (const auto& descriptor : nexusPages()) {
+    addNavItem(descriptor.page);
+  }
+  if (navigationViewport != nullptr) {
+    navigationViewport->content()->setDirection(FlexDirection::Vertical);
+    navigationViewport->content()->setAlign(FlexAlign::Stretch);
+    navigationViewport->content()->addChild(std::move(nav));
+    root->addChild(std::move(navigationViewport));
+  } else {
+    root->addChild(std::move(nav));
+  }
+  root->addChild(ui::box({
+      .fill = colorSpecFromRole(ColorRole::Outline, 0.18f),
+      .width = Style::borderWidth,
+  }));
+
+  auto workspace = ui::column({
       .align = FlexAlign::Stretch,
       .gap = Style::spaceMd * scale,
-      .maxWidth = 800.0f * scale,
+      .padding = Style::spaceMd * scale,
       .fillWidth = true,
       .flexGrow = 1.0f,
   });
-  contentFrame->addChild(
-      ui::label({
-          .out = &m_title,
-          .fontSize = Style::fontSizeHeader * scale,
-          .fontWeight = FontWeight::Bold,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
-      })
-  );
+
+  auto searchRow = ui::row({
+      .align = FlexAlign::Center,
+      .fillWidth = true,
+  });
+  searchRow->addChild(ui::row({.flexGrow = 1.0f}));
+  searchRow->addChild(ui::input({
+      .out = &m_search,
+      .value = m_route.query(),
+      .placeholder = i18n::tr("settings.nexus.search-placeholder"),
+      .fontSize = Style::fontSizeBody * scale,
+      .controlHeight = Style::controlHeight * scale,
+      .horizontalPadding = Style::spaceMd * scale,
+      .clearButtonEnabled = true,
+      .surfaceOpacity = 0.52f,
+      .width = 300.0f * scale,
+      .onChange = [this](const std::string& query) { search(query); },
+      .configure = [this, scale](Input& input) {
+        input.setFlatSurfaceFrame(true);
+        input.setFrameRadius(Style::controlHeight * 0.5f * scale);
+        input.setOnFocusGain([this]() { m_route.setFocusKey("settings.search"); });
+        if (input.inputArea() != nullptr) {
+          input.inputArea()->setTabFocusKey("settings.search");
+        }
+      },
+  }));
+  workspace->addChild(std::move(searchRow));
+
+  auto pageFrame = ui::column({
+      .align = FlexAlign::Stretch,
+      .gap = 0.0f,
+      .fill = colorSpecFromRole(ColorRole::SurfaceVariant, 0.18f),
+      .radius = Style::scaledRadiusXl(scale),
+      .border = colorSpecFromRole(ColorRole::Outline, 0.28f),
+      .borderWidth = Style::borderWidth,
+      .fillWidth = true,
+      .clipChildren = true,
+      .flexGrow = 1.0f,
+  });
+  auto pageHeader = ui::row({
+      .align = FlexAlign::Center,
+      .gap = Style::spaceSm * scale,
+      .paddingV = Style::spaceMd * scale,
+      .paddingH = Style::spaceLg * scale,
+      .fillWidth = true,
+  });
+  pageHeader->addChild(ui::button({
+      .out = &m_backButton,
+      .glyph = "arrow-left",
+      .glyphSize = Style::baseGlyphSize * scale,
+      .variant = ButtonVariant::Ghost,
+      .tooltip = i18n::tr("settings.nexus.back"),
+      .minWidth = Style::controlHeightSm * scale,
+      .minHeight = Style::controlHeightSm * scale,
+      .padding = Style::spaceXs * scale,
+      .radius = Style::scaledRadiusMd(scale),
+      .visible = false,
+      .participatesInLayout = false,
+      .onClick = [this]() {
+        if (m_route.popSubpage()) {
+          rebuildContent();
+          animateContentReveal();
+        }
+      },
+  }));
+  pageHeader->addChild(ui::label({
+      .out = &m_title,
+      .fontSize = Style::fontSizeHeader * scale,
+      .fontWeight = FontWeight::Bold,
+      .color = colorSpecFromRole(ColorRole::OnSurface),
+      .flexGrow = 1.0f,
+  }));
+  pageHeader->addChild(ui::button({
+      .out = &m_resetButton,
+      .text = i18n::tr("settings.nexus.reset-page"),
+      .glyph = "restart_alt",
+      .fontSize = Style::fontSizeCaption * scale,
+      .glyphSize = Style::baseGlyphSize * scale,
+      .variant = ButtonVariant::Ghost,
+      .minHeight = Style::controlHeightSm * scale,
+      .paddingH = Style::spaceSm * scale,
+      .radius = Style::scaledRadiusMd(scale),
+      .onClick = [this]() {
+        if (!m_resetConfirmationPending) {
+          m_resetConfirmationPending = true;
+          requestContentRefresh();
+          return;
+        }
+        resetCurrentPage();
+      },
+  }));
+  pageFrame->addChild(std::move(pageHeader));
+  pageFrame->addChild(ui::box({
+      .fill = colorSpecFromRole(ColorRole::Outline, 0.14f),
+      .height = Style::borderWidth,
+  }));
+
   auto scroll = ui::scrollView({
       .out = &m_scroll,
       .scrollbarVisible = true,
-      .viewportPaddingH = 0.0f,
-      .viewportPaddingV = Style::spaceXs * scale,
+      .viewportPaddingH = Style::spaceLg * scale,
+      .viewportPaddingV = Style::spaceMd * scale,
       .flexGrow = 1.0f,
       .configure = [this, scale](ScrollView& view) {
-        view.setCardStyle(scale, 1.0f, false);
+        view.clearFill();
+        view.clearBorder();
         view.setOnScrollChanged([this](float offset) {
           if (m_route.query().empty()) {
             m_route.setScrollOffset(offset);
@@ -438,10 +640,10 @@ std::unique_ptr<Node> NexusView::build(
   m_content = scroll->content();
   m_content->setDirection(FlexDirection::Vertical);
   m_content->setAlign(FlexAlign::Stretch);
-  m_content->setGap(Style::spaceSm * scale);
-  contentFrame->addChild(std::move(scroll));
-  body->addChild(std::move(contentFrame));
-  root->addChild(std::move(body));
+  m_content->setGap(Style::spaceMd * scale);
+  pageFrame->addChild(std::move(scroll));
+  workspace->addChild(std::move(pageFrame));
+  root->addChild(std::move(workspace));
   rebuildContent();
   return root;
 }
@@ -493,19 +695,30 @@ void NexusView::selectPage(NexusPage page) {
   m_resetConfirmationPending = false;
   syncNetworkRescan();
   for (std::size_t i = 0; i < m_navButtons.size(); ++i) {
-    m_navButtons[i]->setVariant(nexusPages()[i].page == page ? ButtonVariant::TabActive : ButtonVariant::Tab);
+    m_navButtons[i]->setVariant(nexusPages()[i].page == page ? ButtonVariant::TabActive : ButtonVariant::Ghost);
   }
   rebuildContent();
-  if (m_content != nullptr) {
-    m_content->setOpacity(0.35f);
-    if (AnimationManager* animations = m_content->animationManager(); animations != nullptr) {
-      (void)animations->animate(
-          0.35f, 1.0f, Style::animFast, Easing::EaseOutCubic,
-          [content = m_content](float opacity) { content->setOpacity(opacity); }, {}, m_content
-      );
-    } else {
-      m_content->setOpacity(1.0f);
-    }
+  animateContentReveal();
+}
+
+void NexusView::animateContentReveal() {
+  if (m_scroll == nullptr) {
+    return;
+  }
+  m_scroll->setOpacity(0.38f);
+  m_scroll->setScale(0.992f);
+  if (AnimationManager* animations = m_scroll->animationManager(); animations != nullptr) {
+    (void)animations->animate(
+        0.0f, 1.0f, Style::animNormal, Easing::FluidSpatial,
+        [scroll = m_scroll](float progress) {
+          scroll->setOpacity(0.38f + progress * 0.62f);
+          scroll->setScale(0.992f + progress * 0.008f);
+        },
+        {}, m_scroll
+    );
+  } else {
+    m_scroll->setOpacity(1.0f);
+    m_scroll->setScale(1.0f);
   }
 }
 
@@ -520,11 +733,8 @@ void NexusView::selectSearchResult(NexusPage page, std::string controlId) {
       return pathKey(entry.path) == controlId;
     });
     if (target != entries.end() && !target->group.empty()) {
-      std::string title = target->group;
-      std::ranges::replace(title, '-', ' ');
-      if (!title.empty()) {
-        title.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(title.front())));
-      }
+      auto [title, glyph] = groupPresentation(page, target->group);
+      (void)glyph;
       m_route.pushSubpage(NexusSubpage{.id = target->group, .title = std::move(title)});
     }
   }
@@ -535,9 +745,25 @@ void NexusView::selectSearchResult(NexusPage page, std::string controlId) {
     m_search->setValue("");
   }
   for (std::size_t i = 0; i < m_navButtons.size(); ++i) {
-    m_navButtons[i]->setVariant(nexusPages()[i].page == page ? ButtonVariant::TabActive : ButtonVariant::Tab);
+    m_navButtons[i]->setVariant(nexusPages()[i].page == page ? ButtonVariant::TabActive : ButtonVariant::Ghost);
   }
   rebuildContent();
+  animateContentReveal();
+}
+
+void NexusView::deferContentMutation(std::function<void()> mutation) {
+  if (m_contentMutationPending || !mutation) {
+    return;
+  }
+  m_contentMutationPending = true;
+  const std::weak_ptr<void> aliveGuard = m_aliveGuard;
+  DeferredCall::callLater([this, aliveGuard, mutation = std::move(mutation)]() mutable {
+    if (aliveGuard.expired()) {
+      return;
+    }
+    m_contentMutationPending = false;
+    mutation();
+  });
 }
 
 void NexusView::requestContentRefresh() {
@@ -626,22 +852,35 @@ void NexusView::addControlRow(std::string title, std::string description, bool a
       .gap = Style::spaceMd * m_scale,
       .padding = Style::spaceMd * m_scale,
       .fill = highlighted ? colorSpecFromRole(ColorRole::Primary, 0.18f)
-                          : colorSpecFromRole(ColorRole::SurfaceVariant, 0.72f),
-      .radius = highlighted ? Style::scaledRadiusXl(m_scale) : Style::scaledRadiusLg(m_scale),
+                          : colorSpecFromRole(ColorRole::Surface, 0.70f),
+      .radius = Style::scaledRadiusXl(m_scale),
+      .border = highlighted ? colorSpecFromRole(ColorRole::Primary, 0.46f)
+                            : colorSpecFromRole(ColorRole::Outline, 0.22f),
+      .borderWidth = Style::borderWidth,
+      .minHeight = 66.0f * m_scale,
       .fillWidth = true,
   });
   if (highlighted) {
     m_pendingScrollTarget = row.get();
   }
   Label* detailLabel = nullptr;
-  row->addChild(
+  row->addChild(ui::column(
+      {.align = FlexAlign::Center,
+       .justify = FlexJustify::Center,
+       .fill = colorSpecFromRole(
+           available ? ColorRole::Primary : ColorRole::SurfaceVariant, available ? 0.09f : 0.45f
+       ),
+       .radius = 20.0f * m_scale,
+       .width = 40.0f * m_scale,
+       .height = 40.0f * m_scale},
       ui::glyph({
           .glyph = available ? "check_circle" : "block",
-          .glyphSize = 30.0f * m_scale,
-          .color =
-              colorSpecFromRole(available ? ColorRole::Primary : ColorRole::OnSurfaceVariant, available ? 1.0f : 0.5f),
+          .glyphSize = Style::baseGlyphSize * m_scale,
+          .color = colorSpecFromRole(
+              available ? ColorRole::Primary : ColorRole::OnSurfaceVariant, available ? 1.0f : 0.5f
+          ),
       })
-  );
+  ));
   row->addChild(
       ui::column(
           {.align = FlexAlign::Start, .gap = 2.0f * m_scale, .flexGrow = 1.0f},
@@ -820,7 +1059,10 @@ void NexusView::addControlRow(std::string title, std::string description, bool a
             .step = 0.01,
             .value = sink != nullptr ? static_cast<double>(sink->volume) : 0.0,
             .enabled = sink != nullptr,
-            .controlHeight = Style::controlHeightSm * m_scale,
+            .presentation = SliderPresentation::LevelCompact,
+            .trackHeight = 18.0f * m_scale,
+            .thumbSize = 33.0f * m_scale,
+            .controlHeight = 33.0f * m_scale,
             .width = 180.0f * m_scale,
             .onValueChanged = [audio = m_services.audio](double volume) {
               audio->setVolume(static_cast<float>(volume));
@@ -838,7 +1080,10 @@ void NexusView::addControlRow(std::string title, std::string description, bool a
             .step = 0.01,
             .value = source != nullptr ? static_cast<double>(source->volume) : 0.0,
             .enabled = source != nullptr,
-            .controlHeight = Style::controlHeightSm * m_scale,
+            .presentation = SliderPresentation::LevelCompact,
+            .trackHeight = 18.0f * m_scale,
+            .thumbSize = 33.0f * m_scale,
+            .controlHeight = 33.0f * m_scale,
             .width = 180.0f * m_scale,
             .onValueChanged = [audio = m_services.audio](double volume) {
               audio->setMicVolume(static_cast<float>(volume));
@@ -1051,7 +1296,10 @@ void NexusView::addControlRow(std::string title, std::string description, bool a
           .step = 0.01,
           .value = device.volume,
           .enabled = device.available,
-          .controlHeight = Style::controlHeightSm * m_scale,
+          .presentation = SliderPresentation::LevelCompact,
+          .trackHeight = 18.0f * m_scale,
+          .thumbSize = 33.0f * m_scale,
+          .controlHeight = 33.0f * m_scale,
           .width = 150.0f * m_scale,
           .onValueChanged = [audio = m_services.audio, id = device.id](double volume) {
             audio->setSinkVolume(id, static_cast<float>(volume));
@@ -1092,7 +1340,10 @@ void NexusView::addControlRow(std::string title, std::string description, bool a
           .step = 0.01,
           .value = device.volume,
           .enabled = device.available,
-          .controlHeight = Style::controlHeightSm * m_scale,
+          .presentation = SliderPresentation::LevelCompact,
+          .trackHeight = 18.0f * m_scale,
+          .thumbSize = 33.0f * m_scale,
+          .controlHeight = 33.0f * m_scale,
           .width = 150.0f * m_scale,
           .onValueChanged = [audio = m_services.audio, id = device.id](double volume) {
             audio->setSourceVolume(id, static_cast<float>(volume));
@@ -1133,7 +1384,10 @@ void NexusView::addControlRow(std::string title, std::string description, bool a
               .step = 0.01,
               .value = static_cast<double>(stream.volume),
               .enabled = stream.available,
-              .controlHeight = Style::controlHeightSm * m_scale,
+              .presentation = SliderPresentation::LevelCompact,
+              .trackHeight = 18.0f * m_scale,
+              .thumbSize = 33.0f * m_scale,
+              .controlHeight = 33.0f * m_scale,
               .width = 180.0f * m_scale,
               .onValueChanged = [audio = m_services.audio, id = stream.id](double volume) {
                 audio->setProgramOutputVolume(id, static_cast<float>(volume));
@@ -1183,7 +1437,7 @@ void NexusView::addSearchResults(std::string_view query) {
   const auto consider = [&](NexusPage page, std::string id, std::string title, std::string description,
                             std::string extra = {}) {
     const std::string haystack = StringUtils::toLower(
-        std::string(nexusPageDescriptor(page).title) + " " + title + " " + description + " " + extra
+        pageTitle(nexusPageDescriptor(page)) + " " + title + " " + description + " " + extra
     );
     if (!haystack.contains(needle) || !seen.emplace(page, id).second) {
       return;
@@ -1242,7 +1496,7 @@ void NexusView::addSearchResults(std::string_view query) {
     }
     m_content->addChild(
         ui::label({
-            .text = std::string(page.title),
+            .text = pageTitle(page),
             .fontSize = Style::fontSizeBody * m_scale,
             .fontWeight = FontWeight::Bold,
             .color = colorSpecFromRole(ColorRole::Secondary),
@@ -1261,7 +1515,9 @@ void NexusView::addSearchResults(std::string_view query) {
           .paddingH = Style::spaceMd * m_scale,
           .radius = Style::scaledRadiusMd(m_scale),
           .onClick = [this, resultPage = result.page, id = result.id]() mutable {
-            selectSearchResult(resultPage, std::move(id));
+            deferContentMutation([this, resultPage, id = std::move(id)]() mutable {
+              selectSearchResult(resultPage, std::move(id));
+            });
           },
       });
       resultButton->addChild(ui::glyph({
@@ -1297,34 +1553,35 @@ void NexusView::addSearchResults(std::string_view query) {
 }
 
 void NexusView::addPageActions() {
-  if (m_content == nullptr || m_services.config == nullptr) {
+  if (m_resetButton == nullptr) {
     return;
   }
-  const auto entries = nexusEntries(m_services.config->config(), m_route.page());
-  if (entries.empty()) {
+  const bool searchActive = !m_route.query().empty();
+  m_resetButton->setVisible(!searchActive);
+  m_resetButton->setParticipatesInLayout(!searchActive);
+  if (searchActive) {
     return;
   }
-  auto actions = ui::row({.align = FlexAlign::Center, .gap = Style::spaceSm * m_scale, .fillWidth = true});
-  actions->addChild(ui::row({.flexGrow = 1.0f}));
-  actions->addChild(
-      ui::button({
-          .text = m_resetConfirmationPending ? "Confirm reset" : "Reset page",
-          .glyph = m_resetConfirmationPending ? "warning" : "restart_alt",
-          .variant = m_resetConfirmationPending ? ButtonVariant::Destructive : ButtonVariant::Ghost,
-          .minHeight = Style::controlHeightSm * m_scale,
-          .paddingH = Style::spaceSm * m_scale,
-          .radius = Style::scaledRadiusMd(m_scale),
-          .onClick = [this]() {
-            if (!m_resetConfirmationPending) {
-              m_resetConfirmationPending = true;
-              requestContentRefresh();
-              return;
-            }
-            resetCurrentPage();
-          },
-      })
+
+  bool hasOverride = false;
+  if (m_services.config != nullptr) {
+    const auto paths = currentPageResetPaths();
+    hasOverride = std::ranges::any_of(paths, [this](const auto& path) {
+      return m_services.config->hasOverride(path);
+    });
+  }
+  if (!hasOverride) {
+    m_resetConfirmationPending = false;
+  }
+  m_resetButton->setEnabled(hasOverride);
+  m_resetButton->setText(
+      m_resetConfirmationPending ? i18n::tr("settings.nexus.confirm-reset")
+                                 : i18n::tr("settings.nexus.reset-page")
   );
-  m_content->addChild(std::move(actions));
+  m_resetButton->setGlyph(m_resetConfirmationPending ? "warning" : "restart_alt");
+  m_resetButton->setVariant(
+      m_resetConfirmationPending ? ButtonVariant::Destructive : ButtonVariant::Ghost
+  );
 }
 
 void NexusView::addNetworkPasswordPrompt() {
@@ -1725,9 +1982,9 @@ void NexusView::saveSupportReport() {
   }
 }
 
-void NexusView::resetCurrentPage() {
+std::vector<std::vector<std::string>> NexusView::currentPageResetPaths() const {
   if (m_services.config == nullptr) {
-    return;
+    return {};
   }
   auto entries = nexusEntries(m_services.config->config(), m_route.page());
   if (const NexusSubpage* subpage = m_route.currentSubpage(); subpage != nullptr) {
@@ -1752,7 +2009,14 @@ void NexusView::resetCurrentPage() {
     uniquePaths.insert({"default_apps", "media_playback"});
     uniquePaths.insert({"default_apps", "file_manager"});
   }
-  std::vector<std::vector<std::string>> paths(uniquePaths.begin(), uniquePaths.end());
+  return {uniquePaths.begin(), uniquePaths.end()};
+}
+
+void NexusView::resetCurrentPage() {
+  if (m_services.config == nullptr) {
+    return;
+  }
+  const auto paths = currentPageResetPaths();
   bool changed = false;
   if (!m_services.config->clearOverrides(paths, &changed)) {
     showError(
@@ -1895,6 +2159,75 @@ void NexusView::addConfigPage() {
   (void)settings::addSettingsContentSections(*m_content, entries, std::move(context));
 }
 
+void NexusView::addWallpaperBrowserCard() {
+  if (m_content == nullptr) {
+    return;
+  }
+  const bool available = m_services.wallpaper != nullptr && static_cast<bool>(m_services.openWallpaperPanel);
+  auto card = ui::button({
+      .enabled = available,
+      .variant = ButtonVariant::Outline,
+      .surfaceOpacity = 0.34f,
+      .minHeight = 92.0f * m_scale,
+      .paddingV = Style::spaceMd * m_scale,
+      .paddingH = Style::spaceLg * m_scale,
+      .gap = Style::spaceMd * m_scale,
+      .radius = Style::scaledRadiusXl(m_scale),
+      .onClick = [this]() {
+        if (m_services.openWallpaperPanel) {
+          m_services.openWallpaperPanel();
+        }
+      },
+  });
+  card->addChild(ui::column(
+      {.align = FlexAlign::Center,
+       .justify = FlexJustify::Center,
+       .fill = colorSpecFromRole(ColorRole::Primary, 0.09f),
+       .radius = 26.0f * m_scale,
+       .width = 52.0f * m_scale,
+       .height = 52.0f * m_scale},
+      ui::glyph({
+          .glyph = "wallpaper-selector",
+          .glyphSize = 27.0f * m_scale,
+          .color = colorSpecFromRole(ColorRole::Primary),
+      })
+  ));
+  card->addChild(ui::column(
+      {.align = FlexAlign::Start, .gap = 3.0f * m_scale, .flexGrow = 1.0f},
+      ui::label({
+          .text = i18n::tr("settings.nexus.wallpaper.title"),
+          .fontSize = Style::fontSizeBody * m_scale,
+          .fontWeight = FontWeight::Bold,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+      }),
+      ui::label({
+          .text = i18n::tr("settings.nexus.wallpaper.description"),
+          .fontSize = Style::fontSizeCaption * m_scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          .maxLines = 2,
+      })
+  ));
+  card->addChild(ui::row(
+      {.align = FlexAlign::Center,
+       .paddingV = Style::spaceXs * m_scale,
+       .paddingH = Style::spaceSm * m_scale,
+       .fill = colorSpecFromRole(available ? ColorRole::Primary : ColorRole::SurfaceVariant, 0.10f),
+       .radius = Style::scaledRadiusMd(m_scale)},
+      ui::label({
+          .text = i18n::tr(available ? "settings.nexus.available" : "settings.nexus.unavailable"),
+          .fontSize = Style::fontSizeCaption * m_scale,
+          .fontWeight = FontWeight::SemiBold,
+          .color = colorSpecFromRole(available ? ColorRole::Primary : ColorRole::OnSurfaceVariant),
+      })
+  ));
+  card->addChild(ui::glyph({
+      .glyph = "chevron-right",
+      .glyphSize = Style::baseGlyphSize * m_scale,
+      .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+  }));
+  m_content->addChild(std::move(card));
+}
+
 void NexusView::addConfigGroupIndex() {
   if (m_content == nullptr || m_services.config == nullptr) {
     return;
@@ -1902,6 +2235,10 @@ void NexusView::addConfigGroupIndex() {
   auto entries = nexusEntries(m_services.config->config(), m_route.page());
   std::vector<std::pair<std::string, std::size_t>> groups;
   for (const auto& entry : entries) {
+    if ((entry.visibleWhen && !entry.visibleWhen(m_services.config->config()))
+        || (m_route.page() == NexusPage::WallpaperStyle && entry.group == "wallpaper")) {
+      continue;
+    }
     auto found = std::ranges::find(groups, entry.group, &std::pair<std::string, std::size_t>::first);
     if (found == groups.end()) {
       groups.emplace_back(entry.group, 1);
@@ -1909,28 +2246,89 @@ void NexusView::addConfigGroupIndex() {
       ++found->second;
     }
   }
-  for (const auto& [id, count] : groups) {
-    std::string title = id;
-    std::ranges::replace(title, '-', ' ');
-    if (!title.empty()) {
-      title.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(title.front())));
-    }
-    m_content->addChild(ui::button({
-        .text = title,
-        .glyph = "chevron_right",
-        .contentAlign = ButtonContentAlign::Start,
-        .variant = ButtonVariant::Ghost,
-        .badge = std::to_string(count),
-        .minHeight = Style::controlHeightLg * m_scale,
-        .paddingH = Style::spaceMd * m_scale,
-        .radius = Style::scaledRadiusLg(m_scale),
-        .onClick = [this, id, title]() {
-          m_route.pushSubpage(NexusSubpage{.id = id, .title = title});
-          m_route.setScrollOffset(0.0f);
-          requestContentRefresh();
-        },
-    }));
+  if (groups.empty()) {
+    return;
   }
+
+  auto groupCard = ui::column({
+      .align = FlexAlign::Stretch,
+      .gap = 0.0f,
+      .fill = colorSpecFromRole(ColorRole::Surface, 0.72f),
+      .radius = Style::scaledRadiusXl(m_scale),
+      .border = colorSpecFromRole(ColorRole::Outline, 0.24f),
+      .borderWidth = Style::borderWidth,
+      .fillWidth = true,
+      .clipChildren = true,
+  });
+  for (std::size_t index = 0; index < groups.size(); ++index) {
+    const auto& [id, count] = groups[index];
+    auto [title, glyph] = groupPresentation(m_route.page(), id);
+    auto row = ui::button({
+        .variant = ButtonVariant::Ghost,
+        .surfaceOpacity = 0.20f,
+        .minHeight = 62.0f * m_scale,
+        .paddingV = Style::spaceSm * m_scale,
+        .paddingH = Style::spaceMd * m_scale,
+        .gap = Style::spaceMd * m_scale,
+        .radius = 0.0f,
+        .onClick = [this, id, title]() {
+          deferContentMutation([this, id, title]() {
+            m_route.pushSubpage(NexusSubpage{.id = id, .title = title});
+            m_route.setScrollOffset(0.0f);
+            rebuildContent();
+            animateContentReveal();
+          });
+        },
+    });
+    row->addChild(ui::column(
+        {.align = FlexAlign::Center,
+         .justify = FlexJustify::Center,
+         .fill = colorSpecFromRole(ColorRole::SurfaceVariant, 0.58f),
+         .radius = 20.0f * m_scale,
+         .width = 40.0f * m_scale,
+         .height = 40.0f * m_scale},
+        ui::glyph({
+            .glyph = glyph,
+            .glyphSize = Style::baseGlyphSize * m_scale,
+            .color = colorSpecFromRole(ColorRole::OnSurface),
+        })
+    ));
+    row->addChild(ui::label({
+        .text = title,
+        .fontSize = Style::fontSizeBody * m_scale,
+        .fontWeight = FontWeight::SemiBold,
+        .color = colorSpecFromRole(ColorRole::OnSurface),
+        .flexGrow = 1.0f,
+    }));
+    row->addChild(ui::row(
+        {.align = FlexAlign::Center,
+         .justify = FlexJustify::Center,
+         .paddingV = 2.0f * m_scale,
+         .paddingH = Style::spaceXs * m_scale,
+         .fill = colorSpecFromRole(ColorRole::SurfaceVariant, 0.62f),
+         .radius = Style::scaledRadiusSm(m_scale),
+         .minWidth = 28.0f * m_scale},
+        ui::label({
+            .text = std::to_string(count),
+            .fontSize = Style::fontSizeCaption * m_scale,
+            .fontWeight = FontWeight::SemiBold,
+            .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+        })
+    ));
+    row->addChild(ui::glyph({
+        .glyph = "chevron-right",
+        .glyphSize = Style::baseGlyphSize * m_scale,
+        .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+    }));
+    groupCard->addChild(std::move(row));
+    if (index + 1 < groups.size()) {
+      groupCard->addChild(ui::box({
+          .fill = colorSpecFromRole(ColorRole::Outline, 0.14f),
+          .height = Style::borderWidth,
+      }));
+    }
+  }
+  m_content->addChild(std::move(groupCard));
 }
 
 std::string NexusView::liveStructureKey() const {
@@ -2142,8 +2540,18 @@ void NexusView::rebuildContent() {
   m_credentialInput = nullptr;
   m_pairingInput = nullptr;
   m_contentRefreshPending = false;
+  const bool hasSubpage = m_route.currentSubpage() != nullptr;
+  if (m_backButton != nullptr) {
+    m_backButton->setVisible(hasSubpage);
+    m_backButton->setParticipatesInLayout(hasSubpage);
+  }
+  addPageActions();
   if (!m_route.query().empty()) {
-    m_title->setText("Search results");
+    if (m_backButton != nullptr) {
+      m_backButton->setVisible(false);
+      m_backButton->setParticipatesInLayout(false);
+    }
+    m_title->setText(i18n::tr("settings.nexus.search-results"));
     addSearchResults(m_route.query());
     if (m_scroll != nullptr) {
       m_scroll->setScrollOffset(0.0f);
@@ -2151,10 +2559,11 @@ void NexusView::rebuildContent() {
     return;
   }
   const auto& page = nexusPageDescriptor(m_route.page());
+  const std::string currentPageTitle = pageTitle(page);
   if (const NexusSubpage* subpage = m_route.currentSubpage(); subpage != nullptr) {
-    m_title->setText(std::string(page.title) + "  /  " + subpage->title);
+    m_title->setText(currentPageTitle + "  /  " + subpage->title);
   } else {
-    m_title->setText(std::string(page.title));
+    m_title->setText(currentPageTitle);
   }
   const bool available = pageAvailable(m_route.page());
   if (!m_errorMessage.empty()) {
@@ -2168,8 +2577,6 @@ void NexusView::rebuildContent() {
         })
     );
   }
-  addPageActions();
-
   const auto addDescriptor = [this, available](std::string_view id) {
     const auto found = std::ranges::find(kControls, id, &ControlDescriptor::id);
     if (found != kControls.end() && found->page == m_route.page()) {
@@ -2182,7 +2589,7 @@ void NexusView::rebuildContent() {
     if (m_route.currentSubpage() != nullptr) {
       addConfigPage();
     } else {
-      addDescriptor("wallpaper");
+      addWallpaperBrowserCard();
       addConfigGroupIndex();
     }
     break;
@@ -2359,6 +2766,7 @@ bool NexusView::escape() {
   }
   if (m_route.popSubpage()) {
     rebuildContent();
+    animateContentReveal();
     return true;
   }
   return false;
@@ -2370,6 +2778,14 @@ void NexusView::layout(Renderer& renderer, float width, float height) {
   }
   if (m_contentRefreshPending) {
     rebuildContent();
+  }
+  if (m_search != nullptr) {
+    const bool labeledNavigation = m_navigationMode == NexusNavigationMode::LabeledSidebar;
+    const float workspaceWidth = labeledNavigation ? std::max(0.0f, width - 224.0f * m_scale) : width;
+    const float responsiveFraction = labeledNavigation ? 0.46f : 0.34f;
+    const float responsiveWidth =
+        std::clamp(workspaceWidth * responsiveFraction, 180.0f * m_scale, 300.0f * m_scale);
+    m_search->setSize(responsiveWidth, Style::controlHeight * m_scale);
   }
   m_root->setSize(width, height);
   m_root->layout(renderer);

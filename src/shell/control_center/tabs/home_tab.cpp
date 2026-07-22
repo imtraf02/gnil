@@ -1,6 +1,7 @@
 #include "shell/control_center/tabs/home_tab.h"
 
 #include "config/config_service.h"
+#include "compositors/compositor_platform.h"
 #include "core/build_info.h"
 #include "core/deferred_call.h"
 #include "core/input/keybind_matcher.h"
@@ -9,6 +10,7 @@
 #include "dbus/accounts/accounts_service.h"
 #include "dbus/mpris/mpris_art.h"
 #include "dbus/mpris/mpris_service.h"
+#include "dbus/network/inetwork_service.h"
 #include "i18n/i18n.h"
 #include "notification/notifications.h"
 #include "render/animation/animation_manager.h"
@@ -20,12 +22,17 @@
 #include "shell/wallpaper/wallpaper.h"
 #include "system/brightness_service.h"
 #include "system/distro_info.h"
+#include "system/gamma_service.h"
+#include "system/hardware_info.h"
 #include "system/system_monitor_service.h"
 #include "system/weather_service.h"
 #include "time/time_format.h"
 #include "ui/builders.h"
 #include "ui/controls/grid_view.h"
+#include "ui/controls/progress_bar.h"
+#include "ui/controls/select.h"
 #include "ui/controls/slider.h"
+#include "ui/controls/toggle.h"
 #include "ui/dialogs/file_dialog.h"
 
 #include <algorithm>
@@ -45,8 +52,7 @@ namespace {
   constexpr Logger kLog("control-center");
 
   constexpr float kHomeAvatarScale = 2.6f;
-  constexpr std::size_t kHomeShortcutGridColumns = 2;
-  constexpr std::size_t kHomeStackedShortcutMax = 2;
+  constexpr std::size_t kHomeShortcutGridColumns = 4;
   constexpr auto kHomeTransientPositionRegressionWindow = std::chrono::milliseconds(1500);
   constexpr std::int64_t kHomeTransientPositionRegressionFloorUs = 5'000'000;
   constexpr std::int64_t kHomeTransientPositionRegressionCeilingUs = 1'500'000;
@@ -87,8 +93,8 @@ namespace {
 
   std::string gnilVersionLine() { return std::format("GNIL {}", gnil::build_info::displayVersion()); }
 
-  void applyHomeCardStyle(Flex& card, float scale, float fillOpacity, bool showBorder) {
-    applySectionCardStyle(card, scale, fillOpacity, showBorder);
+  void applyHomeCardStyle(Flex& card, float scale, float fillOpacity, bool /*showBorder*/) {
+    applySectionCardStyle(card, scale, fillOpacity, /*showBorder=*/false);
     card.setGap(Style::spaceSm * scale);
   }
 
@@ -99,12 +105,10 @@ namespace {
     button.setEnabled(enabled);
   }
 
-  // The whole home cards are clickable; on hover swap the card outline to the hover colour. No fill
-  // change — the user card's fill sits behind the wallpaper, so a thin hover border is the one hover
-  // signal that reads consistently across all three cards.
+  // The whole home cards are clickable; on hover swap the card outline to a subtle highlight.
   void applyHomeCardHover(Flex& card, bool hovered, bool baseBorders) {
     if (hovered) {
-      card.setBorder(colorSpecFromRole(ColorRole::Hover), Style::borderWidth);
+      card.setBorder(colorSpecFromRole(ColorRole::Hover, 0.6f), Style::borderWidth);
     } else if (baseBorders) {
       card.setBorder(colorSpecFromRole(ColorRole::Outline), Style::borderWidth);
     } else {
@@ -124,13 +128,56 @@ namespace {
     avatar->setBorder(colorSpecFromRole(ColorRole::Primary), borderWidth);
   }
 
+  class VpnShortcut final : public Shortcut {
+  public:
+    explicit VpnShortcut(INetworkService* service) : m_service(service) {}
+    std::string_view id() const override { return "vpn"; }
+    std::string defaultLabel() const override { return i18n::tr("dashboard.home.shortcuts.vpn"); }
+    std::string_view iconOn() const override { return "shield-check"; }
+    std::string_view iconOff() const override { return "shield"; }
+    bool isToggle() const override { return true; }
+    bool enabled() const override { return m_service != nullptr; }
+    bool active() const override { return m_service != nullptr && m_service->state().vpnActive; }
+    void onClick() override {
+      if (m_service == nullptr) {
+        return;
+      }
+      const auto& vpns = m_service->vpnConnections();
+      bool deactivated = false;
+      for (const auto& vpn : vpns) {
+        if (vpn.active) {
+          deactivated = m_service->deactivateVpnConnection(vpn) || deactivated;
+        }
+      }
+      if (deactivated) {
+        return;
+      }
+      if (vpns.size() == 1) {
+        (void)m_service->activateVpnConnection(vpns.front());
+        return;
+      }
+      PanelManager::instance().togglePanel("network");
+    }
+    void onRightClick() override { PanelManager::instance().togglePanel("network"); }
+
+  private:
+    INetworkService* m_service = nullptr;
+  };
+
 } // namespace
 
 HomeTab::HomeTab(const ControlCenterServices& services)
     : m_mpris(services.mpris), m_httpClient(services.httpClient), m_weather(services.weather),
       m_config(services.config), m_accounts(services.accounts), m_wallpaper(services.wallpaper),
       m_thumbnails(services.thumbnails), m_sysmon(services.sysmon), m_services(services.shortcutServices()),
-      m_audio(services.audio), m_brightness(services.brightness) {
+      m_audio(services.audio), m_brightness(services.brightness), m_nightLight(services.nightLight),
+      m_platform(services.platform) {
+  if (m_config != nullptr) {
+    m_pendingTemperature = m_config->config().nightlight.nightTemperature;
+  }
+  if (m_sysmon != nullptr) {
+    m_sysmon->retainDiskPath("/");
+  }
   if (m_thumbnails != nullptr) {
     m_thumbnailPendingSub = m_thumbnails->subscribePendingUpload([this]() {
       if (m_wallpaperBg == nullptr) {
@@ -156,6 +203,9 @@ HomeTab::HomeTab(const ControlCenterServices& services)
 }
 
 HomeTab::~HomeTab() {
+  if (m_sysmon != nullptr) {
+    m_sysmon->releaseDiskPath("/");
+  }
   if (m_thumbnails != nullptr && !m_loadedWallpaperPath.empty()) {
     m_thumbnails->release(m_loadedWallpaperPath, m_loadedWallpaperSize);
   }
@@ -177,58 +227,101 @@ std::unique_ptr<Flex> HomeTab::create() {
       .align = FlexAlign::Stretch,
       .gap = Style::panelPadding * scale,
       .fillHeight = true,
-      .flexGrow = 1.0f,
+      .flexGrow = 1.05f,
   });
 
   // --- Date/Time + Weather ---
-  auto dateTimeCard = ui::row(
-      {.out = &m_dateTimeCard,
-       .align = FlexAlign::Center,
-       .justify = FlexJustify::Center,
-       .gap = Style::spaceLg * scale,
-       .fillWidth = true,
-       .fillHeight = true,
-       .flexGrow = 1.0f,
-       .configure =
-           [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
-             applyHomeCardStyle(card, scale, opacity, borders);
-             card.setDirection(FlexDirection::Horizontal);
-             card.setAlign(FlexAlign::Center);
-             card.setJustify(FlexJustify::Center);
-             card.setGap(Style::spaceLg * scale);
-           }},
-      ui::label({
-          .out = &m_timeLabel,
-          .text = formatShellTime(m_config),
-          .fontSize = Style::fontSizeTitle * 1.7f * scale,
-          .fontWeight = FontWeight::Bold,
-          .color = colorSpecFromRole(ColorRole::Primary),
+  auto dateTimeCard = ui::column({
+      .out = &m_dateTimeCard,
+      .align = FlexAlign::Stretch,
+      .justify = FlexJustify::Center,
+      .gap = Style::spaceSm * scale,
+      .fillWidth = true,
+      .fillHeight = true,
+      .flexGrow = 0.9f,
+      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
+        applyHomeCardStyle(card, scale, opacity, borders);
+      },
+  });
+  dateTimeCard->addChild(ui::label({
+      .out = &m_timeLabel,
+      .text = formatShellTime(m_config),
+      .fontSize = Style::fontSizeTitle * 2.35f * scale,
+      .fontWeight = FontWeight::Bold,
+      .color = colorSpecFromRole(ColorRole::Primary),
+      .textAlign = TextAlign::Center,
+  }));
+  dateTimeCard->addChild(ui::label({
+      .out = &m_dateLabel,
+      .text = formatShellDate(m_config),
+      .fontSize = Style::fontSizeBody * scale,
+      .color = colorSpecFromRole(ColorRole::OnSurface),
+      .textAlign = TextAlign::Center,
+  }));
+  dateTimeCard->addChild(ui::row(
+      {.align = FlexAlign::Center, .justify = FlexJustify::Center, .gap = Style::spaceXs * scale},
+      ui::glyph({
+          .glyph = "map-pin",
+          .glyphSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
       }),
-      ui::column(
-          {.align = FlexAlign::Start, .justify = FlexJustify::Center, .gap = Style::spaceXs * 0.5f * scale},
-          ui::label({
-              .out = &m_dateLabel,
-              .text = formatShellDate(m_config),
-              .fontSize = Style::fontSizeBody * 0.9f * scale,
-              .color = colorSpecFromRole(ColorRole::OnSurface),
+      ui::label({
+          .out = &m_locationLabel,
+          .text = i18n::tr("control-center.weather.no-location-title"),
+          .fontSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          .maxLines = 1,
+      })
+  ));
+  addDivider(*dateTimeCard, scale);
+  dateTimeCard->addChild(ui::row(
+      {.align = FlexAlign::Center, .justify = FlexJustify::SpaceBetween, .gap = Style::spaceMd * scale},
+      ui::row(
+          {.align = FlexAlign::Center, .gap = Style::spaceXs * scale},
+          ui::glyph({
+              .out = &m_weatherGlyph,
+              .glyph = "weather-cloud-sun",
+              .glyphSize = Style::fontSizeTitle * scale,
+              .color = colorSpecFromRole(ColorRole::Primary),
           }),
-          ui::row(
-              {.align = FlexAlign::Center, .gap = Style::spaceXs * scale},
-              ui::glyph({
-                  .out = &m_weatherGlyph,
-                  .glyph = "weather-cloud-sun",
-                  .glyphSize = Style::fontSizeCaption * 1.12f * scale,
-                  .color = colorSpecFromRole(ColorRole::Primary),
-              }),
-              ui::label({
-                  .out = &m_weatherLine,
-                  .text = "—",
-                  .fontSize = Style::fontSizeCaption * scale,
-                  .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-              })
-          )
+          ui::label({
+              .out = &m_weatherLine,
+              .text = "—",
+              .fontSize = Style::fontSizeCaption * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+              .maxLines = 2,
+          })
+      ),
+      ui::row(
+          {.align = FlexAlign::Center, .gap = Style::spaceXs * scale},
+          ui::glyph({
+              .glyph = "droplet",
+              .glyphSize = Style::fontSizeCaption * scale,
+              .color = colorSpecFromRole(ColorRole::Secondary),
+          }),
+          ui::label({
+              .out = &m_humidityLabel,
+              .text = "—",
+              .fontSize = Style::fontSizeCaption * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          })
       )
-  );
+  ));
+  addDivider(*dateTimeCard, scale);
+  dateTimeCard->addChild(ui::row(
+      {.align = FlexAlign::Center, .justify = FlexJustify::Center, .gap = Style::spaceXs * scale},
+      ui::glyph({
+          .glyph = "sunset",
+          .glyphSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::Tertiary),
+      }),
+      ui::label({
+          .out = &m_sunsetLabel,
+          .text = "—",
+          .fontSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      })
+  ));
 
   // Clicking anywhere on the clock/weather card opens the weather tab.
   m_dateTimeCardArea = addCardOverlay(*m_dateTimeCard, []() { openControlCenterTab("weather"); });
@@ -245,6 +338,12 @@ std::unique_ptr<Flex> HomeTab::create() {
         applyHomeCardStyle(card, scale, opacity, borders);
       },
   });
+  mediaCard->addChild(ui::label({
+      .text = i18n::tr("dashboard.home.media.now-playing"),
+      .fontSize = Style::fontSizeBody * scale,
+      .fontWeight = FontWeight::Bold,
+      .color = colorSpecFromRole(ColorRole::OnSurface),
+  }));
 
   const float artSize = Style::controlHeightLg * 1.22f * scale;
   auto mediaContent = ui::row(
@@ -302,8 +401,90 @@ std::unique_ptr<Flex> HomeTab::create() {
   );
   mediaCard->addChild(std::move(mediaContent));
 
-  // Clicking anywhere on the media card opens the media tab.
-  m_mediaCardArea = addCardOverlay(*m_mediaCard, []() { openControlCenterTab("media"); });
+  mediaCard->addChild(ui::slider({
+      .out = &m_mediaSeekSlider,
+      .minValue = 0.0,
+      .maxValue = 1.0,
+      .step = 0.001,
+      .value = 0.0,
+      .enabled = false,
+      .trackHeight = Style::sliderTrackHeight * scale,
+      .thumbSize = Style::sliderThumbSize * 0.8f * scale,
+      .controlHeight = Style::controlHeightSm * scale,
+      .onValueChanged = [this](double value) {
+        if (m_syncingMediaSeek || m_mpris == nullptr) {
+          return;
+        }
+        const auto active = m_mpris->activePlayer();
+        if (active.has_value() && active->canSeek && active->lengthUs > 0) {
+          (void)m_mpris->setPositionActive(static_cast<std::int64_t>(value * static_cast<double>(active->lengthUs)));
+        }
+      },
+  }));
+  mediaCard->addChild(ui::row(
+      {.align = FlexAlign::Center, .justify = FlexJustify::Center, .gap = Style::spaceSm * scale},
+      ui::button({
+          .out = &m_mediaShuffleButton,
+          .glyph = "shuffle",
+          .controlHeight = Style::controlHeightSm * scale,
+          .enabled = false,
+          .variant = ButtonVariant::Ghost,
+          .onClick = [this]() {
+            if (m_mpris != nullptr) {
+              const auto shuffle = m_mpris->shuffleActive();
+              (void)m_mpris->setShuffleActive(!shuffle.value_or(false));
+            }
+          },
+      }),
+      ui::button({
+          .out = &m_mediaPreviousButton,
+          .glyph = "player-skip-back-filled",
+          .controlHeight = Style::controlHeightSm * scale,
+          .enabled = false,
+          .variant = ButtonVariant::Ghost,
+          .onClick = [this]() {
+            if (m_mpris != nullptr) {
+              (void)m_mpris->previousActive();
+            }
+          },
+      }),
+      ui::button({
+          .out = &m_mediaPlayButton,
+          .glyph = "player-play-filled",
+          .controlHeight = Style::controlHeight * scale,
+          .enabled = false,
+          .variant = ButtonVariant::Primary,
+          .onClick = [this]() {
+            if (m_mpris != nullptr) {
+              (void)m_mpris->playPauseActive();
+            }
+          },
+      }),
+      ui::button({
+          .out = &m_mediaNextButton,
+          .glyph = "player-skip-forward-filled",
+          .controlHeight = Style::controlHeightSm * scale,
+          .enabled = false,
+          .variant = ButtonVariant::Ghost,
+          .onClick = [this]() {
+            if (m_mpris != nullptr) {
+              (void)m_mpris->nextActive();
+            }
+          },
+      }),
+      ui::button({
+          .text = i18n::tr("dashboard.home.media.open"),
+          .glyph = "arrow-right",
+          .controlHeight = Style::controlHeightSm * scale,
+          .variant = ButtonVariant::Ghost,
+          .onClick = []() { openControlCenterTab("media"); },
+      })
+  ));
+
+  // Preserve a keyboard-level card affordance without covering the transport controls.
+  m_mediaCardArea = addCardOverlay(
+      *m_mediaCard, []() { openControlCenterTab("media"); }, {.keyboardFocus = true, .pointerHitTest = false}
+  );
 
   leftColumn->addChild(std::move(dateTimeCard));
   leftColumn->addChild(std::move(mediaCard));
@@ -314,7 +495,7 @@ std::unique_ptr<Flex> HomeTab::create() {
       .align = FlexAlign::Stretch,
       .gap = Style::panelPadding * scale,
       .fillHeight = true,
-      .flexGrow = 1.2f,
+      .flexGrow = 1.7f,
   });
 
   // --- User card ---
@@ -477,6 +658,50 @@ std::unique_ptr<Flex> HomeTab::create() {
       )
   );
   userCard->addChild(std::move(userRow));
+  addDivider(*userCard, scale);
+  const auto addResourceMeter = [scale](
+                                    Flex& parent, std::string glyph, std::string label, Label** value,
+                                    ProgressBar** progress
+                                ) {
+    parent.addChild(ui::column(
+        {.align = FlexAlign::Stretch, .gap = Style::spaceXs * 0.35f * scale, .flexGrow = 1.0f},
+        ui::row(
+            {.align = FlexAlign::Center, .gap = Style::spaceXs * scale},
+            ui::glyph({
+                .glyph = std::move(glyph),
+                .glyphSize = Style::fontSizeMini * scale,
+                .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+            }),
+            ui::label({
+                .text = std::move(label),
+                .fontSize = Style::fontSizeMini * scale,
+                .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+                .flexGrow = 1.0f,
+            }),
+            ui::label({
+                .out = value,
+                .text = "—",
+                .fontSize = Style::fontSizeMini * scale,
+                .fontWeight = FontWeight::Bold,
+                .color = colorSpecFromRole(ColorRole::OnSurface),
+            })
+        ),
+        ui::progressBar({
+            .out = progress,
+            .fill = colorSpecFromRole(ColorRole::Primary),
+            .track = colorSpecFromRole(ColorRole::Outline, 0.2f),
+            .progress = 0.0f,
+            .height = 4.0f * scale,
+        })
+    ));
+  };
+  auto resourceRow = ui::row({
+      .align = FlexAlign::Stretch, .gap = Style::spaceMd * scale,
+  });
+  addResourceMeter(*resourceRow, "cpu-usage", "CPU", &m_cpuSummary, &m_cpuBar);
+  addResourceMeter(*resourceRow, "memory", "RAM", &m_memorySummary, &m_memoryBar);
+  addResourceMeter(*resourceRow, "storage", i18n::tr("dashboard.home.storage"), &m_storageSummary, &m_storageBar);
+  userCard->addChild(std::move(resourceRow));
 
   // Wallpaper panel: full-card keyboard target; carved pointer target leaves the avatar clickable.
   const auto openWallpaperPanel = []() { PanelManager::instance().togglePanel("wallpaper"); };
@@ -488,12 +713,14 @@ std::unique_ptr<Flex> HomeTab::create() {
   std::vector<ShortcutConfig> shortcuts;
   shortcuts.push_back({"wifi"});
   shortcuts.push_back({"bluetooth"});
+  shortcuts.push_back({"vpn"});
+  shortcuts.push_back({"notification"});
   shortcuts.push_back({"dark_mode"});
   shortcuts.push_back({"caffeine"});
   shortcuts.push_back({"audio"});
   shortcuts.push_back({"nightlight"});
 
-  const std::size_t count = std::min(shortcuts.size(), std::size_t{6});
+  const std::size_t count = std::min(shortcuts.size(), std::size_t{8});
 
   auto grid = std::make_unique<GridView>();
   grid->setColumns(kHomeShortcutGridColumns);
@@ -510,7 +737,12 @@ std::unique_ptr<Flex> HomeTab::create() {
 
   for (std::size_t i = 0; i < count; ++i) {
     const auto& sc = shortcuts[i];
-    auto shortcut = ShortcutRegistry::create(sc.type, m_services);
+    std::unique_ptr<Shortcut> shortcut;
+    if (sc.type == "vpn") {
+      shortcut = std::make_unique<VpnShortcut>(m_services.network);
+    } else {
+      shortcut = ShortcutRegistry::create(sc.type, m_services);
+    }
     if (shortcut == nullptr) {
       continue;
     }
@@ -583,7 +815,7 @@ std::unique_ptr<Flex> HomeTab::create() {
       .align = FlexAlign::Stretch,
       .gap = Style::panelPadding * scale,
       .fillHeight = true,
-      .flexGrow = 0.8f,
+      .flexGrow = 1.05f,
   });
 
   // --- Volume Card ---
@@ -600,11 +832,6 @@ std::unique_ptr<Flex> HomeTab::create() {
 
   auto volumeHeader = ui::row(
       {.align = FlexAlign::Center, .gap = Style::spaceSm * scale},
-      ui::glyph({
-          .glyph = "volume-high",
-          .glyphSize = Style::fontSizeTitle * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
-      }),
       ui::label({
           .text = i18n::tr("settings.widgets.types.volume"),
           .fontSize = Style::fontSizeBody * scale,
@@ -627,9 +854,12 @@ std::unique_ptr<Flex> HomeTab::create() {
       .maxValue = 1.0f,
       .step = 0.01f,
       .value = 1.0f,
-      .trackHeight = Style::sliderTrackHeight * scale,
-      .thumbSize = Style::sliderThumbSize * scale,
-      .controlHeight = Style::controlHeight * scale,
+      .presentation = SliderPresentation::LevelProminent,
+      .glyph = "volume-high",
+      .glyphSize = Style::fontSizeBody * scale,
+      .trackHeight = 30.0f * scale,
+      .thumbSize = 39.0f * scale,
+      .controlHeight = 39.0f * scale,
       .flexGrow = 1.0f,
       .onValueChanged = [this](double value) {
         if (m_syncingVolumeSlider || m_audio == nullptr) {
@@ -642,6 +872,75 @@ std::unique_ptr<Flex> HomeTab::create() {
       },
   });
   volumeCard->addChild(std::move(volumeSlider));
+  volumeCard->addChild(ui::select({
+      .out = &m_outputSelect,
+      .options = std::vector<std::string>{},
+      .placeholder = i18n::tr("dashboard.home.audio.no-output"),
+      .fontSize = Style::fontSizeMini * scale,
+      .controlHeight = Style::controlHeightSm * scale,
+      .enabled = false,
+      .onSelectionChanged = [this](std::size_t index, std::string_view) {
+        if (m_audio == nullptr || index >= m_audio->state().sinks.size()) {
+          return;
+        }
+        m_audio->setDefaultSink(m_audio->state().sinks[index].id);
+      },
+  }));
+  volumeCard->addChild(ui::row(
+      {.align = FlexAlign::Center, .gap = Style::spaceSm * scale},
+      ui::label({
+          .text = i18n::tr("dashboard.home.audio.microphone"),
+          .fontSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+          .flexGrow = 1.0f,
+      }),
+      ui::label({
+          .out = &m_microphoneValueLabel,
+          .text = "—",
+          .fontSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      })
+  ));
+  volumeCard->addChild(ui::slider({
+      .out = &m_microphoneSlider,
+      .minValue = 0.0f,
+      .maxValue = 1.0f,
+      .step = 0.01f,
+      .value = 1.0f,
+      .presentation = SliderPresentation::LevelProminent,
+      .glyph = "microphone",
+      .glyphSize = Style::fontSizeBody * scale,
+      .trackHeight = 30.0f * scale,
+      .thumbSize = 39.0f * scale,
+      .controlHeight = 39.0f * scale,
+      .onValueChanged = [this](double value) {
+        if (m_syncingMicrophoneSlider || m_audio == nullptr) {
+          return;
+        }
+        m_audio->setMicVolume(static_cast<float>(value));
+      },
+  }));
+  volumeCard->addChild(ui::button({
+      .out = &m_muteAllButton,
+      .text = i18n::tr("dashboard.home.audio.mute-all"),
+      .glyph = "volume-off",
+      .controlHeight = Style::controlHeightSm * scale,
+      .variant = ButtonVariant::Outline,
+      .onClick = [this]() {
+        if (m_audio == nullptr) {
+          return;
+        }
+        const AudioNode* sink = m_audio->defaultSink();
+        const AudioNode* source = m_audio->defaultSource();
+        const bool bothMuted = sink != nullptr && source != nullptr && sink->muted && source->muted;
+        if (sink != nullptr) {
+          m_audio->setMuted(!bothMuted);
+        }
+        if (source != nullptr) {
+          m_audio->setMicMuted(!bothMuted);
+        }
+      },
+  }));
 
   // --- Brightness Card ---
   auto brightnessCard = ui::column({
@@ -657,11 +956,6 @@ std::unique_ptr<Flex> HomeTab::create() {
 
   auto brightnessHeader = ui::row(
       {.align = FlexAlign::Center, .gap = Style::spaceSm * scale},
-      ui::glyph({
-          .glyph = "brightness-high",
-          .glyphSize = Style::fontSizeTitle * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
-      }),
       ui::label({
           .text = i18n::tr("settings.widgets.types.brightness"),
           .fontSize = Style::fontSizeBody * scale,
@@ -688,9 +982,12 @@ std::unique_ptr<Flex> HomeTab::create() {
       .maxValue = 1.0f,
       .step = 0.01f,
       .value = 1.0f,
-      .trackHeight = Style::sliderTrackHeight * scale,
-      .thumbSize = Style::sliderThumbSize * scale,
-      .controlHeight = Style::controlHeight * scale,
+      .presentation = SliderPresentation::LevelProminent,
+      .glyph = "brightness-high",
+      .glyphSize = Style::fontSizeBody * scale,
+      .trackHeight = 30.0f * scale,
+      .thumbSize = 39.0f * scale,
+      .controlHeight = 39.0f * scale,
       .flexGrow = 1.0f,
       .onValueChanged = [this](double value) {
         if (m_syncingBrightnessSlider || m_brightness == nullptr) {
@@ -708,6 +1005,96 @@ std::unique_ptr<Flex> HomeTab::create() {
       },
   });
   brightnessCard->addChild(std::move(brightnessSlider));
+  const bool gammaAvailable = m_platform != nullptr && m_platform->hasGammaControl();
+  brightnessCard->addChild(ui::row(
+      {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .visible = gammaAvailable,
+       .participatesInLayout = gammaAvailable},
+      ui::glyph({
+          .glyph = "weather-moon-stars",
+          .glyphSize = Style::fontSizeBody * scale,
+          .color = colorSpecFromRole(ColorRole::Primary),
+      }),
+      ui::column(
+          {.align = FlexAlign::Stretch, .gap = 0.0f, .flexGrow = 1.0f},
+          ui::label({
+              .text = i18n::tr("control-center.shortcuts.nightlight"),
+              .fontSize = Style::fontSizeCaption * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurface),
+          }),
+          ui::label({
+              .text = i18n::tr("dashboard.home.brightness.nightlight-description"),
+              .fontSize = Style::fontSizeMini * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          })
+      ),
+      ui::toggle({
+          .out = &m_nightLightToggle,
+          .checked = m_nightLight != nullptr && m_nightLight->enabled(),
+          .enabled = m_nightLight != nullptr,
+          .scale = scale,
+          .onChange = [this](bool enabled) {
+            if (!m_syncingNightLight && m_nightLight != nullptr) {
+              if (m_config != nullptr) {
+                (void)m_config->setOverrides({
+                    {{"nightlight", "enabled"}, enabled},
+                    {{"nightlight", "force"}, enabled && m_config->config().nightlight.force},
+                });
+              } else {
+                m_nightLight->setEnabled(enabled);
+                if (!enabled) {
+                  m_nightLight->setForceEnabled(false);
+                }
+              }
+            }
+          },
+      })
+  ));
+  brightnessCard->addChild(ui::row(
+      {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .visible = gammaAvailable,
+       .participatesInLayout = gammaAvailable},
+      ui::glyph({
+          .glyph = "temperature-sun",
+          .glyphSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::Tertiary),
+      }),
+      ui::slider({
+          .out = &m_temperatureSlider,
+          .minValue = NightLightConfig::kTemperatureMin,
+          .maxValue = NightLightConfig::kTemperatureMax,
+          .step = 100.0,
+          .value = m_config != nullptr ? m_config->config().nightlight.nightTemperature : 4000,
+          .controlHeight = Style::controlHeightSm * scale,
+          .flexGrow = 1.0f,
+          .onValueChanged = [this](double value) {
+            if (m_syncingTemperature) {
+              return;
+            }
+            m_pendingTemperature = static_cast<std::int32_t>(std::lround(value / 100.0) * 100);
+            if (m_temperatureValueLabel != nullptr) {
+              m_temperatureValueLabel->setText(std::format("{}K", m_pendingTemperature));
+            }
+          },
+          .onDragEnd = [this]() {
+            if (m_config == nullptr) {
+              return;
+            }
+            const auto night = static_cast<std::int64_t>(m_pendingTemperature);
+            const auto day = std::max<std::int64_t>(
+                m_config->config().nightlight.dayTemperature, night + NightLightConfig::kTemperatureGap
+            );
+            (void)m_config->setOverrides({
+                {{"nightlight", "temperature_night"}, night},
+                {{"nightlight", "temperature_day"}, day},
+            });
+          },
+      }),
+      ui::label({
+          .out = &m_temperatureValueLabel,
+          .text = "4000K",
+          .fontSize = Style::fontSizeMini * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      })
+  ));
 
   rightColumn->addChild(std::move(volumeCard));
   rightColumn->addChild(std::move(brightnessCard));
@@ -784,10 +1171,7 @@ void HomeTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight)
     m_timeLabel->setMaxLines(1);
   }
 
-  float dateTimeRightWrap = dateTimeWrap;
-  if (m_timeLabel != nullptr && m_dateTimeCard != nullptr) {
-    dateTimeRightWrap = std::max(1.0f, dateTimeWrap - m_timeLabel->width() - m_dateTimeCard->gap());
-  }
+  const float dateTimeRightWrap = dateTimeWrap;
   if (m_dateLabel != nullptr) {
     m_dateLabel->setMaxWidth(dateTimeRightWrap);
     m_dateLabel->setMaxLines(1);
@@ -948,10 +1332,10 @@ bool HomeTab::resizeMediaArtToCard() {
 
   const float scale = contentScale();
   const float minArt = Style::controlHeightLg * 1.22f * scale;
-  const float maxArt = Style::controlHeightLg * 2.6f * scale;
+  const float maxArt = Style::controlHeightLg * 1.8f * scale;
   const float available =
       std::max(0.0f, m_mediaCard->height() - m_mediaCard->paddingTop() - m_mediaCard->paddingBottom());
-  const float desired = std::clamp(available, minArt, maxArt);
+  const float desired = std::clamp(available * 0.36f, minArt, maxArt);
   if (std::abs(m_mediaArtSlot->width() - desired) <= 0.5f) {
     return false;
   }
@@ -1180,6 +1564,9 @@ void HomeTab::onClose() {
   m_dateLabel = nullptr;
   m_weatherGlyph = nullptr;
   m_weatherLine = nullptr;
+  m_locationLabel = nullptr;
+  m_humidityLabel = nullptr;
+  m_sunsetLabel = nullptr;
   m_userHost = nullptr;
   m_userUptime = nullptr;
   m_userVersion = nullptr;
@@ -1192,6 +1579,10 @@ void HomeTab::onClose() {
   m_performanceCardArea = nullptr;
   m_cpuSummary = nullptr;
   m_memorySummary = nullptr;
+  m_storageSummary = nullptr;
+  m_cpuBar = nullptr;
+  m_memoryBar = nullptr;
+  m_storageBar = nullptr;
   m_loadedAvatarPath.clear();
   m_loadedAvatarSize = 0;
   // The crisp fade animation is tagged with the m_wallpaperBg node as owner, so
@@ -1208,6 +1599,11 @@ void HomeTab::onClose() {
   m_mediaArtist = nullptr;
   m_mediaStatus = nullptr;
   m_mediaProgress = nullptr;
+  m_mediaSeekSlider = nullptr;
+  m_mediaShuffleButton = nullptr;
+  m_mediaPreviousButton = nullptr;
+  m_mediaPlayButton = nullptr;
+  m_mediaNextButton = nullptr;
   m_mediaArt = nullptr;
   m_mediaArtSlot = nullptr;
   m_mediaArtFallback = nullptr;
@@ -1225,9 +1621,17 @@ void HomeTab::onClose() {
   m_volumeCard = nullptr;
   m_volumeSlider = nullptr;
   m_volumeValueLabel = nullptr;
+  m_outputSelect = nullptr;
+  m_microphoneSlider = nullptr;
+  m_microphoneValueLabel = nullptr;
+  m_muteAllButton = nullptr;
   m_brightnessCard = nullptr;
   m_brightnessSlider = nullptr;
   m_brightnessValueLabel = nullptr;
+  m_nightLightToggle = nullptr;
+  m_temperatureSlider = nullptr;
+  m_temperatureValueLabel = nullptr;
+  m_audioSerial = 0;
 }
 
 void HomeTab::onPanelCardOpacityChanged(float opacity) {
@@ -1238,7 +1642,7 @@ void HomeTab::onPanelCardOpacityChanged(float opacity) {
 void HomeTab::syncScaledFonts() {
   const float s = contentScale();
   if (m_timeLabel != nullptr) {
-    m_timeLabel->setFontSize(Style::fontSizeTitle * 1.7f * s);
+    m_timeLabel->setFontSize(Style::fontSizeTitle * 2.35f * s);
   }
   if (m_dateLabel != nullptr) {
     m_dateLabel->setFontSize(Style::fontSizeBody * 0.9f * s);
@@ -1322,11 +1726,27 @@ void HomeTab::sync(Renderer& renderer) {
   if (m_cpuSummary != nullptr && m_memorySummary != nullptr) {
     if (m_sysmon != nullptr && m_sysmon->isRunning()) {
       const auto& stats = m_sysmon->latest();
-      m_cpuSummary->setText(std::format("CPU {:.0f}%", stats.cpuUsagePercent));
-      m_memorySummary->setText(std::format("Memory {:.0f}%", stats.ramUsagePercent));
+      m_cpuSummary->setText(std::format("{:.0f}%", stats.cpuUsagePercent));
+      m_memorySummary->setText(std::format("{:.0f}%", stats.ramUsagePercent));
+      if (m_cpuBar != nullptr) {
+        m_cpuBar->setProgress(static_cast<float>(std::clamp(stats.cpuUsagePercent / 100.0, 0.0, 1.0)));
+      }
+      if (m_memoryBar != nullptr) {
+        m_memoryBar->setProgress(static_cast<float>(std::clamp(stats.ramUsagePercent / 100.0, 0.0, 1.0)));
+      }
+      const float storage = m_sysmon->diskUsagePercent("/");
+      if (m_storageSummary != nullptr) {
+        m_storageSummary->setText(std::format("{:.0f}%", storage));
+      }
+      if (m_storageBar != nullptr) {
+        m_storageBar->setProgress(std::clamp(storage / 100.0f, 0.0f, 1.0f));
+      }
     } else {
-      m_cpuSummary->setText("CPU —");
-      m_memorySummary->setText("Memory —");
+      m_cpuSummary->setText("—");
+      m_memorySummary->setText("—");
+      if (m_storageSummary != nullptr) {
+        m_storageSummary->setText("—");
+      }
     }
   }
 
@@ -1335,10 +1755,16 @@ void HomeTab::sync(Renderer& renderer) {
       m_weatherGlyph->setGlyph("weather-cloud-off");
       m_weatherGlyph->setColor(colorSpecFromRole(ColorRole::OnSurfaceVariant));
       m_weatherLine->setText(i18n::tr("control-center.home.weather.disabled"));
+      if (m_locationLabel != nullptr) m_locationLabel->setText(i18n::tr("control-center.weather.no-location-title"));
+      if (m_humidityLabel != nullptr) m_humidityLabel->setText("—");
+      if (m_sunsetLabel != nullptr) m_sunsetLabel->setText("—");
     } else if (!m_weather->locationConfigured()) {
       m_weatherGlyph->setGlyph("weather-cloud");
       m_weatherGlyph->setColor(colorSpecFromRole(ColorRole::OnSurfaceVariant));
       m_weatherLine->setText(i18n::tr("control-center.weather.no-location-title"));
+      if (m_locationLabel != nullptr) m_locationLabel->setText(i18n::tr("control-center.weather.no-location-title"));
+      if (m_humidityLabel != nullptr) m_humidityLabel->setText("—");
+      if (m_sunsetLabel != nullptr) m_sunsetLabel->setText("—");
 
     } else {
       const auto& snapshot = m_weather->snapshot();
@@ -1349,6 +1775,9 @@ void HomeTab::sync(Renderer& renderer) {
             m_weather->loading() ? i18n::tr("control-center.home.weather.fetching")
                                  : i18n::tr("control-center.home.weather.data-unavailable")
         );
+        if (m_locationLabel != nullptr) m_locationLabel->setText(snapshot.locationName);
+        if (m_humidityLabel != nullptr) m_humidityLabel->setText("—");
+        if (m_sunsetLabel != nullptr) m_sunsetLabel->setText("—");
       } else {
         m_weatherGlyph->setGlyph(WeatherService::glyphForCode(snapshot.current.weatherCode, snapshot.current.isDay));
         m_weatherGlyph->setColor(colorSpecFromRole(ColorRole::Primary));
@@ -1359,6 +1788,24 @@ void HomeTab::sync(Renderer& renderer) {
                 WeatherService::descriptionForCode(snapshot.current.weatherCode)
             )
         );
+        if (m_locationLabel != nullptr) {
+          m_locationLabel->setText(snapshot.locationName.empty() ? i18n::tr("dashboard.home.weather.current-location")
+                                                                 : snapshot.locationName);
+        }
+        if (m_humidityLabel != nullptr) {
+          const int humidity = snapshot.forecastHours.empty() ? 0 : snapshot.forecastHours.front().relativeHumidityPercent;
+          m_humidityLabel->setText(humidity > 0 ? std::format("{}%", humidity) : "—");
+        }
+        if (m_sunsetLabel != nullptr) {
+          std::string sunset = snapshot.forecastDays.empty() ? std::string{} : snapshot.forecastDays.front().sunsetIso;
+          const auto separator = sunset.find('T');
+          if (separator != std::string::npos && sunset.size() >= separator + 6) {
+            sunset = sunset.substr(separator + 1, 5);
+          }
+          m_sunsetLabel->setText(
+              sunset.empty() ? "—" : i18n::tr("dashboard.home.weather.sunset", "time", sunset)
+          );
+        }
       }
     }
   }
@@ -1507,6 +1954,32 @@ void HomeTab::sync(Renderer& renderer) {
     }
   }
 
+  if (m_mediaSeekSlider != nullptr) {
+    const auto active = m_mpris != nullptr ? m_mpris->activePlayer() : std::optional<MprisPlayerInfo>{};
+    const bool hasPlayer = active.has_value();
+    const bool canSeek = hasPlayer && active->canSeek && active->lengthUs > 0;
+    m_mediaSeekSlider->setEnabled(canSeek);
+    if (!m_mediaSeekSlider->dragging()) {
+      m_syncingMediaSeek = true;
+      const double fraction = canSeek
+          ? std::clamp(static_cast<double>(active->positionUs) / static_cast<double>(active->lengthUs), 0.0, 1.0)
+          : 0.0;
+      m_mediaSeekSlider->setValue(fraction);
+      m_syncingMediaSeek = false;
+    }
+    if (m_mediaShuffleButton != nullptr) {
+      m_mediaShuffleButton->setEnabled(hasPlayer);
+      m_mediaShuffleButton->setSelected(hasPlayer && active->shuffle);
+    }
+    if (m_mediaPreviousButton != nullptr) m_mediaPreviousButton->setEnabled(hasPlayer && active->canGoPrevious);
+    if (m_mediaNextButton != nullptr) m_mediaNextButton->setEnabled(hasPlayer && active->canGoNext);
+    if (m_mediaPlayButton != nullptr) {
+      m_mediaPlayButton->setEnabled(hasPlayer && (active->canPlay || active->canPause));
+      m_mediaPlayButton->setGlyph(hasPlayer && active->playbackStatus == "Playing" ? "player-pause-filled"
+                                                                                   : "player-play-filled");
+    }
+  }
+
   if (m_volumeSlider != nullptr && m_audio != nullptr && !m_volumeSlider->dragging()) {
     const AudioNode* sink = m_audio->defaultSink();
     if (sink != nullptr) {
@@ -1516,6 +1989,51 @@ void HomeTab::sync(Renderer& renderer) {
       if (m_volumeValueLabel != nullptr) {
         m_volumeValueLabel->setText(std::to_string(static_cast<int>(std::round(sink->volume * 100.0f))) + "%");
       }
+    }
+  }
+
+  if (m_audio != nullptr) {
+    if (m_outputSelect != nullptr && m_audioSerial != m_audio->changeSerial()) {
+      std::vector<std::string> outputs;
+      std::size_t selected = 0;
+      const auto& sinks = m_audio->state().sinks;
+      outputs.reserve(sinks.size());
+      for (std::size_t i = 0; i < sinks.size(); ++i) {
+        outputs.push_back(audioDeviceLabel(sinks[i]));
+        if (sinks[i].isDefault || sinks[i].id == m_audio->state().defaultSinkId) {
+          selected = i;
+        }
+      }
+      m_outputSelect->setOptions(std::move(outputs));
+      m_outputSelect->setEnabled(!sinks.empty());
+      if (!sinks.empty()) {
+        m_outputSelect->setSelectedIndexSilently(selected);
+      }
+      m_audioSerial = m_audio->changeSerial();
+    }
+    if (m_microphoneSlider != nullptr && !m_microphoneSlider->dragging()) {
+      if (const AudioNode* source = m_audio->defaultSource(); source != nullptr) {
+        m_syncingMicrophoneSlider = true;
+        m_microphoneSlider->setValue(source->volume);
+        m_syncingMicrophoneSlider = false;
+        m_microphoneSlider->setEnabled(true);
+        if (m_microphoneValueLabel != nullptr) {
+          m_microphoneValueLabel->setText(std::format("{:.0f}%", source->volume * 100.0f));
+        }
+      } else {
+        m_microphoneSlider->setEnabled(false);
+        if (m_microphoneValueLabel != nullptr) m_microphoneValueLabel->setText("—");
+      }
+    }
+    if (m_muteAllButton != nullptr) {
+      const AudioNode* sink = m_audio->defaultSink();
+      const AudioNode* source = m_audio->defaultSource();
+      const bool bothMuted = sink != nullptr && source != nullptr && sink->muted && source->muted;
+      m_muteAllButton->setText(
+          bothMuted ? i18n::tr("dashboard.home.audio.unmute-all") : i18n::tr("dashboard.home.audio.mute-all")
+      );
+      m_muteAllButton->setGlyph(bothMuted ? "volume" : "volume-off");
+      m_muteAllButton->setEnabled(sink != nullptr || source != nullptr);
     }
   }
 
@@ -1542,6 +2060,22 @@ void HomeTab::sync(Renderer& renderer) {
       m_brightnessSlider->setEnabled(defaultDisplay->controllable);
     } else {
       m_brightnessSlider->setEnabled(false);
+    }
+  }
+
+  if (m_nightLightToggle != nullptr && m_nightLight != nullptr) {
+    m_syncingNightLight = true;
+    m_nightLightToggle->setChecked(m_nightLight->enabled());
+    m_syncingNightLight = false;
+  }
+  if (m_temperatureSlider != nullptr && m_config != nullptr && !m_temperatureSlider->dragging()) {
+    const auto temperature = m_config->config().nightlight.nightTemperature;
+    m_pendingTemperature = temperature;
+    m_syncingTemperature = true;
+    m_temperatureSlider->setValue(temperature);
+    m_syncingTemperature = false;
+    if (m_temperatureValueLabel != nullptr) {
+      m_temperatureValueLabel->setText(std::format("{}K", temperature));
     }
   }
 }

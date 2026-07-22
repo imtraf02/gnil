@@ -144,8 +144,14 @@ namespace gnil::config::schema {
     static const Schema<NightLightConfig> s = {
         field(&NightLightConfig::enabled, "enabled"),
         field(&NightLightConfig::force, "force"),
-        field(&NightLightConfig::dayTemperature, "temperature_day", Range<std::int64_t>{1000, 25000}),
-        field(&NightLightConfig::nightTemperature, "temperature_night", Range<std::int64_t>{1000, 25000}),
+        field(
+            &NightLightConfig::dayTemperature, "temperature_day",
+            Range<std::int64_t>{NightLightConfig::kTemperatureMin, NightLightConfig::kTemperatureMax}
+        ),
+        field(
+            &NightLightConfig::nightTemperature, "temperature_night",
+            Range<std::int64_t>{NightLightConfig::kTemperatureMin, NightLightConfig::kTemperatureMax}
+        ),
         // Day must lead night by at least the gap; pull night down, bumping day up
         // only if night would fall below the floor.
         finalize<NightLightConfig>([](NightLightConfig& nl, std::string_view path, Diagnostics& diag) {

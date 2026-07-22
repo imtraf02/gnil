@@ -7,9 +7,8 @@
 #include "render/scene/input_area.h"
 #include "shell/control_center/tabs/home_tab.h"
 #include "shell/control_center/tabs/media_tab.h"
-#include "shell/control_center/tabs/power_tab.h"
-#include "shell/control_center/tabs/system_tab.h"
 #include "shell/control_center/tabs/weather_tab.h"
+#include "shell/dashboard/performance_tab.h"
 #include "shell/panel/panel_manager.h"
 #include "ui/builders.h"
 #include "ui/controls/box.h"
@@ -21,127 +20,12 @@
 #include <wayland-client-protocol.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
-namespace {
-  class DashboardPerformanceTab final : public Tab {
-  public:
-    explicit DashboardPerformanceTab(const ControlCenterServices& services)
-        : m_config(services.config), m_system(services.sysmon, services.config, true),
-          m_power(services.upower, services.powerProfiles, false) {}
-
-    std::unique_ptr<Flex> create() override {
-      const float scale = contentScale();
-      m_system.setContentScale(scale);
-      m_system.setPanelCardOpacity(panelCardOpacity());
-      m_system.setPanelBordersEnabled(panelBordersEnabled());
-      m_power.setContentScale(scale);
-      m_power.setPanelCardOpacity(panelCardOpacity());
-      m_power.setPanelBordersEnabled(panelBordersEnabled());
-
-      auto root = ui::row({
-          .out = &m_root,
-          .align = FlexAlign::Stretch,
-          .gap = Style::spaceSm * scale,
-      });
-      auto system = m_system.create();
-      system->setFlexGrow(4.0f);
-      m_systemRoot = system.get();
-      root->addChild(std::move(system));
-      auto power = m_power.create();
-      power->setFlexGrow(1.25f);
-      m_powerRoot = power.get();
-      root->addChild(std::move(power));
-      syncBatteryVisibility();
-      return root;
-    }
-
-    void setActive(bool active) override {
-      m_active = active;
-      m_system.setActive(active);
-      m_power.setActive(active && batteryVisible());
-    }
-
-    void onFrameTick(float deltaMs) override {
-      m_system.onFrameTick(deltaMs);
-      if (batteryVisible()) {
-        m_power.onFrameTick(deltaMs);
-      }
-    }
-
-    void onClose() override {
-      m_system.setActive(false);
-      m_power.setActive(false);
-      m_system.onClose();
-      m_power.onClose();
-      m_root = nullptr;
-      m_systemRoot = nullptr;
-      m_powerRoot = nullptr;
-      m_active = false;
-    }
-
-  private:
-    [[nodiscard]] bool batteryVisible() const {
-      return m_config == nullptr || m_config->config().dashboard.performance.showBattery;
-    }
-
-    void syncBatteryVisibility() {
-      if (m_powerRoot == nullptr) {
-        return;
-      }
-      const bool visible = batteryVisible();
-      if (m_powerRoot->visible() != visible) {
-        m_powerRoot->setVisible(visible);
-        m_powerRoot->setParticipatesInLayout(visible);
-        PanelManager::instance().requestLayout();
-      }
-      m_power.setActive(m_active && visible);
-    }
-
-    void doLayout(Renderer& renderer, float contentWidth, float bodyHeight) override {
-      if (m_root == nullptr || m_systemRoot == nullptr) {
-        return;
-      }
-      m_root->setSize(contentWidth, bodyHeight);
-      m_root->layout(renderer);
-      m_system.layout(renderer, m_systemRoot->width(), m_systemRoot->height());
-      if (m_powerRoot != nullptr && m_powerRoot->visible()) {
-        m_power.layout(renderer, m_powerRoot->width(), m_powerRoot->height());
-      }
-    }
-
-    void doUpdate(Renderer& renderer) override {
-      syncBatteryVisibility();
-      m_system.update(renderer);
-      if (batteryVisible()) {
-        m_power.update(renderer);
-      }
-    }
-
-    void onPanelBordersChanged(bool enabled) override {
-      m_system.setPanelBordersEnabled(enabled);
-      m_power.setPanelBordersEnabled(enabled);
-    }
-
-    void onPanelCardOpacityChanged(float opacity) override {
-      m_system.setPanelCardOpacity(opacity);
-      m_power.setPanelCardOpacity(opacity);
-    }
-
-    ConfigService* m_config = nullptr;
-    SystemTab m_system;
-    PowerTab m_power;
-    Flex* m_root = nullptr;
-    Flex* m_systemRoot = nullptr;
-    Flex* m_powerRoot = nullptr;
-    bool m_active = false;
-  };
-} // namespace
-
 DashboardPanel::DashboardPanel(const ControlCenterServices& services) : m_services(services) {
   WaylandConnection* wayland = services.platform != nullptr ? &services.platform->wayland() : nullptr;
   m_pages[index(Page::Dashboard)] = std::make_unique<HomeTab>(services);
   m_pages[index(Page::Media)] = std::make_unique<MediaTab>(
       services.mpris, services.httpClient, services.spectrum, services.config, wayland,
-      PanelManager::instance().renderContext(), true
+      PanelManager::instance().renderContext(), MediaTabPresentation::Dashboard
   );
   m_pages[index(Page::Performance)] = std::make_unique<DashboardPerformanceTab>(services);
   m_pages[index(Page::Weather)] = std::make_unique<WeatherTab>(services.weather, services.config);
@@ -413,7 +297,7 @@ void DashboardPanel::selectPage(Page page, bool animated) {
   applyPageVisibility();
   layoutPageContainers(m_pageBodies->width(), m_pageBodies->height());
   m_transitionAnimation = m_animations->animate(
-      0.0f, 1.0f, static_cast<float>(Style::animNormal), Easing::EaseOutCubic,
+      0.0f, 1.0f, static_cast<float>(Style::animNormal), Easing::FluidSpatial,
       [this](float value) {
         m_transitionProgress = value;
         if (m_pageBodies != nullptr) {

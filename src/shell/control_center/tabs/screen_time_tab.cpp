@@ -146,6 +146,7 @@ std::unique_ptr<Flex> ScreenTimeTab::create() {
           .selectedIndex = 0,
           .fontSize = Style::fontSizeCaption * scale,
           .scale = scale,
+          .presentation = SegmentedPresentation::Expressive,
           .surfaceOpacity = panelCardOpacity(),
           .equalSegmentWidths = true,
           .onChange = [this](std::size_t idx) {

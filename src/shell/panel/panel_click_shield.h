@@ -33,6 +33,7 @@ namespace panel_dismissal {
         || panelId == "media"
         || panelId == "audio"
         || panelId == "brightness"
+        || panelId == "night-light"
         || panelId == "system"
         || panelId == "battery"
         || panelId == "network"

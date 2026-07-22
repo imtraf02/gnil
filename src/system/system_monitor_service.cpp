@@ -3,11 +3,13 @@
 #include "core/log.h"
 #include "system/cpu_temp_sensor.h"
 #include "system/format_units.h"
+#include "system/hardware_info.h"
 #include "system/intel_gpu.h"
 #include "util/file_utils.h"
 #include "util/string_utils.h"
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -15,13 +17,210 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <limits>
 #include <sstream>
+#include <set>
 #include <string>
 #include <sys/statvfs.h>
+#include <tuple>
+#include <unistd.h>
 #include <unordered_map>
 #include <vector>
 
 namespace {
+
+  std::optional<double> readTempInputCelsius(const std::filesystem::path& path);
+
+  std::string readTrimmedLine(const std::filesystem::path& path) {
+    std::ifstream file{path};
+    std::string line;
+    if (file.is_open()) {
+      std::getline(file, line);
+    }
+    return StringUtils::trim(line);
+  }
+
+  std::optional<std::uint64_t> parseUnsigned(std::string_view value) {
+    std::uint64_t parsed = 0;
+    const auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (ec != std::errc{} || ptr != value.data() + value.size()) {
+      return std::nullopt;
+    }
+    return parsed;
+  }
+
+  std::string defaultRouteGateway(std::string* interfaceName) {
+    std::ifstream file{"/proc/net/route"};
+    std::string line;
+    std::getline(file, line);
+    while (std::getline(file, line)) {
+      std::istringstream stream{line};
+      std::string iface;
+      std::string destination;
+      std::string gateway;
+      std::string flags;
+      if (!(stream >> iface >> destination >> gateway >> flags) || destination != "00000000") {
+        continue;
+      }
+      unsigned long raw = 0;
+      try {
+        raw = std::stoul(gateway, nullptr, 16);
+      } catch (...) {
+        return {};
+      }
+      if (interfaceName != nullptr) {
+        *interfaceName = iface;
+      }
+      return std::format(
+          "{}.{}.{}.{}", raw & 0xffUL, (raw >> 8U) & 0xffUL, (raw >> 16U) & 0xffUL,
+          (raw >> 24U) & 0xffUL
+      );
+    }
+    return {};
+  }
+
+  std::vector<std::string> resolverAddresses() {
+    std::ifstream file{"/etc/resolv.conf"};
+    std::vector<std::string> result;
+    std::string line;
+    while (std::getline(file, line)) {
+      std::istringstream stream{line};
+      std::string key;
+      std::string value;
+      if (stream >> key >> value; key == "nameserver" && !value.empty()) {
+        result.push_back(std::move(value));
+      }
+    }
+    return result;
+  }
+
+  struct RawProcessStats {
+    std::int32_t pid = 0;
+    std::string name;
+    std::uint64_t ticks = 0;
+    std::uint64_t residentBytes = 0;
+  };
+
+  std::optional<RawProcessStats> readRawProcessStats(const std::filesystem::path& procEntry) {
+    const std::string pidText = procEntry.filename().string();
+    const auto pidValue = parseUnsigned(pidText);
+    if (!pidValue.has_value() || *pidValue > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max())) {
+      return std::nullopt;
+    }
+
+    std::ifstream statFile{procEntry / "stat"};
+    std::string statLine;
+    if (!statFile.is_open() || !std::getline(statFile, statLine)) {
+      return std::nullopt;
+    }
+    const auto nameStart = statLine.find('(');
+    const auto nameEnd = statLine.rfind(')');
+    if (nameStart == std::string::npos || nameEnd == std::string::npos || nameEnd <= nameStart) {
+      return std::nullopt;
+    }
+
+    std::istringstream fields{statLine.substr(nameEnd + 2)};
+    std::vector<std::string> values;
+    std::string field;
+    while (fields >> field) {
+      values.push_back(std::move(field));
+    }
+    // values[0] is field 3 (state); utime/stime are fields 14/15.
+    if (values.size() <= 12) {
+      return std::nullopt;
+    }
+    const auto userTicks = parseUnsigned(values[11]);
+    const auto systemTicks = parseUnsigned(values[12]);
+    if (!userTicks.has_value() || !systemTicks.has_value()) {
+      return std::nullopt;
+    }
+
+    std::uint64_t residentBytes = 0;
+    std::ifstream statusFile{procEntry / "status"};
+    std::string statusLine;
+    while (std::getline(statusFile, statusLine)) {
+      if (!statusLine.starts_with("VmRSS:")) {
+        continue;
+      }
+      std::istringstream valueStream{statusLine.substr(6)};
+      std::uint64_t residentKb = 0;
+      valueStream >> residentKb;
+      residentBytes = residentKb * 1024ULL;
+      break;
+    }
+
+    return RawProcessStats{
+        .pid = static_cast<std::int32_t>(*pidValue),
+        .name = statLine.substr(nameStart + 1, nameEnd - nameStart - 1),
+        .ticks = *userTicks + *systemTicks,
+        .residentBytes = residentBytes,
+    };
+  }
+
+  std::string temperatureGroup(std::string_view hwmonName, std::string_view label) {
+    const std::string key = StringUtils::toLower(std::format("{} {}", hwmonName, label));
+    if (key.contains("amdgpu") || key.contains("nvidia") || key.contains("gpu") || key.contains("edge")
+        || key.contains("junction")) {
+      return "GPU";
+    }
+    if (key.contains("nvme") || key.contains("drive") || key.contains("ssd")) {
+      return "Storage";
+    }
+    if (key.contains("coretemp") || key.contains("k10temp") || key.contains("cpu") || key.contains("package")) {
+      return "CPU";
+    }
+    return "Mainboard";
+  }
+
+  std::vector<TemperatureReading> readAllTemperatureSensors() {
+    namespace fs = std::filesystem;
+    std::vector<TemperatureReading> readings;
+    std::error_code ec;
+    const fs::path root{"/sys/class/hwmon"};
+    for (fs::directory_iterator it{root, ec}, end; !ec && it != end; it.increment(ec)) {
+      const fs::path hwmon = it->path();
+      const std::string hwmonName = readTrimmedLine(hwmon / "name");
+      for (fs::directory_iterator fit{hwmon, ec}, fend; !ec && fit != fend; fit.increment(ec)) {
+        const std::string filename = fit->path().filename().string();
+        if (!filename.starts_with("temp") || !filename.ends_with("_input")) {
+          continue;
+        }
+        const auto temp = readTempInputCelsius(fit->path());
+        if (!temp.has_value() || *temp < -20.0 || *temp > 200.0) {
+          continue;
+        }
+        const std::string prefix = filename.substr(0, filename.size() - 6);
+        const std::string label = readTrimmedLine(hwmon / (prefix + "_label"));
+        TemperatureReading reading;
+        reading.group = temperatureGroup(hwmonName, label);
+        reading.name = !label.empty() ? label : (!hwmonName.empty() ? hwmonName : prefix);
+        reading.temperatureC = *temp;
+        reading.maximumC = readTempInputCelsius(hwmon / (prefix + "_max"));
+        reading.criticalC = readTempInputCelsius(hwmon / (prefix + "_crit"));
+        readings.push_back(std::move(reading));
+      }
+      ec.clear();
+    }
+    std::ranges::sort(readings, [](const auto& a, const auto& b) {
+      return std::tie(a.group, a.name) < std::tie(b.group, b.name);
+    });
+    return readings;
+  }
+
+  std::string mountDeviceFor(const std::string& mountPoint) {
+    std::ifstream mounts{"/proc/self/mounts"};
+    std::string device;
+    std::string mount;
+    std::string type;
+    while (mounts >> device >> mount >> type) {
+      std::string ignored;
+      std::getline(mounts, ignored);
+      if (mount == mountPoint) {
+        return device;
+      }
+    }
+    return {};
+  }
 
   [[nodiscard]] SystemStats makeInitialHistoryStats() {
     SystemStats stats;
@@ -1029,6 +1228,24 @@ double SystemMonitorService::netTxBytesPerSec(std::string_view interfaceName) co
   return netTxFromStats(m_latest, interfaceName);
 }
 
+SystemDetailsSnapshot SystemMonitorService::detailedStats() const {
+  std::scoped_lock lock{m_statsMutex};
+  return m_details;
+}
+
+void SystemMonitorService::retainDetailedSampling() {
+  m_detailedStatsRefs.fetch_add(1, std::memory_order_relaxed);
+  m_wakeCv.notify_all();
+}
+
+void SystemMonitorService::releaseDetailedSampling() {
+  int expected = m_detailedStatsRefs.load(std::memory_order_relaxed);
+  while (expected > 0
+         && !m_detailedStatsRefs.compare_exchange_weak(expected, expected - 1, std::memory_order_relaxed)) {
+  }
+  m_wakeCv.notify_all();
+}
+
 void SystemMonitorService::retainCpuTemp() { m_cpuTempRefs.fetch_add(1, std::memory_order_relaxed); }
 
 void SystemMonitorService::releaseCpuTemp() { m_cpuTempRefs.fetch_sub(1, std::memory_order_relaxed); }
@@ -1091,6 +1308,8 @@ void SystemMonitorService::start() {
   logDetectedSources();
   m_running = true;
   m_prevNetBytes.clear();
+  m_prevProcessCounters.clear();
+  m_prevDiskCounters.clear();
   try {
     m_thread = std::thread([this]() { samplingLoop(); });
   } catch (...) {
@@ -1168,6 +1387,7 @@ void SystemMonitorService::samplingLoop() {
   auto nextMemory = Clock::now();
   auto nextNetwork = Clock::now();
   auto nextDisk = Clock::now();
+  auto nextDetails = Clock::now();
   auto nextHistory = Clock::now();
 
   while (m_running.load()) {
@@ -1181,6 +1401,7 @@ void SystemMonitorService::samplingLoop() {
     const bool networkEnabled = pollCfg.networkPollSeconds > 0.0f;
     const bool diskEnabled = pollCfg.diskPollSeconds > 0.0f;
     const bool historyEnabled = historyPollSeconds > 0.0f;
+    const bool detailsEnabled = m_detailedStatsRefs.load(std::memory_order_relaxed) > 0;
 
     const auto cpuInterval = pollDuration(pollCfg.cpuPollSeconds);
     const auto gpuInterval = pollDuration(pollCfg.gpuPollSeconds);
@@ -1188,6 +1409,7 @@ void SystemMonitorService::samplingLoop() {
     const auto networkInterval = pollDuration(pollCfg.networkPollSeconds);
     const auto diskInterval = pollDuration(pollCfg.diskPollSeconds);
     const auto historyInterval = pollDuration(historyPollSeconds);
+    constexpr auto detailsInterval = std::chrono::seconds(2);
 
     const auto now = Clock::now();
     bool statsTouched = false;
@@ -1338,6 +1560,23 @@ void SystemMonitorService::samplingLoop() {
       nextDisk = now + diskInterval;
     }
 
+    if (detailsEnabled && now >= nextDetails) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::steady_clock::duration>(detailsInterval);
+      {
+        std::scoped_lock lock{m_statsMutex};
+        if (m_details.sampledAt != std::chrono::steady_clock::time_point{} && now > m_details.sampledAt) {
+          elapsed = now - m_details.sampledAt;
+        }
+      }
+      SystemDetailsSnapshot details = readDetailedStats(now, elapsed);
+      {
+        std::scoped_lock lock{m_statsMutex};
+        m_details = std::move(details);
+      }
+      nextDetails = now + detailsInterval;
+      statsTouched = true;
+    }
+
     if (statsTouched) {
       std::scoped_lock lock{m_statsMutex};
       m_latest.sampledAt = now;
@@ -1372,10 +1611,219 @@ void SystemMonitorService::samplingLoop() {
     considerWake(networkEnabled, nextNetwork);
     considerWake(diskEnabled, nextDisk);
     considerWake(historyEnabled, nextHistory);
+    considerWake(detailsEnabled, nextDetails);
 
     std::unique_lock wakeLock{m_wakeMutex};
-    m_wakeCv.wait_until(wakeLock, nextWake, [this]() { return !m_running.load(); });
+    // Config changes and demand-retain calls deliberately wake the sampler even
+    // while it is still running so the enabled metric set is recomputed.
+    m_wakeCv.wait_until(wakeLock, nextWake);
   }
+}
+
+SystemDetailsSnapshot SystemMonitorService::readDetailedStats(
+    std::chrono::steady_clock::time_point now, std::chrono::steady_clock::duration interval
+) {
+  namespace fs = std::filesystem;
+  SystemDetailsSnapshot result;
+  result.sampledAt = now;
+  result.cpuModel = cpuModelName();
+
+  // CPU topology and frequency. sysfs is preferred for live frequency; cpuinfo
+  // remains the portable fallback inside containers and older kernels.
+  std::set<std::string> sockets;
+  std::set<std::pair<std::string, std::string>> cores;
+  std::ifstream cpuInfo{"/proc/cpuinfo"};
+  std::string line;
+  std::string physicalId = "0";
+  std::string coreId;
+  double cpuInfoMhzTotal = 0.0;
+  std::uint32_t cpuInfoMhzCount = 0;
+  while (std::getline(cpuInfo, line)) {
+    const auto colon = line.find(':');
+    if (colon == std::string::npos) {
+      continue;
+    }
+    const std::string key = StringUtils::trim(line.substr(0, colon));
+    const std::string value = StringUtils::trim(line.substr(colon + 1));
+    if (key == "processor") {
+      ++result.cpuThreads;
+      coreId.clear();
+    } else if (key == "physical id") {
+      physicalId = value;
+      sockets.insert(value);
+    } else if (key == "core id") {
+      coreId = value;
+      cores.emplace(physicalId, coreId);
+    } else if (key == "cpu MHz") {
+      try {
+        cpuInfoMhzTotal += std::stod(value);
+        ++cpuInfoMhzCount;
+      } catch (...) {
+      }
+    }
+  }
+  if (result.cpuThreads == 0) {
+    result.cpuThreads = std::max(1U, std::thread::hardware_concurrency());
+  }
+  result.cpuSockets = sockets.empty() ? 1U : static_cast<std::uint32_t>(sockets.size());
+  result.cpuCores = cores.empty() ? result.cpuThreads : static_cast<std::uint32_t>(cores.size());
+
+  double currentKhzTotal = 0.0;
+  double maximumKhz = 0.0;
+  std::uint32_t frequencyCount = 0;
+  std::error_code ec;
+  const fs::path cpuRoot{"/sys/devices/system/cpu"};
+  for (fs::directory_iterator it{cpuRoot, ec}, end; !ec && it != end; it.increment(ec)) {
+    const std::string name = it->path().filename().string();
+    if (!name.starts_with("cpu") || name.size() <= 3
+        || !std::ranges::all_of(name.substr(3), [](unsigned char c) { return std::isdigit(c) != 0; })) {
+      continue;
+    }
+    if (const auto current = readUint64File(it->path() / "cpufreq/scaling_cur_freq"); current.has_value()) {
+      currentKhzTotal += static_cast<double>(*current);
+      ++frequencyCount;
+    }
+    if (const auto maximum = readUint64File(it->path() / "cpufreq/cpuinfo_max_freq"); maximum.has_value()) {
+      maximumKhz = std::max(maximumKhz, static_cast<double>(*maximum));
+    }
+  }
+  result.cpuFrequencyGhz = frequencyCount > 0
+      ? currentKhzTotal / static_cast<double>(frequencyCount) / 1'000'000.0
+      : (cpuInfoMhzCount > 0 ? cpuInfoMhzTotal / static_cast<double>(cpuInfoMhzCount) / 1000.0 : 0.0);
+  result.cpuBaseFrequencyGhz = maximumKhz > 0.0 ? maximumKhz / 1'000'000.0 : result.cpuFrequencyGhz;
+
+  std::unordered_map<std::string, std::uint64_t> memoryKb;
+  std::ifstream memInfo{"/proc/meminfo"};
+  std::string key;
+  std::uint64_t value = 0;
+  std::string unit;
+  while (memInfo >> key >> value >> unit) {
+    if (!key.empty() && key.back() == ':') {
+      key.pop_back();
+    }
+    memoryKb[key] = value;
+  }
+  result.memoryAvailableMb = memoryKb["MemAvailable"] / 1024ULL;
+  result.memoryCommittedMb = memoryKb["Committed_AS"] / 1024ULL;
+  result.memoryCacheMb = (memoryKb["Cached"] + memoryKb["SReclaimable"]) / 1024ULL;
+
+  result.network.gateway = defaultRouteGateway(&result.network.interfaceName);
+  result.network.dnsServers = resolverAddresses();
+  if (const auto netBytes = readNetBytes(); netBytes.has_value()) {
+    const auto useInterface = [&](const std::string& iface, const NetIfaceBytes& bytes) {
+      if (iface == "lo") {
+        return;
+      }
+      result.network.receivedBytes += bytes.rx;
+      result.network.sentBytes += bytes.tx;
+    };
+    if (!result.network.interfaceName.empty()) {
+      if (const auto it = netBytes->find(result.network.interfaceName); it != netBytes->end()) {
+        result.network.receivedBytes = it->second.rx;
+        result.network.sentBytes = it->second.tx;
+      }
+    } else {
+      for (const auto& [iface, bytes] : *netBytes) {
+        useInterface(iface, bytes);
+      }
+    }
+  }
+
+  const double intervalSeconds = std::max(0.001, std::chrono::duration<double>(interval).count());
+  const double intervalMilliseconds = intervalSeconds * 1000.0;
+  std::unordered_map<std::string, DiskCounters> nextDiskCounters;
+  for (const auto& mountPoint : physicalDiskMountPoints()) {
+    DiskStats disk;
+    disk.mountPoint = mountPoint;
+    const std::string source = mountDeviceFor(mountPoint);
+    disk.device = fs::path(source).filename().string();
+    disk.model = readTrimmedLine(fs::path{"/sys/class/block"} / disk.device / "device/model");
+    if (disk.model.empty()) {
+      disk.model = disk.device;
+    }
+
+    struct statvfs stat {};
+    if (::statvfs(mountPoint.c_str(), &stat) == 0) {
+      const std::uint64_t blockSize = static_cast<std::uint64_t>(stat.f_frsize);
+      disk.totalBytes = static_cast<std::uint64_t>(stat.f_blocks) * blockSize;
+      const std::uint64_t availableBytes = static_cast<std::uint64_t>(stat.f_bavail) * blockSize;
+      disk.usedBytes = disk.totalBytes > availableBytes ? disk.totalBytes - availableBytes : 0;
+    }
+
+    std::ifstream diskstats{"/proc/diskstats"};
+    std::uint32_t major = 0;
+    std::uint32_t minor = 0;
+    std::string device;
+    while (diskstats >> major >> minor >> device) {
+      DiskCounters current;
+      std::uint64_t reads = 0, readsMerged = 0, readMs = 0;
+      std::uint64_t writes = 0, writesMerged = 0, writeMs = 0, inFlight = 0, weightedMs = 0;
+      diskstats >> reads >> readsMerged >> current.sectorsRead >> readMs >> writes >> writesMerged
+          >> current.sectorsWritten >> writeMs >> inFlight >> current.ioMilliseconds >> weightedMs;
+      std::getline(diskstats, line);
+      if (device != disk.device) {
+        continue;
+      }
+      nextDiskCounters[device] = current;
+      if (const auto previous = m_prevDiskCounters.find(device); previous != m_prevDiskCounters.end()) {
+        if (current.sectorsRead >= previous->second.sectorsRead) {
+          disk.readBytesPerSec = static_cast<double>(current.sectorsRead - previous->second.sectorsRead) * 512.0
+              / intervalSeconds;
+        }
+        if (current.sectorsWritten >= previous->second.sectorsWritten) {
+          disk.writeBytesPerSec = static_cast<double>(current.sectorsWritten - previous->second.sectorsWritten) * 512.0
+              / intervalSeconds;
+        }
+        if (current.ioMilliseconds >= previous->second.ioMilliseconds) {
+          disk.activePercent = std::clamp(
+              static_cast<double>(current.ioMilliseconds - previous->second.ioMilliseconds) / intervalMilliseconds
+                  * 100.0,
+              0.0, 100.0
+          );
+        }
+      }
+      break;
+    }
+    result.disks.push_back(std::move(disk));
+  }
+  m_prevDiskCounters = std::move(nextDiskCounters);
+
+  std::unordered_map<std::int32_t, ProcessCounters> nextProcessCounters;
+  const long clockTicks = std::max(1L, ::sysconf(_SC_CLK_TCK));
+  ec.clear();
+  for (fs::directory_iterator it{"/proc", ec}, end; !ec && it != end; it.increment(ec)) {
+    const auto raw = readRawProcessStats(it->path());
+    if (!raw.has_value()) {
+      continue;
+    }
+    nextProcessCounters[raw->pid] = ProcessCounters{.ticks = raw->ticks};
+    double cpuPercent = 0.0;
+    if (const auto previous = m_prevProcessCounters.find(raw->pid); previous != m_prevProcessCounters.end()
+        && raw->ticks >= previous->second.ticks) {
+      cpuPercent = static_cast<double>(raw->ticks - previous->second.ticks) / static_cast<double>(clockTicks)
+          / intervalSeconds * 100.0;
+    }
+    result.processes.push_back(ProcessStats{
+        .pid = raw->pid,
+        .name = raw->name,
+        .cpuUsagePercent = std::clamp(cpuPercent, 0.0, 100.0 * static_cast<double>(result.cpuThreads)),
+        .residentBytes = raw->residentBytes,
+    });
+  }
+  m_prevProcessCounters = std::move(nextProcessCounters);
+  result.processCount = static_cast<std::uint32_t>(result.processes.size());
+  std::ranges::sort(result.processes, [](const auto& a, const auto& b) {
+    if (a.cpuUsagePercent != b.cpuUsagePercent) {
+      return a.cpuUsagePercent > b.cpuUsagePercent;
+    }
+    if (a.residentBytes != b.residentBytes) {
+      return a.residentBytes > b.residentBytes;
+    }
+    return a.pid < b.pid;
+  });
+
+  result.sensors = readAllTemperatureSensors();
+  return result;
 }
 
 std::optional<SystemMonitorService::CpuTotals> SystemMonitorService::readCpuTotals() {

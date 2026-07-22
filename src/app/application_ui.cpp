@@ -466,6 +466,11 @@ void Application::initPanelManagerAndPanels() {
             .dependencies = &m_dependencyService,
             .wallpaper = &m_wallpaper,
             .clipboard = &m_clipboardService,
+            .openWallpaperPanel = [this]() {
+              m_panelManager.openPanel(
+                  "wallpaper", PanelOpenRequest{.output = m_panelManager.attachedPanelOutput()}
+              );
+            },
             .resetLauncherUsage = [this]() {
               if (m_launcherPanel != nullptr) {
                 m_launcherPanel->clearUsage();

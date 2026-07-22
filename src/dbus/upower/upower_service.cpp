@@ -302,6 +302,7 @@ UPowerState UPowerService::readDeviceState(sdbus::IProxy& proxy) const {
   next.timeToEmpty = getPropertyOr<std::int64_t>(proxy, kDeviceInterface, "TimeToEmpty", 0);
   next.timeToFull = getPropertyOr<std::int64_t>(proxy, kDeviceInterface, "TimeToFull", 0);
   next.energyRate = getPropertyOr<double>(proxy, kDeviceInterface, "EnergyRate", 0.0);
+  next.voltage = getPropertyOr<double>(proxy, kDeviceInterface, "Voltage", 0.0);
   next.energy = getPropertyOr<double>(proxy, kDeviceInterface, "Energy", 0.0);
 
   // Fallback calculation for timeToEmpty / timeToFull if they are reported as 0 or less

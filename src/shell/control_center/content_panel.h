@@ -17,6 +17,11 @@ class ScrollView;
 struct ContentPanelSpec {
   std::string id;
   float naturalWidth = 400.0f;
+  float naturalHeight = 360.0f;
+  bool dynamicHeight = true;
+  // Fixed utility panels should remain a single, stable viewport. This also
+  // prevents a one-pixel intrinsic overflow from turning into a scrollable UI.
+  bool scrollable = true;
   std::function<void()> onOpen;
 };
 
@@ -35,8 +40,8 @@ public:
   [[nodiscard]] bool deferExternalRefresh() const override;
   [[nodiscard]] bool deferPointerRelayout() const override { return deferExternalRefresh(); }
   [[nodiscard]] float preferredWidth() const override { return scaled(m_spec.naturalWidth); }
-  [[nodiscard]] float preferredHeight() const override { return scaled(360.0f); }
-  [[nodiscard]] bool usesDynamicVisualSize() const noexcept override { return true; }
+  [[nodiscard]] float preferredHeight() const override { return scaled(m_spec.naturalHeight); }
+  [[nodiscard]] bool usesDynamicVisualSize() const noexcept override { return m_spec.dynamicHeight; }
   [[nodiscard]] float initialVisualHeight() const override { return preferredHeight(); }
   [[nodiscard]] std::optional<float> desiredVisualHeight(Renderer& renderer, float visualWidth) override;
   [[nodiscard]] PanelPlacement panelPlacement() const noexcept override { return PanelPlacement::Attached; }

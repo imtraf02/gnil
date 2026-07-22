@@ -24,7 +24,7 @@ enum class NexusPage : std::size_t {
 struct NexusPageDescriptor {
   NexusPage page;
   std::string_view id;
-  std::string_view title;
+  std::string_view titleKey;
   std::string_view glyph;
 };
 

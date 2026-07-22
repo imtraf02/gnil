@@ -292,6 +292,7 @@ std::unique_ptr<Flex> WeatherTab::create() {
           .fontSize = Style::fontSizeCaption * scale,
           .scale = scale,
           .compact = true,
+          .presentation = SegmentedPresentation::Expressive,
           .surfaceOpacity = panelCardOpacity(),
           .surfaceRole = ColorRole::Surface,
           .equalSegmentWidths = true,

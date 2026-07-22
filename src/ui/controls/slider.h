@@ -4,7 +4,16 @@
 #include "ui/style.h"
 
 #include <functional>
+#include <cstdint>
+#include <string>
 
+enum class SliderPresentation : std::uint8_t {
+  Standard,
+  LevelCompact,
+  LevelProminent,
+};
+
+class Glyph;
 class InputArea;
 class RectNode;
 
@@ -16,6 +25,9 @@ public:
   void setStep(double step);
   void setValue(double value);
   void setEnabled(bool enabled);
+  void setPresentation(SliderPresentation presentation);
+  void setGlyph(std::string glyph);
+  void setGlyphSize(float size);
   void setTrackHeight(float height);
   void setThumbSize(float size);
   void setControlHeight(float height);
@@ -27,6 +39,7 @@ public:
   [[nodiscard]] double minValue() const noexcept { return m_min; }
   [[nodiscard]] double maxValue() const noexcept { return m_max; }
   [[nodiscard]] bool enabled() const noexcept { return m_enabled; }
+  [[nodiscard]] SliderPresentation presentation() const noexcept { return m_presentation; }
   [[nodiscard]] bool wheelAdjustEnabled() const noexcept { return m_wheelAdjustEnabled; }
   [[nodiscard]] bool dragging() const noexcept;
 
@@ -35,15 +48,19 @@ private:
   LayoutSize doMeasure(Renderer& renderer, const LayoutConstraints& constraints) override;
   void doArrange(Renderer& renderer, const LayoutRect& rect) override;
   void updateFromLocalX(float x);
+  void setValueInternal(double value, bool animateVisual);
+  void setVisualValue(double value, bool animate);
   void updateGeometry();
   void applyVisualState();
   [[nodiscard]] float normalizedValue() const noexcept;
+  [[nodiscard]] float normalizedVisualValue() const noexcept;
   [[nodiscard]] double snapped(double value) const noexcept;
 
   RectNode* m_track = nullptr;
   RectNode* m_fill = nullptr;
   RectNode* m_thumb = nullptr;
   RectNode* m_stop = nullptr;
+  Glyph* m_glyph = nullptr;
   InputArea* m_inputArea = nullptr;
 
   std::function<void(double)> m_onValueChanged;
@@ -53,9 +70,14 @@ private:
   double m_max = 100.0;
   double m_step = 1.0;
   double m_value = 50.0;
+  double m_visualValue = 50.0;
   bool m_enabled = true;
   bool m_wheelAdjustEnabled = false;
+  bool m_hasGlyph = false;
   float m_trackHeight = Style::sliderTrackHeight;
   float m_thumbSizePx = Style::sliderThumbSize;
   float m_controlHeightPx = Style::controlHeight;
+  float m_glyphSizePx = Style::fontSizeBody;
+  SliderPresentation m_presentation = SliderPresentation::Standard;
+  std::uint32_t m_valueAnimId = 0;
 };

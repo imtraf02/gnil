@@ -5,10 +5,11 @@
 class Glyph;
 class InputArea;
 class GammaService;
+class ConfigService;
 
 class NightLightWidget : public Widget {
 public:
-  explicit NightLightWidget(GammaService* nightLight);
+  NightLightWidget(GammaService* nightLight, ConfigService* config);
 
   void create() override;
 
@@ -18,6 +19,7 @@ private:
   void syncState(Renderer& renderer);
 
   GammaService* m_nightLight = nullptr;
+  ConfigService* m_config = nullptr;
   InputArea* m_area = nullptr;
   Glyph* m_glyph = nullptr;
   bool m_lastEnabled = false;

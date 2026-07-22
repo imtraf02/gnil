@@ -46,6 +46,7 @@ enum class BatteryState : std::uint8_t {
 struct UPowerState {
   double percentage = 0.0;
   double energyRate = 0.0; // watts
+  double voltage = 0.0;    // volts; 0 when unsupported
   BatteryState state = BatteryState::Unknown;
   std::int64_t timeToEmpty = 0; // seconds
   std::int64_t timeToFull = 0;  // seconds

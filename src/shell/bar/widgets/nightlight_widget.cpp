@@ -1,6 +1,8 @@
 #include "shell/bar/widgets/nightlight_widget.h"
 
+#include "config/config_service.h"
 #include "render/scene/input_area.h"
+#include "shell/panel/panel_manager.h"
 #include "system/gamma_service.h"
 #include "ui/builders.h"
 #include "ui/palette.h"
@@ -20,7 +22,8 @@ namespace {
 
 } // namespace
 
-NightLightWidget::NightLightWidget(GammaService* nightLight) : m_nightLight(nightLight) {}
+NightLightWidget::NightLightWidget(GammaService* nightLight, ConfigService* config)
+    : m_nightLight(nightLight), m_config(config) {}
 
 void NightLightWidget::create() {
   auto area = std::make_unique<InputArea>();
@@ -30,8 +33,7 @@ void NightLightWidget::create() {
       return;
     }
     if (data.button == BTN_RIGHT) {
-      // Secondary action: toggle the always-on (force) override.
-      m_nightLight->toggleForceEnabled();
+      PanelManager::instance().togglePanel("night-light");
       return;
     }
     if (data.button != BTN_LEFT) {
@@ -41,10 +43,21 @@ void NightLightWidget::create() {
     // first and land on scheduled-on rather than off, so the force override
     // is reachable in both directions.
     if (m_nightLight->forceEnabled()) {
-      m_nightLight->clearForceOverride();
-      m_nightLight->setEnabled(true);
+      if (m_config != nullptr) {
+        (void)m_config->setOverrides({
+            {{"nightlight", "enabled"}, true},
+            {{"nightlight", "force"}, false},
+        });
+      } else {
+        m_nightLight->clearForceOverride();
+        m_nightLight->setEnabled(true);
+      }
     } else {
-      m_nightLight->toggleEnabled();
+      if (m_config != nullptr) {
+        (void)m_config->setOverride({"nightlight", "enabled"}, !m_nightLight->enabled());
+      } else {
+        m_nightLight->toggleEnabled();
+      }
     }
   });
   m_area = area.get();

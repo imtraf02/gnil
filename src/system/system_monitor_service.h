@@ -43,6 +43,61 @@ struct SystemStats {
   double loadAvg15{0.0};
 };
 
+// Lower-frequency details used by the full Performance dashboard.  The regular
+// SystemStats ring intentionally stays small because it is copied into graph
+// history on every sample.
+struct ProcessStats {
+  std::int32_t pid{0};
+  std::string name;
+  double cpuUsagePercent{0.0};
+  std::uint64_t residentBytes{0};
+};
+
+struct TemperatureReading {
+  std::string group;
+  std::string name;
+  double temperatureC{0.0};
+  std::optional<double> maximumC;
+  std::optional<double> criticalC;
+};
+
+struct DiskStats {
+  std::string device;
+  std::string model;
+  std::string mountPoint;
+  std::uint64_t totalBytes{0};
+  std::uint64_t usedBytes{0};
+  double readBytesPerSec{0.0};
+  double writeBytesPerSec{0.0};
+  double activePercent{0.0};
+};
+
+struct NetworkDetails {
+  std::string interfaceName;
+  std::string gateway;
+  std::vector<std::string> dnsServers;
+  std::uint64_t receivedBytes{0};
+  std::uint64_t sentBytes{0};
+};
+
+struct SystemDetailsSnapshot {
+  std::chrono::steady_clock::time_point sampledAt;
+  std::string cpuModel;
+  double cpuFrequencyGhz{0.0};
+  double cpuBaseFrequencyGhz{0.0};
+  std::uint32_t cpuSockets{0};
+  std::uint32_t cpuCores{0};
+  std::uint32_t cpuThreads{0};
+  std::uint32_t processCount{0};
+  std::uint64_t memoryAvailableMb{0};
+  std::uint64_t memoryCommittedMb{0};
+  std::uint64_t memoryCacheMb{0};
+  NetworkDetails network;
+  std::vector<DiskStats> disks;
+  std::vector<ProcessStats> processes;
+  std::vector<TemperatureReading> sensors;
+};
+
 class SystemMonitorService {
 public:
   explicit SystemMonitorService(const SystemConfig::MonitorConfig& config = {});
@@ -61,6 +116,12 @@ public:
   [[nodiscard]] std::chrono::steady_clock::duration historySampleInterval() const noexcept;
   [[nodiscard]] double netRxBytesPerSec(std::string_view interfaceName = {}) const;
   [[nodiscard]] double netTxBytesPerSec(std::string_view interfaceName = {}) const;
+  [[nodiscard]] SystemDetailsSnapshot detailedStats() const;
+
+  // Detailed scans walk /proc and hwmon. Keep them off unless a visible UI
+  // explicitly retains the feed.
+  void retainDetailedSampling();
+  void releaseDetailedSampling();
 
   void retainCpuTemp();
   void releaseCpuTemp();
@@ -144,6 +205,9 @@ private:
   };
   [[nodiscard]] static std::optional<std::unordered_map<std::string, NetIfaceBytes>> readNetBytes();
   [[nodiscard]] static std::optional<std::array<double, 3>> readLoadAvg();
+  [[nodiscard]] SystemDetailsSnapshot readDetailedStats(
+      std::chrono::steady_clock::time_point now, std::chrono::steady_clock::duration interval
+  );
 
   [[nodiscard]] SystemConfig::MonitorConfig pollConfig() const;
 
@@ -152,6 +216,7 @@ private:
   std::atomic<int> m_gpuTempRefs{0};
   std::atomic<int> m_gpuUsageRefs{0};
   std::atomic<int> m_gpuVramRefs{0};
+  std::atomic<int> m_detailedStatsRefs{0};
   std::thread m_thread;
   std::mutex m_wakeMutex;
   std::condition_variable m_wakeCv;
@@ -162,10 +227,21 @@ private:
 
   mutable std::mutex m_statsMutex;
   SystemStats m_latest;
+  SystemDetailsSnapshot m_details;
   std::array<SystemStats, kHistorySize> m_history{};
   int m_historyHead = 0;
   std::unordered_map<std::string, DiskHistory> m_diskHistories;
   std::unordered_map<std::string, NetIfaceBytes> m_prevNetBytes;
+  struct ProcessCounters {
+    std::uint64_t ticks{0};
+  };
+  struct DiskCounters {
+    std::uint64_t sectorsRead{0};
+    std::uint64_t sectorsWritten{0};
+    std::uint64_t ioMilliseconds{0};
+  };
+  std::unordered_map<std::int32_t, ProcessCounters> m_prevProcessCounters;
+  std::unordered_map<std::string, DiskCounters> m_prevDiskCounters;
   std::unique_ptr<NvidiaNvmlReader> m_nvidiaNvmlReader;
   std::unique_ptr<AmdRsmiReader> m_amdRsmiReader;
   std::unique_ptr<IntelGpuReader> m_intelGpuReader;

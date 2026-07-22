@@ -1655,7 +1655,7 @@ void SettingsWindow::buildScene(std::uint32_t width, std::uint32_t height) {
     m_contentContainer = nullptr;
     m_contentScrollView = nullptr;
     m_sceneRoot = m_nexusView->build(
-        scale,
+        scale, NexusNavigationMode::LabeledSidebar,
         [this]() {
           const std::string route = m_nexusRoute != nullptr ? m_nexusRoute->deepLinkKey() : std::string{};
           wl_output* const output = m_output;

@@ -40,7 +40,8 @@ namespace {
 
   [[nodiscard]] bool isStandaloneContentPanel(std::string_view id) noexcept {
     return id == "media" || id == "audio" || id == "brightness" || id == "system" || id == "battery"
-        || id == "network" || id == "bluetooth" || id == "weather" || id == "calendar" || id == "screen-time";
+        || id == "night-light" || id == "network" || id == "bluetooth" || id == "weather" || id == "calendar"
+        || id == "screen-time";
   }
 
   [[nodiscard]] const ShellConfig::PanelConfig::SizeOverride*

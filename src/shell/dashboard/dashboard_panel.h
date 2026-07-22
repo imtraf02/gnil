@@ -55,9 +55,9 @@ private:
   };
 
   static constexpr std::array<PageMeta, kPageCount> kPages{{
-      {Page::Dashboard, "dashboard", "Dashboard", "dashboard", 854.0f, 520.0f},
+      {Page::Dashboard, "dashboard", "Dashboard", "dashboard", 1000.0f, 600.0f},
       {Page::Media, "media", "Media", "disc-filled", 1000.0f, 520.0f},
-      {Page::Performance, "performance", "Performance", "activity-heartbeat", 1000.0f, 540.0f},
+      {Page::Performance, "performance", "Performance", "activity-heartbeat", 1000.0f, 650.0f},
       {Page::Weather, "weather", "Weather", "weather-cloud-sun", 840.0f, 500.0f},
   }};
 

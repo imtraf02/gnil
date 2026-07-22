@@ -27,11 +27,15 @@ class GridView;
 class Image;
 class InputArea;
 class Label;
+class ProgressBar;
+class Select;
 class Shortcut;
 class SystemMonitorService;
 class Wallpaper;
 class ClipboardService;
 class Slider;
+class Toggle;
+class GammaService;
 namespace scripting {
   class ScriptApiContext;
 }
@@ -102,6 +106,9 @@ private:
   Label* m_dateLabel = nullptr;
   Glyph* m_weatherGlyph = nullptr;
   Label* m_weatherLine = nullptr;
+  Label* m_locationLabel = nullptr;
+  Label* m_humidityLabel = nullptr;
+  Label* m_sunsetLabel = nullptr;
   Label* m_userHost = nullptr;
   Label* m_userUptime = nullptr;
   Label* m_userVersion = nullptr;
@@ -114,6 +121,10 @@ private:
   InputArea* m_performanceCardArea = nullptr;
   Label* m_cpuSummary = nullptr;
   Label* m_memorySummary = nullptr;
+  Label* m_storageSummary = nullptr;
+  ProgressBar* m_cpuBar = nullptr;
+  ProgressBar* m_memoryBar = nullptr;
+  ProgressBar* m_storageBar = nullptr;
   std::string m_loadedAvatarPath;
   int m_loadedAvatarSize = 0;
 
@@ -137,6 +148,12 @@ private:
   Label* m_mediaArtist = nullptr;
   Label* m_mediaStatus = nullptr;
   Label* m_mediaProgress = nullptr;
+  Slider* m_mediaSeekSlider = nullptr;
+  Button* m_mediaShuffleButton = nullptr;
+  Button* m_mediaPreviousButton = nullptr;
+  Button* m_mediaPlayButton = nullptr;
+  Button* m_mediaNextButton = nullptr;
+  bool m_syncingMediaSeek = false;
   Flex* m_mediaArtSlot = nullptr;
   Glyph* m_mediaArtFallback = nullptr;
   Image* m_mediaArt = nullptr;
@@ -162,10 +179,24 @@ private:
   Flex* m_volumeCard = nullptr;
   Slider* m_volumeSlider = nullptr;
   Label* m_volumeValueLabel = nullptr;
+  Select* m_outputSelect = nullptr;
+  Slider* m_microphoneSlider = nullptr;
+  Label* m_microphoneValueLabel = nullptr;
+  Button* m_muteAllButton = nullptr;
   Flex* m_brightnessCard = nullptr;
   Slider* m_brightnessSlider = nullptr;
   Label* m_brightnessValueLabel = nullptr;
+  GammaService* m_nightLight = nullptr;
+  CompositorPlatform* m_platform = nullptr;
+  Toggle* m_nightLightToggle = nullptr;
+  Slider* m_temperatureSlider = nullptr;
+  Label* m_temperatureValueLabel = nullptr;
 
   bool m_syncingVolumeSlider = false;
+  bool m_syncingMicrophoneSlider = false;
   bool m_syncingBrightnessSlider = false;
+  bool m_syncingNightLight = false;
+  bool m_syncingTemperature = false;
+  std::uint64_t m_audioSerial = 0;
+  std::int32_t m_pendingTemperature = 4000;
 };

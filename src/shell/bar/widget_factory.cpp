@@ -352,7 +352,7 @@ std::unique_ptr<Widget> WidgetFactory::create(
   }
 
   if (type == "nightlight") {
-    auto widget = std::make_unique<NightLightWidget>(m_nightLight);
+    auto widget = std::make_unique<NightLightWidget>(m_nightLight, &m_configService);
     widget->setContentScale(contentScale);
     return widget;
   }

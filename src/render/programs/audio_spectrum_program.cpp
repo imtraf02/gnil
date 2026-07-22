@@ -141,6 +141,10 @@ void AudioSpectrumProgram::draw(
   const float crossPixelScale = horizontal ? safePixelScaleY : safePixelScaleX;
   const float mainAxisLen = horizontal ? width : height;
   const float crossAxisLen = horizontal ? height : width;
+  // Reserve the lower part of the spectrum for a faint reflected copy. The
+  // primary bars keep their usual bottom baseline, so existing visualizers are
+  // unchanged unless they explicitly opt in.
+  const float primaryCrossAxisLen = style.reflection ? crossAxisLen * 0.68f : crossAxisLen;
   const int gapCount = std::max(0, barCount - 1);
   const float weightedSlots = static_cast<float>(barCount) + static_cast<float>(gapCount) * kGapToBarRatio;
   const float devicePixel = 1.0f / mainPixelScale;
@@ -165,7 +169,7 @@ void AudioSpectrumProgram::draw(
     const float rawValue = valueIndex >= 0 && valueIndex < valueCount
         ? std::clamp(values[static_cast<std::size_t>(valueIndex)], 0.0f, 1.0f)
         : 0.0f;
-    float crossPixels = std::max(1.0f, std::floor(rawValue * crossAxisLen * crossPixelScale + 0.5f));
+    float crossPixels = std::max(1.0f, std::floor(rawValue * primaryCrossAxisLen * crossPixelScale + 0.5f));
     if (style.centered && crossPixels > 1.0f) {
       crossPixels = std::max(2.0f, std::round(crossPixels * 0.5f) * 2.0f);
     }
@@ -183,15 +187,18 @@ void AudioSpectrumProgram::draw(
       mainEnd = mainAxisLen;
     }
     float crossStart =
-        snapToPixel(style.centered ? (crossAxisLen - crossSize) * 0.5f : crossAxisLen - crossSize, crossPixelScale);
+        snapToPixel(
+            style.centered ? (primaryCrossAxisLen - crossSize) * 0.5f : primaryCrossAxisLen - crossSize,
+            crossPixelScale
+        );
     float crossEnd = crossStart + crossSize;
     if (crossStart < 0.0f) {
       crossEnd -= crossStart;
       crossStart = 0.0f;
     }
-    if (crossEnd > crossAxisLen) {
-      crossStart = std::max(0.0f, crossStart - (crossEnd - crossAxisLen));
-      crossEnd = crossAxisLen;
+    if (crossEnd > primaryCrossAxisLen) {
+      crossStart = std::max(0.0f, crossStart - (crossEnd - primaryCrossAxisLen));
+      crossEnd = primaryCrossAxisLen;
     }
     const float t = barCount <= 1 ? 0.0f : static_cast<float>(i) / static_cast<float>(barCount - 1);
     const Color color = colorAt(style.color1, style.color2, t);
@@ -200,6 +207,17 @@ void AudioSpectrumProgram::draw(
       pushQuad(m_vertices, mainStart, crossStart, mainEnd, crossEnd, color);
     } else {
       pushQuad(m_vertices, crossStart, mainStart, crossEnd, mainEnd, color);
+    }
+
+    if (style.reflection) {
+      Color reflected = color;
+      reflected.a *= 0.18f;
+      const float reflectedEnd = std::min(crossAxisLen, primaryCrossAxisLen + crossSize * 0.50f);
+      if (horizontal) {
+        pushQuad(m_vertices, mainStart, primaryCrossAxisLen, mainEnd, reflectedEnd, reflected);
+      } else {
+        pushQuad(m_vertices, primaryCrossAxisLen, mainStart, reflectedEnd, mainEnd, reflected);
+      }
     }
   }
 

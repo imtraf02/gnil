@@ -595,6 +595,15 @@ namespace ui {
     if (props.enabled.has_value()) {
       control->setEnabled(*props.enabled);
     }
+    if (props.presentation.has_value()) {
+      control->setPresentation(*props.presentation);
+    }
+    if (props.glyph.has_value()) {
+      control->setGlyph(*props.glyph);
+    }
+    if (props.glyphSize.has_value()) {
+      control->setGlyphSize(*props.glyphSize);
+    }
     if (props.trackHeight.has_value()) {
       control->setTrackHeight(*props.trackHeight);
     }
@@ -678,6 +687,9 @@ namespace ui {
     }
     if (props.enabled.has_value()) {
       control->setEnabled(*props.enabled);
+    }
+    if (props.presentation.has_value()) {
+      control->setPresentation(*props.presentation);
     }
     if (props.surfaceOpacity.has_value()) {
       control->setSurfaceOpacity(*props.surfaceOpacity);

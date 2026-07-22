@@ -281,14 +281,9 @@ void MonitorTab::rebuildCards(Renderer& /*renderer*/) {
         })
     );
 
-    // Slider row: sun icon + slider + percentage
+    // Slider row: expressive level slider + percentage
     auto sliderRow = ui::row(
-        {.align = FlexAlign::Center, .gap = Style::spaceSm * scale},
-        ui::glyph({
-            .glyph = "brightness-low",
-            .glyphSize = Style::fontSizeTitle * scale,
-            .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-        })
+        {.align = FlexAlign::Center, .gap = Style::spaceSm * scale}
     );
 
     const std::string displayId = display.id;
@@ -301,9 +296,12 @@ void MonitorTab::rebuildCards(Renderer& /*renderer*/) {
         .step = 0.01f,
         .value = std::max(display.brightness, minBrightness),
         .enabled = display.controllable,
-        .trackHeight = Style::sliderTrackHeight * scale,
-        .thumbSize = Style::sliderThumbSize * scale,
-        .controlHeight = Style::controlHeight * scale,
+        .presentation = SliderPresentation::LevelCompact,
+        .glyph = "brightness-high",
+        .glyphSize = Style::fontSizeCaption * scale,
+        .trackHeight = 18.0f * scale,
+        .thumbSize = 33.0f * scale,
+        .controlHeight = 33.0f * scale,
         .flexGrow = 1.0f,
         .onValueChanged =
             [this, displayId](double value) {
@@ -330,13 +328,6 @@ void MonitorTab::rebuildCards(Renderer& /*renderer*/) {
     sliderRow->addChild(std::move(slider));
 
     Label* valueLabelPtr = nullptr;
-    sliderRow->addChild(
-        ui::glyph({
-            .glyph = "brightness-high",
-            .glyphSize = Style::fontSizeTitle * scale,
-            .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-        })
-    );
     sliderRow->addChild(
         ui::label({
             .out = &valueLabelPtr,

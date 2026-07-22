@@ -264,6 +264,7 @@ struct AudioSpectrumStyle {
   AudioSpectrumOrientation orientation = AudioSpectrumOrientation::Horizontal;
   bool mirrored = false;
   bool centered = false;
+  bool reflection = false;
 };
 
 constexpr bool operator==(const AudioSpectrumStyle& lhs, const AudioSpectrumStyle& rhs) noexcept {
@@ -271,7 +272,8 @@ constexpr bool operator==(const AudioSpectrumStyle& lhs, const AudioSpectrumStyl
       && lhs.color2 == rhs.color2
       && lhs.orientation == rhs.orientation
       && lhs.mirrored == rhs.mirrored
-      && lhs.centered == rhs.centered;
+      && lhs.centered == rhs.centered
+      && lhs.reflection == rhs.reflection;
 }
 
 enum class FancyAudioVisualizerMode : std::uint8_t {

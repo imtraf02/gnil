@@ -36,6 +36,7 @@ private:
   void applySize();
   void applyState();
   void applyAnimatedState(float t);
+  void animatePressState(bool pressed);
   void doLayout(Renderer& renderer) override;
   LayoutSize doMeasure(Renderer& renderer, const LayoutConstraints& constraints) override;
   void doArrange(Renderer& renderer, const LayoutRect& rect) override;
@@ -43,6 +44,7 @@ private:
   class RectNode* m_thumb = nullptr;
   InputArea* m_inputArea = nullptr;
   std::uint32_t m_animId = 0;
+  std::uint32_t m_pressAnimId = 0;
   std::function<void(bool)> m_onChange;
   ToggleSize m_size = ToggleSize::Medium;
   bool m_checked = false;
@@ -52,5 +54,6 @@ private:
   float m_thumbSize = 0.0f;
   float m_scale = 1.0f;
   float m_animationProgress = 0.0f;
+  float m_pressProgress = 0.0f;
   Signal<>::ScopedConnection m_paletteConn;
 };

@@ -5,15 +5,15 @@
 
 namespace {
   constexpr std::array<NexusPageDescriptor, 9> kPages = {{
-      {NexusPage::WallpaperStyle, "appearance", "Appearance", "palette"},
-      {NexusPage::Network, "network", "Network", "wifi"},
-      {NexusPage::ConnectedDevices, "devices", "Connected Devices", "devices"},
-      {NexusPage::Audio, "audio", "Audio", "volume_up"},
-      {NexusPage::Panels, "desktop", "Desktop & Chrome", "dock_to_left"},
-      {NexusPage::Apps, "apps", "Apps", "apps"},
-      {NexusPage::Services, "automation", "Automation & Services", "settings_suggest"},
-      {NexusPage::LanguageRegion, "regional", "Language & Region", "language"},
-      {NexusPage::About, "system", "System & Security", "info"},
+      {NexusPage::WallpaperStyle, "appearance", "settings.nexus.pages.appearance", "palette"},
+      {NexusPage::Network, "network", "settings.nexus.pages.network", "wifi"},
+      {NexusPage::ConnectedDevices, "devices", "settings.nexus.pages.connected-devices", "devices"},
+      {NexusPage::Audio, "audio", "settings.nexus.pages.audio", "volume_up"},
+      {NexusPage::Panels, "desktop", "settings.nexus.pages.desktop-chrome", "dock_to_left"},
+      {NexusPage::Apps, "apps", "settings.nexus.pages.apps", "apps"},
+      {NexusPage::Services, "automation", "settings.nexus.pages.automation-services", "settings_suggest"},
+      {NexusPage::LanguageRegion, "regional", "settings.nexus.pages.language-region", "language"},
+      {NexusPage::About, "system", "settings.nexus.pages.system-security", "info"},
   }};
 }
 

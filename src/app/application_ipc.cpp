@@ -570,7 +570,7 @@ void Application::initIpc() {
         if (parts[1] == "launcher" || parts[1] == "session" || parts[1] == "wallpaper"
             || parts[1] == "clipboard" || parts[1] == "settings" || parts[1] == "media"
             || parts[1] == "audio" || parts[1] == "brightness" || parts[1] == "system"
-            || parts[1] == "battery" || parts[1] == "network" || parts[1] == "bluetooth"
+            || parts[1] == "night-light" || parts[1] == "battery" || parts[1] == "network" || parts[1] == "bluetooth"
             || parts[1] == "weather" || parts[1] == "calendar" || parts[1] == "screen-time"
             || parts[1] == "dashboard") {
           target = parts[1];

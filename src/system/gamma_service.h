@@ -43,6 +43,10 @@ public:
   [[nodiscard]] bool enabled() const;
   [[nodiscard]] bool forceEnabled() const;
   [[nodiscard]] bool active() const;
+  [[nodiscard]] bool scheduleAvailable() const;
+  [[nodiscard]] int currentKelvin() const noexcept { return m_currentKelvin; }
+  [[nodiscard]] int targetKelvin() const noexcept { return m_targetKelvin; }
+  [[nodiscard]] bool locationResolving() const noexcept { return m_locationResolving; }
 
   void registerIpc(IpcService& ipc);
 
