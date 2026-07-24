@@ -17,11 +17,10 @@ namespace {
   }
 
   OsdContent makeBrightnessContent(float brightness) {
-    const int percent = static_cast<int>(std::round(std::max(0.0f, brightness) * 100.0f));
     return OsdContent{
         .kind = OsdKind::Brightness,
         .icon = brightnessIconName(brightness),
-        .value = std::to_string(percent) + "%",
+        .value = "",
         .progress = std::clamp(brightness, 0.0f, 1.0f),
     };
   }

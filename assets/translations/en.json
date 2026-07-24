@@ -244,12 +244,16 @@
     },
     "media": {
       "active-player": "Active player",
+      "audio-output": "Audio Spectrum & Output",
       "good-vibes": "Good Vibes",
-      "have-a-nice-day": "Have a nice day!",
+      "have-a-nice-day": "Have a nice day with music!",
       "live-visualization": "Live visualization",
+      "no-lyrics": "No synchronized lyrics available",
       "nothing-playing": "Nothing playing",
       "now-playing": "Now Playing",
+      "select-player": "Select Media Player",
       "start-playback": "Start playback in an MPRIS app",
+      "sync-lyrics": "Sync Lyrics & Vibe",
       "waiting-for-audio": "Waiting for audio"
     },
     "network": {
@@ -3723,6 +3727,7 @@
   "dashboard": {
     "home": {
       "audio": {
+        "title": "Audio Control",
         "microphone": "Microphone",
         "mute-all": "Mute all",
         "no-output": "No output device",

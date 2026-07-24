@@ -90,10 +90,10 @@ public:
     setDirection(FlexDirection::Horizontal);
     setAlign(FlexAlign::Center);
     setGap(Style::spaceSm * scale);
-    setPadding(referenceLayout ? Style::spaceMd * scale : Style::spaceSm * scale, Style::spaceMd * scale);
-    setMinHeight((referenceLayout ? 64.0f : kRowMinHeight) * scale);
-    setRadius(referenceLayout ? 0.0f : Style::scaledRadiusMd(scale));
-    setFill(colorSpecFromRole(ColorRole::Surface));
+    setPadding(Style::spaceSm * scale, Style::spaceMd * scale);
+    setMinHeight(kRowMinHeight * scale);
+    setRadius(Style::scaledRadiusMd(scale));
+    clearFill();
     clearBorder();
 
     if (referenceLayout) {
@@ -254,12 +254,8 @@ private:
         m_actionButton->glyph()->setColor(colorSpecFromRole(ColorRole::OnPrimary));
       }
     } else if (m_ap.active) {
-      setFill(colorSpecFromRole(ColorRole::Primary, 0.08f));
-      if (m_referenceLayout) {
-        clearBorder();
-      } else {
-        setBorder(colorSpecFromRole(ColorRole::Primary, 0.4f), Style::borderWidth);
-      }
+      setFill(colorSpecFromRole(ColorRole::Primary, 0.12f));
+      setBorder(colorSpecFromRole(ColorRole::Primary, 0.32f), Style::borderWidth);
       if (m_title != nullptr) {
         m_title->setColor(colorSpecFromRole(ColorRole::Primary));
       }
@@ -269,13 +265,21 @@ private:
       if (m_actionButton != nullptr && m_actionButton->glyph() != nullptr) {
         m_actionButton->glyph()->setColor(colorSpecFromRole(ColorRole::Primary));
       }
-    } else {
-      setFill(colorSpecFromRole(ColorRole::Surface));
-      if (hov && !m_referenceLayout) {
-        setBorder(colorSpecFromRole(ColorRole::Hover), Style::borderWidth);
-      } else {
-        clearBorder();
+    } else if (hov) {
+      setFill(colorSpecFromRole(ColorRole::SurfaceVariant, 0.45f));
+      setBorder(colorSpecFromRole(ColorRole::Outline, 0.2f), Style::borderWidth);
+      if (m_title != nullptr) {
+        m_title->setColor(colorSpecFromRole(ColorRole::OnSurface));
       }
+      if (m_signalGlyph != nullptr) {
+        m_signalGlyph->setColor(colorSpecFromRole(ColorRole::OnSurface));
+      }
+      if (m_actionButton != nullptr && m_actionButton->glyph() != nullptr) {
+        m_actionButton->glyph()->setColor(colorSpecFromRole(ColorRole::OnSurfaceVariant));
+      }
+    } else {
+      clearFill();
+      clearBorder();
       if (m_title != nullptr) {
         m_title->setColor(colorSpecFromRole(ColorRole::OnSurface));
       }
@@ -688,19 +692,16 @@ std::unique_ptr<Flex> NetworkTab::create() {
       .out = &m_rootLayout,
       .align = FlexAlign::Stretch,
       .gap = Style::spaceMd * scale,
-      .clipChildren = referenceLayout,
   });
 
   auto currentCard = ui::column({
       .out = &m_currentCard,
       .align = FlexAlign::Stretch,
-      .gap = referenceLayout ? Style::spaceMd * scale : 0.0f,
-      .minHeight = referenceLayout ? 144.0f * scale : 0.0f,
+      .gap = referenceLayout ? Style::spaceSm * scale : 0.0f,
+      .minHeight = 0.0f,
       .configure = [scale, referenceLayout, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
         if (referenceLayout) {
           applySectionCardStyle(card, scale, opacity, borders);
-          card.setPadding(Style::spaceLg * scale);
-          card.setRadius(Style::scaledRadiusXl(scale));
         } else {
           applySeamlessSectionStyle(card, scale);
         }
@@ -710,7 +711,7 @@ std::unique_ptr<Flex> NetworkTab::create() {
   if (referenceLayout) {
     currentCard->addChild(ui::label({
         .text = i18n::tr("control-center.network.current-connection"),
-        .fontSize = Style::fontSizeTitle * scale,
+        .fontSize = Style::fontSizeBody * scale,
         .fontWeight = FontWeight::Bold,
         .color = colorSpecFromRole(ColorRole::OnSurface),
     }));
@@ -721,7 +722,7 @@ std::unique_ptr<Flex> NetworkTab::create() {
   auto connRow = ui::row({
       .out = &m_currentRow,
       .align = FlexAlign::Center,
-      .gap = referenceLayout ? Style::spaceLg * scale : Style::spaceSm * scale,
+      .gap = Style::spaceSm * scale,
       .fillWidth = true,
   });
 
@@ -731,13 +732,13 @@ std::unique_ptr<Flex> NetworkTab::create() {
          .align = FlexAlign::Center,
          .justify = FlexJustify::Center,
          .fill = colorSpecFromRole(ColorRole::SurfaceVariant, 0.55f),
-         .radius = 36.0f * scale,
-         .width = 72.0f * scale,
-         .height = 72.0f * scale},
+         .radius = 20.0f * scale,
+         .width = 40.0f * scale,
+         .height = 40.0f * scale},
         ui::glyph({
             .out = &m_currentGlyph,
             .glyph = "wifi-question",
-            .glyphSize = 36.0f * scale,
+            .glyphSize = 22.0f * scale,
             .color = colorSpecFromRole(ColorRole::Primary),
         })
     ));
@@ -755,7 +756,7 @@ std::unique_ptr<Flex> NetworkTab::create() {
   });
   titleAndBadge->addChild(ui::label({
       .out = &m_currentTitle,
-      .fontSize = (referenceLayout ? Style::fontSizeTitle : Style::fontSizeBody) * scale,
+      .fontSize = Style::fontSizeBody * scale,
       .fontWeight = FontWeight::Bold,
       .color = colorSpecFromRole(ColorRole::OnSurface),
       .maxLines = 1,
@@ -792,12 +793,12 @@ std::unique_ptr<Flex> NetworkTab::create() {
       .out = &m_disconnectButton,
       .glyph = "plug-off",
       .glyphSize = Style::baseGlyphSize * scale,
-      .controlHeight = (referenceLayout ? 52.0f : Style::controlHeightSm) * scale,
+      .controlHeight = Style::controlHeightSm * scale,
       .variant = ButtonVariant::Destructive,
       .tooltip = i18n::tr("control-center.network.disconnect"),
-      .minWidth = (referenceLayout ? 64.0f : Style::controlHeightSm) * scale,
+      .minWidth = Style::controlHeightSm * scale,
       .padding = Style::spaceXs * scale,
-      .radius = referenceLayout ? Style::scaledRadiusLg(scale) : Style::scaledRadiusSm(scale),
+      .radius = Style::scaledRadiusSm(scale),
       .onClick = [this]() {
         if (m_network == nullptr || m_actionPending) {
           return;
@@ -1013,6 +1014,17 @@ void NetworkTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeig
   }
 }
 
+void NetworkTab::doPrepareIntrinsicLayout(Renderer& renderer, float contentWidth, float /*maxBodyHeight*/) {
+  if (m_rootLayout == nullptr) {
+    return;
+  }
+  m_layoutWidth = contentWidth;
+  syncPasswordCard();
+  rebuildApList(renderer);
+  syncApRows();
+  syncCurrentCard();
+}
+
 void NetworkTab::doUpdate(Renderer& renderer) {
   syncPasswordCard();
   rebuildApList(renderer);
@@ -1210,8 +1222,6 @@ void NetworkTab::syncCurrentCard() {
         applySectionCardStyle(
             *m_currentCard, contentScale(), panelCardOpacity(), panelBordersEnabled()
         );
-        m_currentCard->setPadding(Style::spaceLg * contentScale());
-        m_currentCard->setRadius(Style::scaledRadiusXl(contentScale()));
       } else {
         applySeamlessSectionStyle(*m_currentCard, contentScale());
       }
@@ -1299,7 +1309,9 @@ void NetworkTab::rebuildApList(Renderer& renderer) {
   if (m_list == nullptr) {
     return;
   }
-  const float listWidth = m_listScroll != nullptr ? m_listScroll->contentViewportWidth() : m_list->width();
+  const float listWidth = (m_listScroll != nullptr && m_listScroll->contentViewportWidth() > 0.0f)
+      ? m_listScroll->contentViewportWidth()
+      : (m_list != nullptr && m_list->width() > 0.0f ? m_list->width() : m_layoutWidth);
   if (listWidth <= 0.0f) {
     return;
   }
@@ -1324,7 +1336,7 @@ void NetworkTab::rebuildApList(Renderer& renderer) {
                                                   : i18n::tr("control-center.network.wifi-off");
     auto container = ui::column({
         .align = FlexAlign::Stretch,
-        .gap = referenceLayout ? 0.0f : Style::spaceXs * scale,
+        .gap = Style::spaceXs * scale,
     });
     if (aps.empty() || (referenceLayout && !wirelessEnabled)) {
       if (referenceLayout) {
@@ -1479,12 +1491,11 @@ void NetworkTab::rebuildApList(Renderer& renderer) {
 
       auto wifiCard = ui::column({
           .align = FlexAlign::Stretch,
-          .gap = 0.0f,
-          .clipChildren = true,
+          .gap = Style::spaceXs * scale,
           .configure = [scale, opacity, borders](Flex& card) {
             applySectionCardStyle(card, scale, opacity, borders);
-            card.setPadding(0.0f);
-            card.setRadius(Style::scaledRadiusXl(scale));
+            card.setPadding(Style::spaceXs * scale);
+            card.setRadius(Style::scaledRadiusLg(scale));
           },
       });
       wifiCard->addChild(buildApRows());

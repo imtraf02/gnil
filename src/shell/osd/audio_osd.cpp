@@ -20,7 +20,7 @@ namespace {
     return OsdContent{
         .kind = OsdKind::Volume,
         .icon = audioVolumeGlyph(volume, muted, false),
-        .value = std::to_string(percent) + "%",
+        .value = "",
         .progress = std::clamp(volume, 0.0f, 1.0f),
         .overLimit = percent > 100,
         .inactive = muted,
@@ -32,7 +32,7 @@ namespace {
     return OsdContent{
         .kind = OsdKind::Microphone,
         .icon = audioVolumeGlyph(volume, muted, true),
-        .value = std::to_string(percent) + "%",
+        .value = "",
         .progress = std::clamp(volume, 0.0f, 1.0f),
         .overLimit = percent > 100,
         .inactive = muted,

@@ -51,7 +51,7 @@ namespace {
 
   constexpr Logger kLog("control-center");
 
-  constexpr float kHomeAvatarScale = 2.6f;
+  constexpr float kHomeAvatarScale = 2.2f;
   constexpr std::size_t kHomeShortcutGridColumns = 4;
   constexpr auto kHomeTransientPositionRegressionWindow = std::chrono::milliseconds(1500);
   constexpr std::int64_t kHomeTransientPositionRegressionFloorUs = 5'000'000;
@@ -471,7 +471,10 @@ std::unique_ptr<Flex> HomeTab::create() {
               (void)m_mpris->nextActive();
             }
           },
-      }),
+      })
+  ));
+  mediaCard->addChild(ui::row(
+      {.align = FlexAlign::Center, .justify = FlexJustify::Center, .gap = Style::spaceSm * scale},
       ui::button({
           .text = i18n::tr("dashboard.home.media.open"),
           .glyph = "arrow-right",
@@ -755,11 +758,11 @@ std::unique_ptr<Flex> HomeTab::create() {
     auto btn = ui::button({
         .text = label,
         .glyph = shortcut->displayIcon(),
-        .glyphSize = Style::fontSizeTitle * 1.35f * scale,
-        .minHeight = 0.0f,
-        .padding = Style::spaceSm * scale,
+        .glyphSize = Style::fontSizeTitle * 1.25f * scale,
+        .minHeight = 66.0f * scale,
+        .padding = (Style::spaceSm - 2.0f) * scale,
         .gap = Style::spaceXs * scale,
-        .radius = Style::scaledRadiusXl(scale),
+        .radius = Style::scaledRadiusLg(scale),
         .onClick =
             [this, padIdx]() {
               if (padIdx < m_shortcutPads.size()) {
@@ -824,7 +827,7 @@ std::unique_ptr<Flex> HomeTab::create() {
       .align = FlexAlign::Stretch,
       .gap = Style::spaceSm * scale,
       .fillHeight = true,
-      .flexGrow = 1.0f,
+      .flexGrow = 1.15f,
       .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
         applyHomeCardStyle(card, scale, opacity, borders);
       },
@@ -833,17 +836,11 @@ std::unique_ptr<Flex> HomeTab::create() {
   auto volumeHeader = ui::row(
       {.align = FlexAlign::Center, .gap = Style::spaceSm * scale},
       ui::label({
-          .text = i18n::tr("settings.widgets.types.volume"),
+          .text = i18n::tr("dashboard.home.audio.title"),
           .fontSize = Style::fontSizeBody * scale,
           .fontWeight = FontWeight::Bold,
           .color = colorSpecFromRole(ColorRole::OnSurface),
           .flexGrow = 1.0f,
-      }),
-      ui::label({
-          .out = &m_volumeValueLabel,
-          .text = "—",
-          .fontSize = Style::fontSizeBody * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
       })
   );
   volumeCard->addChild(std::move(volumeHeader));
@@ -857,18 +854,15 @@ std::unique_ptr<Flex> HomeTab::create() {
       .presentation = SliderPresentation::LevelProminent,
       .glyph = "volume-high",
       .glyphSize = Style::fontSizeBody * scale,
-      .trackHeight = 30.0f * scale,
-      .thumbSize = 39.0f * scale,
-      .controlHeight = 39.0f * scale,
+      .trackHeight = 26.0f * scale,
+      .thumbSize = 34.0f * scale,
+      .controlHeight = 34.0f * scale,
       .flexGrow = 1.0f,
       .onValueChanged = [this](double value) {
         if (m_syncingVolumeSlider || m_audio == nullptr) {
           return;
         }
         m_audio->setVolume(static_cast<float>(value));
-        if (m_volumeValueLabel != nullptr) {
-          m_volumeValueLabel->setText(std::to_string(static_cast<int>(std::round(value * 100.0))) + "%");
-        }
       },
   });
   volumeCard->addChild(std::move(volumeSlider));
@@ -893,12 +887,6 @@ std::unique_ptr<Flex> HomeTab::create() {
           .fontSize = Style::fontSizeCaption * scale,
           .color = colorSpecFromRole(ColorRole::OnSurface),
           .flexGrow = 1.0f,
-      }),
-      ui::label({
-          .out = &m_microphoneValueLabel,
-          .text = "—",
-          .fontSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
       })
   ));
   volumeCard->addChild(ui::slider({
@@ -910,9 +898,9 @@ std::unique_ptr<Flex> HomeTab::create() {
       .presentation = SliderPresentation::LevelProminent,
       .glyph = "microphone",
       .glyphSize = Style::fontSizeBody * scale,
-      .trackHeight = 30.0f * scale,
-      .thumbSize = 39.0f * scale,
-      .controlHeight = 39.0f * scale,
+      .trackHeight = 26.0f * scale,
+      .thumbSize = 34.0f * scale,
+      .controlHeight = 34.0f * scale,
       .onValueChanged = [this](double value) {
         if (m_syncingMicrophoneSlider || m_audio == nullptr) {
           return;
@@ -948,7 +936,7 @@ std::unique_ptr<Flex> HomeTab::create() {
       .align = FlexAlign::Stretch,
       .gap = Style::spaceSm * scale,
       .fillHeight = true,
-      .flexGrow = 1.0f,
+      .flexGrow = 0.85f,
       .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
         applyHomeCardStyle(card, scale, opacity, borders);
       },
@@ -962,12 +950,6 @@ std::unique_ptr<Flex> HomeTab::create() {
           .fontWeight = FontWeight::Bold,
           .color = colorSpecFromRole(ColorRole::OnSurface),
           .flexGrow = 1.0f,
-      }),
-      ui::label({
-          .out = &m_brightnessValueLabel,
-          .text = "—",
-          .fontSize = Style::fontSizeBody * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
       })
   );
   brightnessCard->addChild(std::move(brightnessHeader));
@@ -985,9 +967,9 @@ std::unique_ptr<Flex> HomeTab::create() {
       .presentation = SliderPresentation::LevelProminent,
       .glyph = "brightness-high",
       .glyphSize = Style::fontSizeBody * scale,
-      .trackHeight = 30.0f * scale,
-      .thumbSize = 39.0f * scale,
-      .controlHeight = 39.0f * scale,
+      .trackHeight = 26.0f * scale,
+      .thumbSize = 34.0f * scale,
+      .controlHeight = 34.0f * scale,
       .flexGrow = 1.0f,
       .onValueChanged = [this](double value) {
         if (m_syncingBrightnessSlider || m_brightness == nullptr) {
@@ -998,9 +980,6 @@ std::unique_ptr<Flex> HomeTab::create() {
           if (display.controllable) {
             m_brightness->setBrightness(display.id, static_cast<float>(value));
           }
-        }
-        if (m_brightnessValueLabel != nullptr) {
-          m_brightnessValueLabel->setText(std::to_string(static_cast<int>(std::round(value * 100.0))) + "%");
         }
       },
   });
@@ -1986,9 +1965,6 @@ void HomeTab::sync(Renderer& renderer) {
       m_syncingVolumeSlider = true;
       m_volumeSlider->setValue(sink->volume);
       m_syncingVolumeSlider = false;
-      if (m_volumeValueLabel != nullptr) {
-        m_volumeValueLabel->setText(std::to_string(static_cast<int>(std::round(sink->volume * 100.0f))) + "%");
-      }
     }
   }
 
@@ -2017,12 +1993,8 @@ void HomeTab::sync(Renderer& renderer) {
         m_microphoneSlider->setValue(source->volume);
         m_syncingMicrophoneSlider = false;
         m_microphoneSlider->setEnabled(true);
-        if (m_microphoneValueLabel != nullptr) {
-          m_microphoneValueLabel->setText(std::format("{:.0f}%", source->volume * 100.0f));
-        }
       } else {
         m_microphoneSlider->setEnabled(false);
-        if (m_microphoneValueLabel != nullptr) m_microphoneValueLabel->setText("—");
       }
     }
     if (m_muteAllButton != nullptr) {
@@ -2054,9 +2026,6 @@ void HomeTab::sync(Renderer& renderer) {
       m_syncingBrightnessSlider = true;
       m_brightnessSlider->setValue(defaultDisplay->brightness);
       m_syncingBrightnessSlider = false;
-      if (m_brightnessValueLabel != nullptr) {
-        m_brightnessValueLabel->setText(std::to_string(static_cast<int>(std::round(defaultDisplay->brightness * 100.0f))) + "%");
-      }
       m_brightnessSlider->setEnabled(defaultDisplay->controllable);
     } else {
       m_brightnessSlider->setEnabled(false);

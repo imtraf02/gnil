@@ -173,8 +173,7 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
       std::make_unique<PowerTab>(services.upower, services.powerProfiles)
   );
   add(
-      {.id = "network", .naturalWidth = 620.0f, .naturalHeight = 640.0f, .dynamicHeight = false,
-       .scrollable = false},
+      {.id = "network", .naturalWidth = 480.0f, .dynamicHeight = true},
       std::make_unique<NetworkTab>(
           services.network, services.networkSecrets, services.config, wayland, renderContext,
           NetworkTabPresentation::ReferencePanel

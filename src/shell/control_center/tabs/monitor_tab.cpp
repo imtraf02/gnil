@@ -55,12 +55,7 @@ namespace {
     return resolutionText + " @ " + std::to_string(scalePercent) + "%";
   }
 
-  std::string formatBrightnessValue(const BrightnessDisplay& display, float brightness) {
-    if (!display.controllable) {
-      return i18n::tr("control-center.display.disabled");
-    }
-    return std::to_string(static_cast<int>(std::round(brightness * 100.0f))) + "%";
-  }
+
 
 } // namespace
 
@@ -170,9 +165,6 @@ void MonitorTab::doUpdate(Renderer& renderer) {
     }
 
     if (!display->controllable) {
-      if (card.valueLabel != nullptr) {
-        card.valueLabel->setText(formatBrightnessValue(*display, display->brightness));
-      }
       if (!card.slider->dragging() && std::abs(display->brightness - card.lastBrightness) >= kBrightnessSyncEpsilon) {
         m_syncingSlider = true;
         card.slider->setValue(display->brightness);
@@ -200,9 +192,6 @@ void MonitorTab::doUpdate(Renderer& renderer) {
       m_syncingSlider = true;
       card.slider->setValue(displayedBrightness);
       m_syncingSlider = false;
-      if (card.valueLabel != nullptr) {
-        card.valueLabel->setText(formatBrightnessValue(*display, displayedBrightness));
-      }
       card.lastBrightness = displayedBrightness;
     }
     card.lastControllable = true;
@@ -314,29 +303,10 @@ void MonitorTab::rebuildCards(Renderer& /*renderer*/) {
               }
               const auto brightness = static_cast<float>(value);
               queueBrightness(displayId, brightness);
-              // Update the value label immediately
-              for (auto& c : m_cards) {
-                if (c.displayId == displayId && c.valueLabel != nullptr) {
-                  c.valueLabel->setText(formatBrightnessValue(*currentDisplay, brightness));
-                  c.lastBrightness = brightness;
-                  break;
-                }
-              }
             },
         .onDragEnd = [this]() { flushPendingBrightness(true); },
     });
     sliderRow->addChild(std::move(slider));
-
-    Label* valueLabelPtr = nullptr;
-    sliderRow->addChild(
-        ui::label({
-            .out = &valueLabelPtr,
-            .text = formatBrightnessValue(display, display.brightness),
-            .fontSize = Style::fontSizeBody * scale,
-            .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-            .minWidth = Style::controlHeightLg * scale,
-        })
-    );
 
     card->addChild(std::move(sliderRow));
 
@@ -351,7 +321,7 @@ void MonitorTab::rebuildCards(Renderer& /*renderer*/) {
             .detailsLabel = detailsLabelPtr,
             .icon = iconPtr,
             .slider = sliderPtr,
-            .valueLabel = valueLabelPtr,
+            .valueLabel = nullptr,
             .lastBrightness = display.brightness,
             .lastControllable = display.controllable,
             .lastDisplayInfo = infoText,

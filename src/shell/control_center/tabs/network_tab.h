@@ -53,6 +53,7 @@ public:
 
 private:
   void doLayout(Renderer& renderer, float contentWidth, float bodyHeight) override;
+  void doPrepareIntrinsicLayout(Renderer& renderer, float contentWidth, float maxBodyHeight) override;
   void doUpdate(Renderer& renderer) override;
   void onPanelCardOpacityChanged(float opacity) override;
 

@@ -928,15 +928,7 @@ namespace {
                               .maxLines = 1,
                               .visible = false,
                           })
-                      ),
-                      ui::label({
-                          .out = &m_valueLabel,
-                          .text = "0%",
-                          .fontSize = Style::fontSizeBody * scale,
-                          .fontWeight = FontWeight::Bold,
-                          .minWidth = m_valueLabelMinWidth,
-                          .textAlign = TextAlign::End,
-                      })
+                      )
                   ),
                   ui::slider({
                       .out = &m_slider,
@@ -949,13 +941,10 @@ namespace {
                       .controlHeight = 33.0f * scale,
                       .wheelAdjustEnabled = true,
                       .flexGrow = 1.0f,
-                      .onValueChanged =
+                                      .onValueChanged =
                           [this](double value) {
                             if (m_syncing || m_audio == nullptr) {
                               return;
-                            }
-                            if (m_valueLabel != nullptr) {
-                              m_valueLabel->setText(std::to_string(static_cast<int>(std::round(value * 100.0))) + "%");
                             }
                             if (m_onQueueVolume) {
                               m_onQueueVolume(static_cast<float>(value));
@@ -1126,12 +1115,6 @@ namespace {
           m_slider->setValue(clampedVolume);
         }
         m_syncing = false;
-        if (m_valueLabel != nullptr) {
-          const std::string nextValue = std::to_string(static_cast<int>(std::round(clampedVolume * 100.0f))) + "%";
-          if (m_valueLabel->text() != nextValue) {
-            m_valueLabel->setText(nextValue);
-          }
-        }
       }
 
       std::vector<std::string> candidates;
@@ -1513,9 +1496,6 @@ std::unique_ptr<Flex> AudioTab::createDeviceVolumeCard(DeviceVolumeCardSpec card
                     state->volumeDebounceTimer.stop();
                     queueVolume(static_cast<float>(value));
                     flushPendingVolumes();
-                    if (state->valueLabel != nullptr) {
-                      state->valueLabel->setText(std::format("{:.0f}%", value * 100.0f));
-                    }
                   },
               .onDragEnd =
                   [this, state = &card.state]() {
@@ -1528,14 +1508,6 @@ std::unique_ptr<Flex> AudioTab::createDeviceVolumeCard(DeviceVolumeCardSpec card
                   .align = FlexAlign::Center,
                   .gap = Style::spaceSm * scale,
               },
-              ui::label({
-                  .out = &card.state.valueLabel,
-                  .text = "0%",
-                  .fontSize = Style::fontSizeBody * scale,
-                  .fontWeight = FontWeight::Bold,
-                  .minWidth = kValueLabelWidth * scale,
-                  .textAlign = TextAlign::End,
-              }),
               ui::button({
                   .out = &card.state.muteButton,
                   .glyph = std::string(card.muteGlyph),
@@ -1768,9 +1740,6 @@ void AudioTab::doUpdate(Renderer& renderer) {
       m_outputDeviceVolume.syncing = true;
       m_outputDeviceVolume.slider->setValue(displayedSinkVolume);
       m_outputDeviceVolume.syncing = false;
-      if (m_outputDeviceVolume.valueLabel != nullptr) {
-        m_outputDeviceVolume.valueLabel->setText(std::format("{:.0f}%", displayedSinkVolume * 100.0f));
-      }
       m_lastSinkVolume = displayedSinkVolume;
     }
   }
@@ -1788,9 +1757,6 @@ void AudioTab::doUpdate(Renderer& renderer) {
       m_inputDeviceVolume.syncing = true;
       m_inputDeviceVolume.slider->setValue(displayedSourceVolume);
       m_inputDeviceVolume.syncing = false;
-      if (m_inputDeviceVolume.valueLabel != nullptr) {
-        m_inputDeviceVolume.valueLabel->setText(std::format("{:.0f}%", displayedSourceVolume * 100.0f));
-      }
       m_lastSourceVolume = displayedSourceVolume;
     }
   }

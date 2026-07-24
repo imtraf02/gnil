@@ -521,16 +521,7 @@ std::unique_ptr<Flex> MediaTab::create() {
               return;
             }
             (void)m_mpris->setVolumeActive(value / 100.0);
-            if (m_volumeLabel != nullptr) {
-              m_volumeLabel->setText(std::to_string(static_cast<int>(std::round(value))) + "%");
-            }
           },
-  }));
-  volumePill->addChild(ui::label({
-      .out = &m_volumeLabel,
-      .text = "80%",
-      .fontSize = Style::fontSizeCaption * 0.85f * scale,
-      .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
   }));
 
   mediaStack->addChild(std::move(volumePill));
@@ -615,7 +606,7 @@ std::unique_ptr<Flex> MediaTab::create() {
            .gap = Style::spaceSm * scale,
            .minHeight = Style::controlHeightSm * scale},
           ui::label({
-              .text = "Sync Lyrics",
+              .text = i18n::tr("control-center.media.sync-lyrics"),
               .fontSize = Style::fontSizeHeader * scale,
               .fontWeight = FontWeight::Bold,
               .color = colorSpecFromRole(ColorRole::OnSurface),
@@ -715,31 +706,33 @@ std::unique_ptr<Flex> MediaTab::create() {
 
   auto visualizerCard = ui::column({
       .align = FlexAlign::Stretch,
+      .gap = Style::spaceXs * scale,
       .minHeight = 108.0f * scale,
       .fillWidth = true,
       .flexGrow = 1.0f,
       .configure = [scale, opacity = panelCardOpacity()](Flex& card) {
         applySectionCardStyle(card, scale, opacity, /*showBorder=*/false);
         card.setRadius(20.0f * scale);
+        card.setPadding(Style::spaceSm * scale, Style::spaceMd * scale);
       },
   });
 
-  if (referenceLayout) {
-    visualizerCard->addChild(ui::row(
-        {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
-        ui::glyph({
-            .glyph = "wave-sine",
-            .glyphSize = Style::fontSizeTitle * scale,
-            .color = colorSpecFromRole(ColorRole::OnSurface),
-        }),
-        ui::label({
-            .text = i18n::tr("control-center.media.now-playing"),
-            .fontSize = Style::fontSizeTitle * scale,
-            .fontWeight = FontWeight::Bold,
-            .color = colorSpecFromRole(ColorRole::OnSurface),
-        })
-    ));
-  }
+  auto visualizerHeader = ui::row(
+      {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
+      ui::glyph({
+          .glyph = "wave-sine",
+          .glyphSize = Style::fontSizeBody * scale,
+          .color = colorSpecFromRole(ColorRole::Primary),
+      }),
+      ui::label({
+          .text = i18n::tr("control-center.media.audio-output"),
+          .fontSize = Style::fontSizeBody * scale,
+          .fontWeight = FontWeight::Bold,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+          .flexGrow = 1.0f,
+      })
+  );
+  visualizerCard->addChild(std::move(visualizerHeader));
 
   auto visualizerBody = ui::row({
       .out = &m_visualizerBody,
@@ -755,7 +748,7 @@ std::unique_ptr<Flex> MediaTab::create() {
   visualizerSpectrum->setOrientation(AudioSpectrumOrientation::Horizontal);
   visualizerSpectrum->setMirrored(false);
   visualizerSpectrum->setCentered(false);
-  visualizerSpectrum->setReflection(referenceLayout);
+  visualizerSpectrum->setReflection(false);
   visualizerSpectrum->setValues(std::vector<float>(kVisualizerBandCount, 0.0f));
   visualizerSpectrum->tick(0.0f);
   visualizerSpectrum->setFlexGrow(1.0f);
@@ -763,22 +756,20 @@ std::unique_ptr<Flex> MediaTab::create() {
   visualizerBody->addChild(std::move(visualizerSpectrum));
   visualizerCard->addChild(std::move(visualizerBody));
 
-  if (referenceLayout) {
-    visualizerCard->addChild(ui::row(
-        {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
-        ui::glyph({
-            .glyph = "wave-sine",
-            .glyphSize = Style::fontSizeBody * scale,
-            .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-        }),
-        ui::label({
-            .out = &m_visualizerStatus,
-            .text = i18n::tr("control-center.media.waiting-for-audio"),
-            .fontSize = Style::fontSizeCaption * scale,
-            .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-        })
-    ));
-  }
+  visualizerCard->addChild(ui::row(
+      {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
+      ui::glyph({
+          .glyph = "volume",
+          .glyphSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      }),
+      ui::label({
+          .out = &m_visualizerStatus,
+          .text = i18n::tr("control-center.media.waiting-for-audio"),
+          .fontSize = Style::fontSizeCaption * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      })
+  ));
 
   visualizerColumn->addChild(std::move(visualizerCard));
   tab->addChild(std::move(mediaColumn));
@@ -1469,10 +1460,9 @@ void MediaTab::refresh(Renderer& renderer) {
       m_trackAlbum->setVisible(showAlbum);
       m_trackAlbum->setParticipatesInLayout(showAlbum);
     }
-    if (m_volumeSlider != nullptr && m_volumeLabel != nullptr && !m_volumeSlider->dragging()) {
+    if (m_volumeSlider != nullptr && !m_volumeSlider->dragging()) {
       const int volPct = std::clamp(static_cast<int>(std::round(player.volume * 100.0)), 0, 100);
       m_volumeSlider->setValue(static_cast<double>(volPct));
-      m_volumeLabel->setText(std::to_string(volPct) + "%");
     }
 
     if (!player.title.empty()) {

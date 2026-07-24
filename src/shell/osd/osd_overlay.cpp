@@ -683,7 +683,8 @@ void OsdOverlay::updateInstanceContent(Instance& inst) {
           : m_content.kind == OsdKind::Media ? std::max(0.0f, horizontalValueMax)
                                              : 0.0f
   );
-  inst.value->setMinWidth((!vertical && m_content.showProgress) ? inst.progressValueMinWidth : 0.0f);
+  inst.value->setMinWidth((!vertical && m_content.showProgress && !m_content.value.empty()) ? inst.progressValueMinWidth : 0.0f);
+  inst.value->setVisible(!m_content.value.empty());
   inst.value->setText(m_content.value);
   inst.progress->setRadius(osdProgressRadius(s));
   inst.progress->setProgress(m_content.progress);

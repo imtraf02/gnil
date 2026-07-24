@@ -183,32 +183,6 @@ std::unique_ptr<Flex> CalendarTab::create() {
       },
   });
 
-  calendarCard->addChild(
-      ui::label({
-          .out = &m_todayLabel,
-          .text = formatShellDate(m_config),
-          .fontSize = Style::fontSizeTitle * scale,
-          .fontWeight = FontWeight::Medium,
-          .color = colorSpecFromRole(ColorRole::Secondary),
-          .maxLines = 1,
-          .configure = [this](Label& label) {
-            label.setHitTestVisible(true);
-            label.setOnClick([this](const InputArea::PointerData&) {
-              const CalendarBuildState state = currentCalendarState(m_monthOffset);
-              const bool focusedOnToday = m_monthOffset == 0
-                  && m_selectedYear == state.currentYear
-                  && m_selectedMonth == state.currentMonth
-                  && m_selectedDay == state.today;
-              if (focusedOnToday) {
-                return;
-              }
-              focusToday();
-              PanelManager::instance().refresh();
-            });
-          },
-      })
-  );
-
   auto header = ui::row({
       .out = &m_header,
       .align = FlexAlign::Center,
