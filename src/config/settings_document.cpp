@@ -60,6 +60,18 @@ step = 5
 enforce_minimum = true
 enable_ddc_support = false
 
+[settings.night_light]
+enabled = false
+force = false
+temperature_day = 6500
+temperature_night = 4000
+
+[settings.location]
+address = ""
+custom_schedule = false
+sunset = ""
+sunrise = ""
+
 [settings.wallpaper]
 enabled = true
 overview_enabled = true
@@ -331,6 +343,22 @@ height = 720.0
       if (const auto enforce = valueAt<bool>(document, {"settings", "brightness", "enforce_minimum"})) {
         ensureTable(runtime, {"brightness"})->insert_or_assign("minimum_brightness", *enforce ? 0.01 : 0.0);
       }
+      copyNode(document, {"settings", "night_light", "enabled"}, runtime, {"nightlight"}, "enabled");
+      copyNode(document, {"settings", "night_light", "force"}, runtime, {"nightlight"}, "force");
+      copyNode(
+          document, {"settings", "night_light", "temperature_day"}, runtime, {"nightlight"}, "temperature_day"
+      );
+      copyNode(
+          document, {"settings", "night_light", "temperature_night"}, runtime, {"nightlight"}, "temperature_night"
+      );
+      copyNode(document, {"settings", "location", "address"}, runtime, {"location"}, "address");
+      copyNode(
+          document, {"settings", "location", "custom_schedule"}, runtime, {"location"}, "custom_schedule"
+      );
+      copyNode(document, {"settings", "location", "sunset"}, runtime, {"location"}, "sunset");
+      copyNode(document, {"settings", "location", "sunrise"}, runtime, {"location"}, "sunrise");
+      copyNode(document, {"settings", "location", "latitude"}, runtime, {"location"}, "latitude");
+      copyNode(document, {"settings", "location", "longitude"}, runtime, {"location"}, "longitude");
       copyNode(document, {"settings", "audio", "overdrive"}, runtime, {"audio"}, "enable_overdrive");
       copyNode(document, {"settings", "audio", "mpris_blacklist"}, runtime, {"shell", "mpris"}, "blacklist");
       copyNode(document, {"settings", "launcher", "max_shown"}, runtime, {"shell", "launcher"}, "max_shown");
@@ -441,6 +469,23 @@ height = 720.0
       if (const auto minimum = valueAt<double>(runtime, {"brightness", "minimum_brightness"})) {
         ensureTable(document, {"settings", "brightness"})->insert_or_assign("enforce_minimum", *minimum > 0.0);
       }
+      copyNode(runtime, {"nightlight", "enabled"}, document, {"settings", "night_light"}, "enabled");
+      copyNode(runtime, {"nightlight", "force"}, document, {"settings", "night_light"}, "force");
+      copyNode(
+          runtime, {"nightlight", "temperature_day"}, document, {"settings", "night_light"}, "temperature_day"
+      );
+      copyNode(
+          runtime, {"nightlight", "temperature_night"}, document, {"settings", "night_light"},
+          "temperature_night"
+      );
+      copyNode(runtime, {"location", "address"}, document, {"settings", "location"}, "address");
+      copyNode(
+          runtime, {"location", "custom_schedule"}, document, {"settings", "location"}, "custom_schedule"
+      );
+      copyNode(runtime, {"location", "sunset"}, document, {"settings", "location"}, "sunset");
+      copyNode(runtime, {"location", "sunrise"}, document, {"settings", "location"}, "sunrise");
+      copyNode(runtime, {"location", "latitude"}, document, {"settings", "location"}, "latitude");
+      copyNode(runtime, {"location", "longitude"}, document, {"settings", "location"}, "longitude");
       copyNode(runtime, {"audio", "enable_overdrive"}, document, {"settings", "audio"}, "overdrive");
       copyNode(runtime, {"shell", "mpris", "blacklist"}, document, {"settings", "audio"}, "mpris_blacklist");
       copyNode(runtime, {"shell", "launcher", "max_shown"}, document, {"settings", "launcher"}, "max_shown");

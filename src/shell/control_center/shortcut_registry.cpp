@@ -134,35 +134,34 @@ namespace {
       // though the service is in day phase.
       return i18n::tr("control-center.shortcuts.nightlight-states.scheduled-day");
     }
-    std::string_view iconOn() const override {
-      return m_svc != nullptr && m_svc->forceEnabled() ? "nightlight-forced" : "nightlight-on";
+    std::string displayIcon() const override {
+      if (m_svc == nullptr) {
+        return "nightlight-off";
+      }
+      if (m_svc->forceEnabled()) {
+        return "nightlight-forced";
+      }
+      return m_svc->enabled() ? "nightlight-on" : "nightlight-off";
     }
+    std::string_view iconOn() const override { return "nightlight-forced"; }
     std::string_view iconOff() const override { return "nightlight-off"; }
     bool isToggle() const override { return true; }
-    bool active() const override { return m_svc != nullptr && (m_svc->forceEnabled() || m_svc->active()); }
+    bool active() const override { return m_svc != nullptr && m_svc->forceEnabled(); }
     void onClick() override {
       if (!enabled() || m_svc == nullptr) {
         return;
       }
-      // Mirror the bar widget: primary toggles on/off; if currently forced,
-      // drop force and land on scheduled-on so force is reversible without
-      // also losing the master enable.
-      if (m_svc->forceEnabled()) {
-        if (m_config != nullptr) {
-          (void)m_config->setOverrides({
-              {{"nightlight", "enabled"}, true},
-              {{"nightlight", "force"}, false},
-          });
-        } else {
-          m_svc->clearForceOverride();
-          m_svc->setEnabled(true);
-        }
+      // Dashboard is the immediate control: turn warming on now or disable it
+      // completely. Scheduled/always mode remains configurable in the detail panel.
+      const bool force = !m_svc->forceEnabled();
+      if (m_config != nullptr) {
+        (void)m_config->setOverrides({
+            {{"nightlight", "enabled"}, force},
+            {{"nightlight", "force"}, force},
+        });
       } else {
-        if (m_config != nullptr) {
-          (void)m_config->setOverride({"nightlight", "enabled"}, !m_svc->enabled());
-        } else {
-          m_svc->toggleEnabled();
-        }
+        m_svc->setEnabled(force);
+        m_svc->setForceEnabled(force);
       }
     }
     void onRightClick() override {

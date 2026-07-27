@@ -286,12 +286,16 @@
         "title": "Mode"
       },
       "schedule": {
+        "configure": "Configure",
         "custom": "Custom time",
         "invalid": "Use a valid 24-hour time in HH:MM format.",
         "location": "Sunset to sunrise",
         "location-missing": "Add coordinates in Location settings to use sunset and sunrise.",
-        "location-ready": "Using your configured location for sunset and sunrise.",
+        "location-ready": "Sunset {sunset} · Sunrise {sunrise}",
         "location-resolving": "Finding the configured location…",
+        "polar-day": "The sun does not set today; the display stays at its day temperature.",
+        "polar-night": "The sun does not rise today; the display stays at its night temperature.",
+        "same-time": "Sunset and sunrise must use different times.",
         "sunrise": "Sunrise",
         "sunset": "Sunset",
         "title": "Schedule"
@@ -3734,7 +3738,7 @@
         "unmute-all": "Unmute all"
       },
       "brightness": {
-        "nightlight-description": "Warms the display after sunset"
+        "nightlight-description": "Warm the display now"
       },
       "media": {
         "now-playing": "Now Playing",

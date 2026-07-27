@@ -1,6 +1,7 @@
 #include "shell/control_center/tab.h"
 
-#include "ui/builders.h"
+#include "ui/builders/display.h"
+#include "ui/builders/layout.h"
 
 #include <memory>
 

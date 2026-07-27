@@ -1,7 +1,8 @@
 #pragma once
 
-#include "config/config_service.h"
+#include "config/night_light_config.h"
 #include "core/timer_manager.h"
+#include "system/day_night_schedule.h"
 
 #include <chrono>
 #include <cstdint>
@@ -44,6 +45,9 @@ public:
   [[nodiscard]] bool forceEnabled() const;
   [[nodiscard]] bool active() const;
   [[nodiscard]] bool scheduleAvailable() const;
+  [[nodiscard]] std::optional<day_night_schedule::ScheduleTimes> scheduleTimes() const {
+    return m_scheduleTimes;
+  }
   [[nodiscard]] int currentKelvin() const noexcept { return m_currentKelvin; }
   [[nodiscard]] int targetKelvin() const noexcept { return m_targetKelvin; }
   [[nodiscard]] bool locationResolving() const noexcept { return m_locationResolving; }
@@ -57,6 +61,7 @@ private:
   [[nodiscard]] bool effectiveConfiguredEnabled() const;
   [[nodiscard]] bool effectiveEnabled() const;
   [[nodiscard]] bool effectiveForce() const;
+  void refreshScheduleTimes();
 
   void scheduleManualTimer();
   void scheduleGeoTimer();
@@ -107,6 +112,7 @@ private:
   bool m_locationResolving = false;
   std::optional<double> m_resolvedLatitude;
   std::optional<double> m_resolvedLongitude;
+  std::optional<day_night_schedule::ScheduleTimes> m_scheduleTimes;
   ChangeCallback m_changeCallback;
   StateFeedbackCallback m_stateFeedback;
 

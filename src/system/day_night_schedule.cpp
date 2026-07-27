@@ -1,6 +1,6 @@
 #include "system/day_night_schedule.h"
 
-#include "config/config_types.h"
+#include "config/night_light_config.h"
 
 #include <algorithm>
 #include <cctype>
@@ -35,12 +35,14 @@ namespace day_night_schedule {
     }
 
     bool hasResolvedCoordinates(std::optional<double> latitude, std::optional<double> longitude) {
-      return latitude.has_value() && longitude.has_value();
+      return latitude.has_value() && longitude.has_value() && std::isfinite(*latitude) && std::isfinite(*longitude)
+          && *latitude >= -90.0 && *latitude <= 90.0 && *longitude >= -180.0 && *longitude <= 180.0;
     }
 
     struct SolarTimes {
       int sunriseMinutes = 0;
       int sunsetMinutes = 0;
+      SunCondition condition = SunCondition::Normal;
     };
 
     SolarTimes computeSolarTimes(double latitude, double longitude) {
@@ -73,13 +75,37 @@ namespace day_night_schedule {
           - std::tan(latRad) * std::tan(declination);
 
       if (hourAngleArg > 1.0) {
-        return SolarTimes{.sunriseMinutes = 0, .sunsetMinutes = 0};
+        return SolarTimes{
+            .sunriseMinutes = 0,
+            .sunsetMinutes = 0,
+            .condition = SunCondition::PolarNight,
+        };
       }
       if (hourAngleArg < -1.0) {
-        return SolarTimes{.sunriseMinutes = 0, .sunsetMinutes = 1440};
+        return SolarTimes{
+            .sunriseMinutes = 0,
+            .sunsetMinutes = 1440,
+            .condition = SunCondition::PolarDay,
+        };
       }
 
       const double hourAngleDeg = std::acos(std::clamp(hourAngleArg, -1.0, 1.0)) * 180.0 / kPi;
+      const double daylightMinutes = hourAngleDeg * 8.0;
+      if (daylightMinutes < 1.0) {
+        return SolarTimes{
+            .sunriseMinutes = 0,
+            .sunsetMinutes = 0,
+            .condition = SunCondition::PolarNight,
+        };
+      }
+      if (daylightMinutes > 1439.0) {
+        return SolarTimes{
+            .sunriseMinutes = 0,
+            .sunsetMinutes = 1440,
+            .condition = SunCondition::PolarDay,
+        };
+      }
+
       const double timeZoneOffsetMin = static_cast<double>(local.tm_gmtoff) / 60.0;
       const double solarNoonMin = 720.0 - 4.0 * longitude - equationOfTime + timeZoneOffsetMin;
 
@@ -95,6 +121,23 @@ namespace day_night_schedule {
       return SolarTimes{
           .sunriseMinutes = normalizeMinutes(solarNoonMin - hourAngleDeg * 4.0),
           .sunsetMinutes = normalizeMinutes(solarNoonMin + hourAngleDeg * 4.0),
+          .condition = SunCondition::Normal,
+      };
+    }
+
+    Evaluation evaluateNormalWindow(int sunsetMin, int sunriseMin, int nowMin, int nowSec) {
+      const bool night = sunsetMin < sunriseMin ? (nowMin >= sunsetMin && nowMin < sunriseMin)
+                                                : (nowMin >= sunsetMin || nowMin < sunriseMin);
+      const int targetMin = night ? sunriseMin : sunsetMin;
+      int diffMin = targetMin - nowMin;
+      if (diffMin <= 0) {
+        diffMin += 1440;
+      }
+      const auto ms = std::chrono::milliseconds(diffMin * 60 * 1000 - nowSec * 1000);
+      return Evaluation{
+          .night = night,
+          .untilBoundary = std::max(ms, std::chrono::milliseconds(1000)),
+          .sinceBoundary = sinceBoundaryMs(nowMin, nowSec, night ? sunsetMin : sunriseMin),
       };
     }
 
@@ -124,72 +167,90 @@ namespace day_night_schedule {
     if (hasResolvedCoordinates(resolvedLatitude, resolvedLongitude)) {
       return GeoCoordinates{.latitude = resolvedLatitude, .longitude = resolvedLongitude};
     }
-    if (config.latitude.has_value() && config.longitude.has_value()) {
+    if (hasResolvedCoordinates(config.latitude, config.longitude)) {
       return GeoCoordinates{.latitude = config.latitude, .longitude = config.longitude};
     }
     return {};
   }
 
   bool hasUsableCustomTimes(const LocationConfig& config) {
-    return normalizedClock(config.sunset).has_value() && normalizedClock(config.sunrise).has_value();
+    const auto sunset = normalizedClock(config.sunset);
+    const auto sunrise = normalizedClock(config.sunrise);
+    return sunset.has_value() && sunrise.has_value() && *sunset != *sunrise;
   }
 
   bool isManualMode(const LocationConfig& config) { return config.customSchedule && hasUsableCustomTimes(config); }
+
+  std::optional<ScheduleTimes> resolveScheduleTimes(
+      const LocationConfig& config, std::optional<double> resolvedLatitude, std::optional<double> resolvedLongitude
+  ) {
+    if (config.customSchedule) {
+      const auto sunset = normalizedClock(config.sunset);
+      const auto sunrise = normalizedClock(config.sunrise);
+      if (!sunset.has_value() || !sunrise.has_value() || *sunset == *sunrise) {
+        return std::nullopt;
+      }
+      return ScheduleTimes{
+          .sunriseMinutes = timeToMinutes(*sunrise),
+          .sunsetMinutes = timeToMinutes(*sunset),
+          .condition = SunCondition::Normal,
+          .custom = true,
+      };
+    }
+
+    const auto coords = resolveCoordinates(config, resolvedLatitude, resolvedLongitude);
+    if (!coords.latitude.has_value() || !coords.longitude.has_value()) {
+      return std::nullopt;
+    }
+    const auto solar = computeSolarTimes(*coords.latitude, *coords.longitude);
+    return ScheduleTimes{
+        .sunriseMinutes = solar.sunriseMinutes,
+        .sunsetMinutes = solar.sunsetMinutes,
+        .condition = solar.condition,
+        .custom = false,
+    };
+  }
+
+  std::optional<Evaluation> evaluateCustomAtLocalTime(
+      std::string_view sunset, std::string_view sunrise, int nowMinutes, int nowSeconds
+  ) {
+    const auto normalizedSunset = normalizedClock(sunset);
+    const auto normalizedSunrise = normalizedClock(sunrise);
+    if (!normalizedSunset.has_value() || !normalizedSunrise.has_value()
+        || *normalizedSunset == *normalizedSunrise || nowMinutes < 0 || nowMinutes >= 1440
+        || nowSeconds < 0 || nowSeconds >= 60) {
+      return std::nullopt;
+    }
+    return evaluateNormalWindow(
+        timeToMinutes(*normalizedSunset), timeToMinutes(*normalizedSunrise), nowMinutes, nowSeconds
+    );
+  }
 
   Evaluation evaluate(
       const LocationConfig& config, std::optional<double> resolvedLatitude, std::optional<double> resolvedLongitude
   ) {
     const auto [nowMin, nowSec] = currentLocalTime();
 
-    if (isManualMode(config)) {
-      const int sunsetMin = timeToMinutes(config.sunset);
-      const int sunriseMin = timeToMinutes(config.sunrise);
-      const bool night = sunsetMin < sunriseMin ? (nowMin >= sunsetMin && nowMin < sunriseMin)
-                                                : (nowMin >= sunsetMin || nowMin < sunriseMin);
-      const int targetMin = night ? sunriseMin : sunsetMin;
-      int diffMin = targetMin - nowMin;
-      if (diffMin <= 0) {
-        diffMin += 1440;
-      }
-      const auto ms = std::chrono::milliseconds(diffMin * 60 * 1000 - nowSec * 1000);
-      return Evaluation{
-          .night = night,
-          .untilBoundary = std::max(ms, std::chrono::milliseconds(1000)),
-          .sinceBoundary = sinceBoundaryMs(nowMin, nowSec, night ? sunsetMin : sunriseMin),
-      };
+    if (config.customSchedule) {
+      return evaluateCustomAtLocalTime(config.sunset, config.sunrise, nowMin, nowSec).value_or(Evaluation{});
     }
 
-    const auto coords = resolveCoordinates(config, resolvedLatitude, resolvedLongitude);
-    if (!coords.latitude.has_value() || !coords.longitude.has_value()) {
+    const auto times = resolveScheduleTimes(config, resolvedLatitude, resolvedLongitude);
+    if (!times.has_value()) {
       // No coordinates available, retry in 1 hour in case location resolves later.
       return Evaluation{.night = false, .untilBoundary = std::chrono::hours(1)};
     }
 
-    const auto times = computeSolarTimes(*coords.latitude, *coords.longitude);
-    if (times.sunriseMinutes == 0 && times.sunsetMinutes == 0) {
+    if (times->condition == SunCondition::PolarNight) {
       // Polar night: the sun never rises, so there is no boundary today.
       return Evaluation{.night = true, .untilBoundary = std::chrono::hours(1)};
     }
-    if (times.sunriseMinutes == 0 && times.sunsetMinutes == 1440) {
+    if (times->condition == SunCondition::PolarDay) {
       // Polar day: the sun never sets, so there is no boundary today.
       return Evaluation{.night = false, .untilBoundary = std::chrono::hours(1)};
     }
 
-    const int sunset = times.sunsetMinutes;
-    const int sunrise = times.sunriseMinutes;
-    const bool night =
-        sunset > sunrise ? (nowMin >= sunset || nowMin < sunrise) : (nowMin >= sunset && nowMin < sunrise);
-    const int targetMin = night ? sunrise : sunset;
-    int diffMin = targetMin - nowMin;
-    if (diffMin <= 0) {
-      diffMin += 1440;
-    }
-    const auto ms = std::chrono::milliseconds(diffMin * 60 * 1000 - nowSec * 1000);
-    return Evaluation{
-        .night = night,
-        .untilBoundary = std::max(ms, std::chrono::milliseconds(1000)),
-        .sinceBoundary = sinceBoundaryMs(nowMin, nowSec, night ? sunset : sunrise),
-    };
+    return evaluateNormalWindow(times->sunsetMinutes, times->sunriseMinutes, nowMin, nowSec);
   }
 
 } // namespace day_night_schedule

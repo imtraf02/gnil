@@ -3,7 +3,8 @@
 #include "i18n/i18n.h"
 #include "render/scene/input_area.h"
 #include "render/scene/node.h"
-#include "ui/builders.h"
+#include "ui/builders/display.h"
+#include "ui/builders/layout.h"
 #include "ui/palette.h"
 #include "ui/style.h"
 

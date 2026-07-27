@@ -25,6 +25,8 @@ pkgs.mkShell {
     wayland-scanner
     llvmPackages_22.clang-tools
     llvmPackages_22.libclang
+    ccache
+    mold
     gnugrep
     gnused
     findutils

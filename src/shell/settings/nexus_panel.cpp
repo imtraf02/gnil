@@ -1,5 +1,6 @@
 #include "shell/settings/nexus_panel.h"
 
+#include "i18n/i18n.h"
 #include "render/core/renderer.h"
 #include "shell/panel/panel_manager.h"
 #include "ui/controls/input.h"
@@ -60,7 +61,19 @@ void NexusPanel::onOpen(std::string_view context) {
     m_closeWindow();
   }
   if (!context.empty()) {
-    (void)m_route.deepLink(context);
+    const auto groupMarker = context.find("/@");
+    if (groupMarker != std::string_view::npos) {
+      const std::string_view page = context.substr(0, groupMarker);
+      const std::string_view group = context.substr(groupMarker + 2);
+      if (!group.empty() && m_route.deepLink(page)) {
+        m_route.pushSubpage(NexusSubpage{
+            .id = std::string(group),
+            .title = i18n::tr("settings.nexus.groups." + std::string(group)),
+        });
+      }
+    } else {
+      (void)m_route.deepLink(context);
+    }
   }
   m_view.setActive(true);
   m_view.refresh();

@@ -8,40 +8,142 @@ cpp-std := "c++23"
 default:
     @just --list
 
+_profile-signature m:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{m}}" in
+        ui)
+            linker="bfd"
+            command -v mold >/dev/null 2>&1 && linker="mold"
+            compiler_cache="false"
+            command -v ccache >/dev/null 2>&1 && compiler_cache="true"
+            echo "v3;mode=ui;buildtype=debug;debug=false;optimization=0;tests=disabled;lto=false;unity=off;sanitize=none;linker=$linker;linker_threads=1;ccache=$compiler_cache;cpp_std={{cpp-std}}"
+            ;;
+        debug)
+            echo "v2;mode=debug;buildtype=debug;debug=true;optimization=0;tests=enabled;lto=false;unity=off;sanitize=none;cpp_std={{cpp-std}}"
+            ;;
+        release)
+            echo "v2;mode=release;buildtype=release;debug=false;optimization=3;tests=disabled;lto=true;unity=off;sanitize=none;cpp_std={{cpp-std}}"
+            ;;
+        asan)
+            echo "v2;mode=asan;buildtype=debug;debug=true;optimization=0;tests=disabled;lto=false;unity=off;sanitize=address,undefined;cpp_std={{cpp-std}}"
+            ;;
+        *)
+            echo "error: unknown build profile '{{m}}' (expected ui, debug, release, or asan)" >&2
+            exit 2
+            ;;
+    esac
+
 configure m=mode install_prefix=prefix:
     #!/usr/bin/env bash
     set -euo pipefail
-    args=(--buildtype={{ if m == "release" { "release" } else { "debug" } }} -Dcpp_std={{cpp-std}})
-    [[ "{{m}}" == "release" ]] && args+=(-Db_lto=true)
-    [[ "{{m}}" == "asan"    ]] && args+=(-Db_sanitize=address,undefined)
-    if [[ -d "build-{{m}}" ]]; then
-        meson setup "build-{{m}}" "${args[@]}" --prefix "{{install_prefix}}" --reconfigure
+    native_args=()
+    case "{{m}}" in
+        ui)
+            args=(
+                --buildtype=debug
+                -Ddebug=false
+                -Doptimization=0
+                -Dtests=disabled
+                -Db_lto=false
+                -Dunity=off
+                -Db_sanitize=none
+                -Dcpp_std={{cpp-std}}
+            )
+            if command -v mold >/dev/null 2>&1; then
+                # A single mold worker avoids an intermittent "unknown file type"
+                # failure on the large custom_schemes object while remaining much
+                # faster than ld.bfd for UI iteration links.
+                args+=("-Dcpp_link_args=-fuse-ld=mold -Wl,--threads=1")
+            else
+                echo "warning: mold is unavailable; the ui profile will use the slower default linker" >&2
+                args+=(-Dcpp_link_args=)
+            fi
+            if command -v ccache >/dev/null 2>&1; then
+                native_args+=(--native-file=tools/meson/ccache.ini)
+            else
+                echo "warning: ccache is unavailable; clean and branch-switch rebuilds will be slower" >&2
+            fi
+            ;;
+        debug)
+            args=(
+                --buildtype=debug
+                -Ddebug=true
+                -Doptimization=0
+                -Dtests=enabled
+                -Db_lto=false
+                -Dunity=off
+                -Db_sanitize=none
+                -Dcpp_std={{cpp-std}}
+            )
+            ;;
+        release)
+            args=(
+                --buildtype=release
+                -Ddebug=false
+                -Doptimization=3
+                -Dtests=disabled
+                -Db_lto=true
+                -Dunity=off
+                -Db_sanitize=none
+                -Dcpp_std={{cpp-std}}
+            )
+            ;;
+        asan)
+            args=(
+                --buildtype=debug
+                -Ddebug=true
+                -Doptimization=0
+                -Dtests=disabled
+                -Db_lto=false
+                -Dunity=off
+                -Db_sanitize=address,undefined
+                -Dcpp_std={{cpp-std}}
+            )
+            ;;
+        *)
+            echo "error: unknown build profile '{{m}}' (expected ui, debug, release, or asan)" >&2
+            exit 2
+            ;;
+    esac
+
+    build_dir="build-{{m}}"
+    expected="$(just --quiet _profile-signature "{{m}}")"
+    actual=""
+    [[ -f "$build_dir/.gnil-profile" ]] && actual="$(<"$build_dir/.gnil-profile")"
+    if [[ -f "$build_dir/build.ninja" && -n "$actual" && "$actual" != "$expected" ]]; then
+        echo "Build profile changed; recreating $build_dir metadata and objects."
+        meson setup "$build_dir" "${args[@]}" "${native_args[@]}" --prefix "{{install_prefix}}" --wipe
+    elif [[ -f "$build_dir/build.ninja" ]]; then
+        meson setup "$build_dir" "${args[@]}" "${native_args[@]}" --prefix "{{install_prefix}}" --reconfigure
     else
-        meson setup "build-{{m}}" "${args[@]}" --prefix "{{install_prefix}}"
+        meson setup "$build_dir" "${args[@]}" "${native_args[@]}" --prefix "{{install_prefix}}"
     fi
+    printf '%s\n' "$expected" >"$build_dir/.gnil-profile"
     ln -sfn "build-{{m}}/compile_commands.json" compile_commands.json
 
 build m=mode: (_ensure-configured m)
     meson compile -C build-{{m}}
 
+build-app m="ui": (_ensure-configured m)
+    meson compile -C build-{{m}} gnil
+
 _ensure-configured m=mode:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ ! -f "build-{{m}}/build.ninja" ]]; then
+    expected="$(just --quiet _profile-signature "{{m}}")"
+    actual=""
+    [[ -f "build-{{m}}/.gnil-profile" ]] && actual="$(<"build-{{m}}/.gnil-profile")"
+    if [[ ! -f "build-{{m}}/build.ninja" || "$actual" != "$expected" ]]; then
         just configure {{m}}
-        exit 0
-    fi
-    current_cpp_std="$(meson configure "build-{{m}}" | awk '$1 == "cpp_std" { print $2; found=1 } END { if (!found) exit 1 }')"
-    if [[ "$current_cpp_std" != "{{cpp-std}}" ]]; then
-        meson configure "build-{{m}}" -Dcpp_std={{cpp-std}}
     fi
 
-run m=mode: (build m)
+run m="ui": (build-app m)
     ./build-{{m}}/gnil
 
 # Code and asset changes get an incremental Meson/Ninja build and a process
 # restart. GNIL's config watcher handles TOML edits in-process.
-dev m=mode:
+dev m="ui":
     #!/usr/bin/env bash
     set -euo pipefail
     if systemctl --user --quiet is-active gnil.service; then
@@ -52,7 +154,28 @@ dev m=mode:
     export GNIL_ASSETS_DIR="$PWD/assets"
     export GNIL_CONFIG_HOME="$PWD/.dev/config"
     export GNIL_STATE_HOME="$PWD/.dev/state"
-    watchexec --restart --watch src --watch assets --watch meson.build -- just run {{m}}
+    export NINJA_STATUS='[%f/%t %es] '
+    watchexec \
+        --restart \
+        --debounce 300ms \
+        --stop-signal SIGINT \
+        --stop-timeout 2s \
+        --watch src \
+        --watch assets \
+        --watch meson.build \
+        --watch meson_options.txt \
+        --watch justfile \
+        -- just run {{m}}
+
+build-stats m="ui": (_ensure-configured m)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "profile: $(<"build-{{m}}/.gnil-profile")"
+    [[ -f "build-{{m}}/gnil" ]] && du -h "build-{{m}}/gnil"
+    [[ -d "build-{{m}}/gnil.p" ]] && du -sh "build-{{m}}/gnil.p"
+    if command -v ccache >/dev/null 2>&1; then
+        ccache --show-stats
+    fi
 
 # Build (forcing tests on, even for release) and run the unit tests.
 test m=mode *args: (_ensure-configured m)
@@ -62,6 +185,9 @@ test m=mode *args: (_ensure-configured m)
     # then force it on (covers release, where it defaults off).
     meson setup "build-{{m}}" --reconfigure >/dev/null
     meson setup "build-{{m}}" -Dtests=enabled --reconfigure >/dev/null
+    if [[ "{{m}}" != "debug" ]]; then
+        trap 'rm -f "build-{{m}}/.gnil-profile"' EXIT
+    fi
     meson test -C build-{{m}} {{args}}
 
 install m:

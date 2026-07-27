@@ -5,9 +5,15 @@
 #include "i18n/i18n.h"
 #include "render/core/renderer.h"
 #include "render/scene/input_area.h"
+#include "shell/panel/panel_manager.h"
 #include "system/day_night_schedule.h"
 #include "system/gamma_service.h"
-#include "ui/builders.h"
+#include "time/time_format.h"
+#include "ui/builders/actions.h"
+#include "ui/builders/display.h"
+#include "ui/builders/input.h"
+#include "ui/builders/layout.h"
+#include "ui/controls/button.h"
 #include "ui/controls/input.h"
 #include "ui/controls/segmented.h"
 #include "ui/controls/slider.h"
@@ -39,6 +45,15 @@ namespace {
             .flexGrow = 1.0f,
         })
     );
+  }
+
+  std::string formatScheduleMinute(int minute, const ConfigService* config) {
+    const int normalized = ((minute % 1440) + 1440) % 1440;
+    const std::string clock = std::format("{:02}:{:02}", normalized / 60, normalized % 60);
+    const std::string iso = "2000-01-01T" + clock;
+    const char* format = config != nullptr ? config->config().shell.timeFormat.c_str() : "%H:%M";
+    const std::string localized = formatIsoTime(iso, format);
+    return localized.empty() ? clock : localized;
   }
 
   std::unique_ptr<Flex> temperatureRow(
@@ -324,6 +339,21 @@ std::unique_ptr<Flex> NightLightTab::create() {
           .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
           .maxLines = 2,
           .flexGrow = 1.0f,
+      }),
+      ui::button({
+          .out = &m_locationSettingsButton,
+          .text = i18n::tr("control-center.night-light.schedule.configure"),
+          .glyph = "settings",
+          .fontSize = Style::fontSizeMini * scale,
+          .glyphSize = Style::fontSizeCaption * scale,
+          .controlHeight = Style::controlHeightSm * scale,
+          .variant = ButtonVariant::Ghost,
+          .paddingH = Style::spaceSm * scale,
+          .onClick = []() {
+            PanelManager::instance().openPanel(
+                "settings", PanelOpenRequest{.context = "regional/@location"}
+            );
+          },
       })
   ));
 
@@ -405,6 +435,7 @@ void NightLightTab::onClose() {
   m_nightValue = nullptr;
   m_locationStatus = nullptr;
   m_scheduleError = nullptr;
+  m_locationSettingsButton = nullptr;
   m_enabledToggle = nullptr;
   m_modePicker = nullptr;
   m_schedulePicker = nullptr;
@@ -511,39 +542,60 @@ void NightLightTab::syncState() {
   }
   m_syncing = false;
 
-  const bool scheduleReady = m_nightLight != nullptr && m_nightLight->scheduleAvailable();
+  const auto schedule = m_nightLight != nullptr ? m_nightLight->scheduleTimes() : std::nullopt;
+  const bool scheduleReady = schedule.has_value();
   if (m_locationStatus != nullptr) {
-    if (m_nightLight != nullptr && m_nightLight->locationResolving()) {
+    if (!scheduleReady && m_nightLight != nullptr && m_nightLight->locationResolving()) {
       m_locationStatus->setText(i18n::tr("control-center.night-light.schedule.location-resolving"));
-    } else {
+    } else if (schedule.has_value() && schedule->condition == day_night_schedule::SunCondition::PolarDay) {
+      m_locationStatus->setText(i18n::tr("control-center.night-light.schedule.polar-day"));
+    } else if (schedule.has_value() && schedule->condition == day_night_schedule::SunCondition::PolarNight) {
+      m_locationStatus->setText(i18n::tr("control-center.night-light.schedule.polar-night"));
+    } else if (schedule.has_value()) {
       m_locationStatus->setText(i18n::tr(
-          scheduleReady ? "control-center.night-light.schedule.location-ready"
-                        : "control-center.night-light.schedule.location-missing"
+          "control-center.night-light.schedule.location-ready", "sunset",
+          formatScheduleMinute(schedule->sunsetMinutes, m_config), "sunrise",
+          formatScheduleMinute(schedule->sunriseMinutes, m_config)
       ));
+    } else {
+      m_locationStatus->setText(i18n::tr("control-center.night-light.schedule.location-missing"));
     }
   }
 
   if (m_statusGlyph != nullptr && m_statusLabel != nullptr && m_statusDetail != nullptr) {
     if (!enabled) {
       m_statusGlyph->setGlyph("nightlight-off");
+      m_statusGlyph->setColor(colorSpecFromRole(ColorRole::OnSurfaceVariant));
       m_statusLabel->setText(i18n::tr("control-center.night-light.status.off"));
       m_statusDetail->setText(i18n::tr("control-center.night-light.subtitle"));
     } else if (night.force) {
       m_statusGlyph->setGlyph("nightlight-forced");
+      m_statusGlyph->setColor(colorSpecFromRole(ColorRole::Primary));
       m_statusLabel->setText(i18n::tr("control-center.night-light.status.always"));
       const int kelvin = m_nightLight != nullptr ? m_nightLight->currentKelvin() : night.nightTemperature;
       m_statusDetail->setText(std::format("{}K", kelvin > 0 ? kelvin : night.nightTemperature));
     } else if (!scheduleReady) {
       m_statusGlyph->setGlyph("warning");
+      m_statusGlyph->setColor(colorSpecFromRole(ColorRole::Error));
       m_statusLabel->setText(i18n::tr("control-center.night-light.status.needs-schedule"));
-      m_statusDetail->setText(i18n::tr("control-center.night-light.schedule.location-missing"));
+      m_statusDetail->setText(i18n::tr(
+          location.customSchedule ? "control-center.night-light.schedule.invalid"
+                                  : "control-center.night-light.schedule.location-missing"
+      ));
+    } else if (schedule->condition == day_night_schedule::SunCondition::PolarDay) {
+      m_statusGlyph->setGlyph("sun");
+      m_statusGlyph->setColor(colorSpecFromRole(ColorRole::Tertiary));
+      m_statusLabel->setText(i18n::tr("control-center.night-light.status.scheduled"));
+      m_statusDetail->setText(i18n::tr("control-center.night-light.schedule.polar-day"));
     } else if (m_nightLight != nullptr && m_nightLight->active()) {
       m_statusGlyph->setGlyph("nightlight-on");
+      m_statusGlyph->setColor(colorSpecFromRole(ColorRole::Primary));
       m_statusLabel->setText(i18n::tr("control-center.night-light.status.active"));
       const int kelvin = m_nightLight->currentKelvin();
       m_statusDetail->setText(std::format("{}K", kelvin > 0 ? kelvin : night.nightTemperature));
     } else {
       m_statusGlyph->setGlyph("nightlight-on");
+      m_statusGlyph->setColor(colorSpecFromRole(ColorRole::Primary));
       m_statusLabel->setText(i18n::tr("control-center.night-light.status.scheduled"));
       m_statusDetail->setText(i18n::tr("control-center.night-light.status.waiting"));
     }
@@ -598,8 +650,12 @@ void NightLightTab::persistScheduleMode(std::size_t index) {
     return;
   }
   if (index == 1U) {
-    const auto sunset = day_night_schedule::normalizedClock(m_pendingSunset).value_or("20:30");
-    const auto sunrise = day_night_schedule::normalizedClock(m_pendingSunrise).value_or("07:30");
+    auto sunset = day_night_schedule::normalizedClock(m_pendingSunset).value_or("20:30");
+    auto sunrise = day_night_schedule::normalizedClock(m_pendingSunrise).value_or("07:30");
+    if (sunset == sunrise) {
+      sunset = "20:30";
+      sunrise = "07:30";
+    }
     (void)m_config->setOverrides({
         {{"location", "custom_schedule"}, true},
         {{"location", "sunset"}, sunset},
@@ -613,14 +669,19 @@ void NightLightTab::persistScheduleMode(std::size_t index) {
 void NightLightTab::commitCustomSchedule() {
   const auto sunset = day_night_schedule::normalizedClock(m_pendingSunset);
   const auto sunrise = day_night_schedule::normalizedClock(m_pendingSunrise);
-  const bool valid = sunset.has_value() && sunrise.has_value();
+  const bool sameBoundary = sunset.has_value() && sunrise.has_value() && *sunset == *sunrise;
+  const bool valid = sunset.has_value() && sunrise.has_value() && !sameBoundary;
   if (m_sunsetInput != nullptr) {
-    m_sunsetInput->setInvalid(!sunset.has_value());
+    m_sunsetInput->setInvalid(!sunset.has_value() || sameBoundary);
   }
   if (m_sunriseInput != nullptr) {
-    m_sunriseInput->setInvalid(!sunrise.has_value());
+    m_sunriseInput->setInvalid(!sunrise.has_value() || sameBoundary);
   }
   if (m_scheduleError != nullptr) {
+    m_scheduleError->setText(i18n::tr(
+        sameBoundary ? "control-center.night-light.schedule.same-time"
+                     : "control-center.night-light.schedule.invalid"
+    ));
     m_scheduleError->setVisible(!valid);
     m_scheduleError->setParticipatesInLayout(!valid);
   }

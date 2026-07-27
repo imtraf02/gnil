@@ -5,7 +5,8 @@
 #include "cursor-shape-v1-client-protocol.h"
 #include "render/core/renderer.h"
 #include "render/scene/input_area.h"
-#include "ui/builders.h"
+#include "ui/builders/display.h"
+#include "ui/builders/layout.h"
 #include "ui/palette.h"
 #include "ui/style.h"
 

@@ -15,7 +15,7 @@
 #include "shell/control_center/tabs/system_tab.h"
 #include "shell/control_center/tabs/weather_tab.h"
 #include "shell/panel/panel_manager.h"
-#include "ui/builders.h"
+#include "ui/builders/collections.h"
 #include "ui/controls/scroll_view.h"
 #include "ui/style.h"
 

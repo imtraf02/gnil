@@ -4,7 +4,9 @@
 #include "i18n/i18n.h"
 #include "render/core/renderer.h"
 #include "system/brightness_service.h"
-#include "ui/builders.h"
+#include "ui/builders/display.h"
+#include "ui/builders/input.h"
+#include "ui/builders/layout.h"
 #include "ui/palette.h"
 
 #include <algorithm>

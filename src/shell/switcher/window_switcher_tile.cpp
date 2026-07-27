@@ -1,7 +1,8 @@
 #include "shell/switcher/window_switcher_tile.h"
 
 #include "render/core/renderer.h"
-#include "ui/builders.h"
+#include "ui/builders/display.h"
+#include "ui/builders/layout.h"
 #include "ui/palette.h"
 #include "ui/style.h"
 #include "util/string_utils.h"

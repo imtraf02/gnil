@@ -6,25 +6,29 @@ Tài liệu này dành cho việc kiểm tra các thay đổi ở Settings panel
 
 ## 1. Lệnh nhanh nhất
 
-Từ thư mục dự án:
+Luồng mặc định để chỉnh và kiểm tra UI dùng profile `ui`: không build test,
+không sinh debug symbols và dùng linker nhanh khi chạy trong Nix dev shell.
 
 ```bash
 cd /home/imtraf/Projects/gnil
 systemctl --user stop gnil.service
 nix develop
-just build debug
-./build-debug/gnil
+just dev
 ```
 
-Giữ terminal này mở vì GNIL chạy foreground và log sẽ xuất hiện trực tiếp tại đây.
+`just dev` build `build-ui/gnil`, chạy foreground, theo dõi source/assets và tự
+khởi động lại sau mỗi lần lưu. Watchexec gom các thay đổi trong 300 ms để một
+lần lưu không tạo nhiều lượt build.
 
 Mở terminal thứ hai để bật panel cần kiểm tra:
 
 ```bash
 cd /home/imtraf/Projects/gnil
 nix develop
-./build-debug/gnil msg panel toggle settings
-./build-debug/gnil msg panel toggle network
+export GNIL_CONFIG_HOME="$PWD/.dev/config"
+export GNIL_STATE_HOME="$PWD/.dev/state"
+./build-ui/gnil msg panel toggle settings
+./build-ui/gnil msg panel toggle network
 ```
 
 Khi kiểm tra xong, nhấn `Ctrl+C` ở terminal đang chạy GNIL. Nếu trước đó bạn dùng service hệ thống, bật lại bằng:
@@ -67,10 +71,35 @@ nix develop
 Các phần tiếp theo giả định terminal đang ở development shell. Nếu không muốn vào shell tương tác, thêm `nix develop -c` trước lệnh, ví dụ:
 
 ```bash
-nix develop -c just build debug
+nix develop -c just build-app ui
 ```
 
 ## 3. Configure và build
+
+### Profile UI nhanh
+
+```bash
+just configure ui
+just build-app ui
+just run ui
+```
+
+Profile này dùng `-O0`, giữ standard-library assertions nhưng tắt debug symbols,
+test targets, LTO và unity build. `mold` được dùng với một worker để giảm thời
+gian link và tránh lỗi parser trên object lớn; `ccache` giúp các lần build lại
+sau khi đổi branch hoặc tạo lại build directory.
+
+Số đo tham khảo trên máy hiện tại sau khi cache đã ấm:
+
+- No-op build: khoảng 1 giây.
+- Sửa một file UI, compile và link lại: khoảng 3,3 giây.
+- Binary `build-ui/gnil`: khoảng 77 MB.
+
+Kiểm tra profile, kích thước binary và cache:
+
+```bash
+just build-stats ui
+```
 
 ### Build debug thông thường
 
@@ -93,13 +122,15 @@ Kiểm tra binary:
 
 ### Build tăng dần sau khi sửa code
 
-Sau lần configure đầu tiên, chỉ cần:
+Khi chỉ cần chạy app, không cần build 39 test executables:
 
 ```bash
-just build debug
+just build-app debug
+just run debug
 ```
 
-Meson/Ninja chỉ biên dịch lại các file đã thay đổi.
+`just build debug` vẫn build toàn bộ target và phù hợp cho lượt validation trước
+khi commit.
 
 ### Build sạch khi cache cũ gây lỗi
 
@@ -162,7 +193,7 @@ Luồng này không dùng config và state thật. Nó theo dõi source/assets, 
 ```bash
 cd /home/imtraf/Projects/gnil
 systemctl --user stop gnil.service
-nix develop -c just dev debug
+nix develop -c just dev
 ```
 
 `just dev` sử dụng:
@@ -181,8 +212,8 @@ export GNIL_ASSETS_DIR="$PWD/assets"
 export GNIL_CONFIG_HOME="$PWD/.dev/config"
 export GNIL_STATE_HOME="$PWD/.dev/state"
 
-./build-debug/gnil msg panel toggle settings
-./build-debug/gnil msg panel toggle network
+./build-ui/gnil msg panel toggle settings
+./build-ui/gnil msg panel toggle network
 ```
 
 Nếu bỏ các biến này, client có thể tìm socket của instance mặc định thay vì instance `.dev`.
@@ -197,7 +228,7 @@ Mở Settings:
 
 Kiểm tra lần lượt:
 
-1. Rail trái chỉ hiển thị icon; icon đang chọn có nền màu primary nhẹ.
+1. Sidebar trái hiển thị cả icon và text; mục đang chọn có nền màu primary nhẹ.
 2. Hover từng icon phải hiện tooltip và có thể điều hướng bằng phím mũi tên.
 3. Search nằm ở góc trên phải và trả về kết quả từ nhiều trang.
 4. Appearance có hero `Wallpaper browser`.
@@ -286,7 +317,13 @@ Sau đó validate config:
 Chạy riêng route test của Settings:
 
 ```bash
-just test debug nexus_route_test
+just test debug nexus_route
+```
+
+Chạy riêng test lịch Night Light:
+
+```bash
+just test debug day_night_schedule
 ```
 
 Chạy toàn bộ unit test:
@@ -324,10 +361,12 @@ Ví dụ:
 error: designator order for field ... does not match declaration order
 ```
 
-C++ yêu cầu các field `.name = value` xuất hiện đúng thứ tự khai báo trong struct props. Xem thứ tự trong `src/ui/builders.h`, sửa initializer rồi build lại:
+C++ yêu cầu các field `.name = value` xuất hiện đúng thứ tự khai báo trong
+struct props. Xem thứ tự trong header tương ứng dưới `src/ui/builders/` (hoặc
+umbrella `src/ui/builders.h`), sửa initializer rồi build nhanh lại:
 
 ```bash
-just build debug
+just build-app ui
 ```
 
 ### Meson chưa được configure

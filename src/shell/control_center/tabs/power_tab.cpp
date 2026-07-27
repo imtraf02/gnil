@@ -5,7 +5,10 @@
 #include "i18n/i18n.h"
 #include "render/core/renderer.h"
 #include "time/time_format.h"
-#include "ui/builders.h"
+#include "ui/builders/actions.h"
+#include "ui/builders/collections.h"
+#include "ui/builders/display.h"
+#include "ui/builders/layout.h"
 #include "ui/controls/button.h"
 #include "ui/palette.h"
 

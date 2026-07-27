@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -52,11 +53,19 @@ namespace gnil::config {
       }
 
       const bool customSchedule = (*location)["custom_schedule"].value_or(false);
+      std::optional<std::string> normalizedSunset;
+      std::optional<std::string> normalizedSunrise;
       for (const std::string_view key : {"sunset", "sunrise"}) {
         const std::string path = "location." + std::string(key);
         const auto value = (*location)[key].value<std::string>();
         const bool set = value.has_value() && !value->empty();
-        if (set && !day_night_schedule::normalizedClock(*value).has_value()) {
+        const auto normalized = set ? day_night_schedule::normalizedClock(*value) : std::nullopt;
+        if (key == "sunset") {
+          normalizedSunset = normalized;
+        } else {
+          normalizedSunrise = normalized;
+        }
+        if (set && !normalized.has_value()) {
           const std::string message = "\"" + *value + "\" is not a time of day in HH:MM form";
           if (customSchedule) {
             diag.error(path, message, "location.clock.invalid");
@@ -69,6 +78,26 @@ namespace gnil::config {
           );
         }
       }
+      if (customSchedule && normalizedSunset.has_value() && normalizedSunrise.has_value()
+          && *normalizedSunset == *normalizedSunrise) {
+        diag.error(
+            "location.sunrise", "sunrise must differ from sunset for a custom schedule",
+            "location.clock.same-boundary"
+        );
+      }
+
+      const auto validateCoordinate = [&](std::string_view key, double minimum, double maximum) {
+        const auto value = (*location)[key].value<double>();
+        if (value.has_value() && (!std::isfinite(*value) || *value < minimum || *value > maximum)) {
+          diag.error(
+              "location." + std::string(key),
+              std::format("must be between {} and {}", formatBound(minimum), formatBound(maximum)),
+              "location.coordinate.range"
+          );
+        }
+      };
+      validateCoordinate("latitude", -90.0, 90.0);
+      validateCoordinate("longitude", -180.0, 180.0);
     }
 
     // Shape-checks a file's [include] table. The merged config has [include]

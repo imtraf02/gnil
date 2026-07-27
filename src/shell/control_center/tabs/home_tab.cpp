@@ -27,7 +27,10 @@
 #include "system/system_monitor_service.h"
 #include "system/weather_service.h"
 #include "time/time_format.h"
-#include "ui/builders.h"
+#include "ui/builders/actions.h"
+#include "ui/builders/display.h"
+#include "ui/builders/input.h"
+#include "ui/builders/layout.h"
 #include "ui/controls/grid_view.h"
 #include "ui/controls/progress_bar.h"
 #include "ui/controls/select.h"
@@ -1008,21 +1011,19 @@ std::unique_ptr<Flex> HomeTab::create() {
       ),
       ui::toggle({
           .out = &m_nightLightToggle,
-          .checked = m_nightLight != nullptr && m_nightLight->enabled(),
+          .checked = m_nightLight != nullptr && m_nightLight->forceEnabled(),
           .enabled = m_nightLight != nullptr,
           .scale = scale,
-          .onChange = [this](bool enabled) {
+          .onChange = [this](bool force) {
             if (!m_syncingNightLight && m_nightLight != nullptr) {
               if (m_config != nullptr) {
                 (void)m_config->setOverrides({
-                    {{"nightlight", "enabled"}, enabled},
-                    {{"nightlight", "force"}, enabled && m_config->config().nightlight.force},
+                    {{"nightlight", "enabled"}, force},
+                    {{"nightlight", "force"}, force},
                 });
               } else {
-                m_nightLight->setEnabled(enabled);
-                if (!enabled) {
-                  m_nightLight->setForceEnabled(false);
-                }
+                m_nightLight->setEnabled(force);
+                m_nightLight->setForceEnabled(force);
               }
             }
           },
@@ -2034,7 +2035,7 @@ void HomeTab::sync(Renderer& renderer) {
 
   if (m_nightLightToggle != nullptr && m_nightLight != nullptr) {
     m_syncingNightLight = true;
-    m_nightLightToggle->setChecked(m_nightLight->enabled());
+    m_nightLightToggle->setChecked(m_nightLight->forceEnabled());
     m_syncingNightLight = false;
   }
   if (m_temperatureSlider != nullptr && m_config != nullptr && !m_temperatureSlider->dragging()) {

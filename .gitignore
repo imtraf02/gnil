@@ -1,6 +1,6 @@
 # Build
-build*/
-cmake-build-*/
+/build*/
+/cmake-build-*/
 compile_commands.json
 
 # Local GNIL development profile (runtime config, state, caches, history)

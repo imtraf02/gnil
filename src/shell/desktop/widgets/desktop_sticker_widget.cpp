@@ -5,7 +5,8 @@
 #include "render/core/renderer.h"
 #include "render/core/texture_manager.h"
 #include "render/scene/node.h"
-#include "ui/builders.h"
+#include "ui/builders/display.h"
+#include "ui/builders/layout.h"
 #include "util/file_utils.h"
 
 #include <algorithm>

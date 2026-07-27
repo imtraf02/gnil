@@ -2,7 +2,11 @@
 
 #include "i18n/i18n.h"
 #include "render/text/glyph_registry.h"
-#include "ui/builders.h"
+#include "ui/builders/actions.h"
+#include "ui/builders/collections.h"
+#include "ui/builders/display.h"
+#include "ui/builders/input.h"
+#include "ui/builders/layout.h"
 #include "ui/palette.h"
 #include "ui/style.h"
 #include "util/string_utils.h"

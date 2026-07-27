@@ -3,7 +3,10 @@
 #include "core/deferred_call.h"
 #include "render/render_context.h"
 #include "render/scene/node.h"
-#include "ui/builders.h"
+#include "ui/builders/actions.h"
+#include "ui/builders/display.h"
+#include "ui/builders/input.h"
+#include "ui/builders/layout.h"
 #include "ui/style.h"
 #include "xdg-shell-client-protocol.h"
 

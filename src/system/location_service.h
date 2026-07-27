@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config/config_types.h"
+#include "config/night_light_config.h"
 
 #include <functional>
 #include <optional>

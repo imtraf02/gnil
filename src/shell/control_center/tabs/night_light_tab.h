@@ -8,6 +8,7 @@
 
 class CompositorPlatform;
 class ConfigService;
+class Button;
 class Flex;
 class GammaService;
 class Glyph;
@@ -56,6 +57,7 @@ private:
   Label* m_nightValue = nullptr;
   Label* m_locationStatus = nullptr;
   Label* m_scheduleError = nullptr;
+  Button* m_locationSettingsButton = nullptr;
   Toggle* m_enabledToggle = nullptr;
   Segmented* m_modePicker = nullptr;
   Segmented* m_schedulePicker = nullptr;

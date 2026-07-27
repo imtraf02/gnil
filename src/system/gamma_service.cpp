@@ -89,10 +89,10 @@ void GammaService::setLocationResolving(bool resolving) {
 }
 
 void GammaService::setResolvedCoordinates(std::optional<double> latitude, std::optional<double> longitude) {
-  if (latitude.has_value() && !std::isfinite(*latitude)) {
+  if (latitude.has_value() && (!std::isfinite(*latitude) || *latitude < -90.0 || *latitude > 90.0)) {
     latitude.reset();
   }
-  if (longitude.has_value() && !std::isfinite(*longitude)) {
+  if (longitude.has_value() && (!std::isfinite(*longitude) || *longitude < -180.0 || *longitude > 180.0)) {
     longitude.reset();
   }
   if (m_resolvedLatitude == latitude && m_resolvedLongitude == longitude) {
@@ -128,16 +128,19 @@ bool GammaService::active() const {
   if (effectiveForce()) {
     return true;
   }
+  if (!scheduleAvailable()) {
+    return false;
+  }
   return isNightPhase();
 }
 
 bool GammaService::scheduleAvailable() const {
-  if (day_night_schedule::isManualMode(m_location)) {
-    return day_night_schedule::hasUsableCustomTimes(m_location);
-  }
-  const auto coordinates =
-      day_night_schedule::resolveCoordinates(m_location, m_resolvedLatitude, m_resolvedLongitude);
-  return coordinates.latitude.has_value() && coordinates.longitude.has_value();
+  return m_scheduleTimes.has_value();
+}
+
+void GammaService::refreshScheduleTimes() {
+  m_scheduleTimes =
+      day_night_schedule::resolveScheduleTimes(m_location, m_resolvedLatitude, m_resolvedLongitude);
 }
 
 void GammaService::onOutputsChanged() {
@@ -225,6 +228,10 @@ GammaService::RgbMultipliers GammaService::kelvinToRgb(int kelvin) {
 }
 
 void GammaService::fillGammaRamp(std::uint16_t* ramp, std::uint32_t size, const RgbMultipliers& mul) {
+  if (ramp == nullptr || size < 2) {
+    return;
+  }
+
   const double scale = 65535.0 / static_cast<double>(size - 1);
   for (std::uint32_t i = 0; i < size; ++i) {
     const double base = i * scale;
@@ -238,6 +245,13 @@ void GammaService::fillGammaRamp(std::uint16_t* ramp, std::uint32_t size, const 
 
 void GammaService::onGammaSize(void* data, zwlr_gamma_control_v1* /*ctrl*/, std::uint32_t size) {
   auto* og = static_cast<OutputGamma*>(data);
+  if (size < 2) {
+    kLog.warn("gamma control returned an unusable ramp size ({})", size);
+    if (og->owner != nullptr) {
+      og->owner->destroyOutputGamma(*og);
+    }
+    return;
+  }
   og->gammaSize = size;
   og->ready = true;
   if (og->owner != nullptr && og->owner->m_currentKelvin >= 0) {
@@ -464,12 +478,22 @@ GammaService::GammaTarget GammaService::computeTarget() const {
     return {.kelvin = nightTemp, .transitioning = false};
   }
 
+  if (m_scheduleTimes.has_value()) {
+    if (m_scheduleTimes->condition == day_night_schedule::SunCondition::PolarNight) {
+      return {.kelvin = nightTemp, .transitioning = false};
+    }
+    if (m_scheduleTimes->condition == day_night_schedule::SunCondition::PolarDay) {
+      return {.kelvin = dayTemp, .transitioning = false};
+    }
+  }
+
   const bool manualMode = day_night_schedule::isManualMode(m_location);
   if (!manualMode) {
     const bool customTimesUsable = day_night_schedule::hasUsableCustomTimes(m_location);
     if (m_location.customSchedule && !customTimesUsable) {
-      // Custom scheduling was asked for but cannot run: the times are missing or not HH:MM.
-      kLog.warn("custom schedule is on but sunset/sunrise are not both set to an HH:MM time");
+      // Custom scheduling was asked for but cannot run: its boundaries are unusable.
+      kLog.warn("custom schedule is on but sunset/sunrise are missing, invalid, or equal");
+      return {};
     }
 
     const auto coords = day_night_schedule::resolveCoordinates(m_location, m_resolvedLatitude, m_resolvedLongitude);
@@ -521,6 +545,11 @@ GammaService::GammaTarget GammaService::computeTarget() const {
 }
 
 void GammaService::apply() {
+  // Solar math depends on the calendar date. apply() runs on every schedule
+  // recheck, so cache one resolved window for UI/status consumers without
+  // repeating the trigonometry every rendered frame.
+  refreshScheduleTimes();
+
   if (!m_wayland.hasGammaControl()) {
     if (!m_gammaUnavailableLogged) {
       kLog.warn("compositor does not support gamma control");
@@ -536,8 +565,13 @@ void GammaService::apply() {
   if (effectiveEnabled() && manualMode) {
     scheduleManualTimer();
   } else if (effectiveEnabled() && !effectiveForce()) {
-    const auto coords = day_night_schedule::resolveCoordinates(m_location, m_resolvedLatitude, m_resolvedLongitude);
-    if (coords.latitude.has_value() && coords.longitude.has_value()) {
+    if (m_location.customSchedule) {
+      // Invalid custom times are a configuration error, not permission to
+      // silently switch back to the geographic schedule.
+      m_scheduleTimer.stop();
+    } else if (const auto coords =
+                   day_night_schedule::resolveCoordinates(m_location, m_resolvedLatitude, m_resolvedLongitude);
+               coords.latitude.has_value() && coords.longitude.has_value()) {
       scheduleGeoTimer();
     } else {
       m_scheduleTimer.stop();

@@ -8,6 +8,19 @@ struct LocationConfig;
 
 namespace day_night_schedule {
 
+  enum class SunCondition {
+    Normal,
+    PolarDay,
+    PolarNight,
+  };
+
+  struct ScheduleTimes {
+    int sunriseMinutes = 0;
+    int sunsetMinutes = 0;
+    SunCondition condition = SunCondition::Normal;
+    bool custom = false;
+  };
+
   struct GeoCoordinates {
     std::optional<double> latitude;
     std::optional<double> longitude;
@@ -33,6 +46,16 @@ namespace day_night_schedule {
   // cannot drive a schedule and the request is a misconfiguration to surface, not to absorb.
   [[nodiscard]] bool hasUsableCustomTimes(const LocationConfig& config);
   [[nodiscard]] bool isManualMode(const LocationConfig& config);
+  // Resolves the effective schedule. When custom_schedule is selected but its
+  // clock values are unusable, this deliberately returns nullopt instead of
+  // silently falling back to coordinates.
+  [[nodiscard]] std::optional<ScheduleTimes> resolveScheduleTimes(
+      const LocationConfig& config, std::optional<double> resolvedLatitude, std::optional<double> resolvedLongitude
+  );
+  // Pure custom-schedule evaluator used by the runtime and deterministic tests.
+  [[nodiscard]] std::optional<Evaluation> evaluateCustomAtLocalTime(
+      std::string_view sunset, std::string_view sunrise, int nowMinutes, int nowSeconds = 0
+  );
   [[nodiscard]] Evaluation evaluate(
       const LocationConfig& config, std::optional<double> resolvedLatitude, std::optional<double> resolvedLongitude
   );

@@ -12,7 +12,10 @@
 #include "system/hardware_info.h"
 #include "system/system_monitor_service.h"
 #include "time/time_format.h"
-#include "ui/builders.h"
+#include "ui/builders/actions.h"
+#include "ui/builders/collections.h"
+#include "ui/builders/display.h"
+#include "ui/builders/layout.h"
 #include "ui/controls/graph.h"
 
 #include <algorithm>

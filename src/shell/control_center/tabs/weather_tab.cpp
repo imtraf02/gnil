@@ -10,7 +10,9 @@
 #include "shell/tooltip/tooltip_content.h"
 #include "system/weather_service.h"
 #include "time/time_format.h"
-#include "ui/builders.h"
+#include "ui/builders/actions.h"
+#include "ui/builders/display.h"
+#include "ui/builders/layout.h"
 
 #include <algorithm>
 #include <chrono>

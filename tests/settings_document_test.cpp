@@ -37,12 +37,20 @@ int main() {
   const auto overviewBlur = (*runtime)["backdrop"]["blur_intensity"].value<double>();
   const auto overviewTint = (*runtime)["backdrop"]["tint_intensity"].value<double>();
   const auto dashboardEnabled = (*runtime)["dashboard"]["enabled"].value<bool>();
+  const auto nightLightEnabled = (*runtime)["nightlight"]["enabled"].value<bool>();
+  const auto nightLightForce = (*runtime)["nightlight"]["force"].value<bool>();
+  const auto nightLightDay = (*runtime)["nightlight"]["temperature_day"].value<std::int64_t>();
+  const auto nightLightNight = (*runtime)["nightlight"]["temperature_night"].value<std::int64_t>();
   ok &= check(frame.has_value() && near(*frame, 6.0), "frame thickness uses Ling default");
   ok &= check(barThickness == 45, "bar thickness derives from frame, inner size and padding");
   ok &= check(autoHide == true && showOnHover == false, "bar collapses into frame and uses edge drag by default");
   ok &= check(liveWallpaperOutput == "auto", "live wallpaper palette source defaults to automatic output selection");
   ok &= check(overviewEnabled == true, "Niri overview backdrop defaults to enabled");
   ok &= check(dashboardEnabled == true, "top-centre dashboard defaults to enabled");
+  ok &= check(
+      nightLightEnabled == false && nightLightForce == false && nightLightDay == 6500 && nightLightNight == 4000,
+      "night light defaults convert to runtime settings"
+  );
   ok &= check(
       overviewBlur.has_value() && overviewTint.has_value()
           && near(*overviewBlur, 0.5) && near(*overviewTint, 0.3),
@@ -85,6 +93,41 @@ int main() {
           persistedBlur.has_value() && persistedTint.has_value()
               && near(*persistedBlur, 0.72) && near(*persistedTint, 0.18),
           "overview backdrop intensities sync back to the public document"
+      );
+    }
+
+    auto* nightLight = runtime->get_as<toml::table>("nightlight");
+    auto* location = runtime->get_as<toml::table>("location");
+    ok &= check(nightLight != nullptr && location != nullptr, "night light and location runtime tables exist");
+    if (nightLight != nullptr && location != nullptr) {
+      nightLight->insert_or_assign("enabled", true);
+      nightLight->insert_or_assign("force", true);
+      nightLight->insert_or_assign("temperature_day", std::int64_t{6200});
+      nightLight->insert_or_assign("temperature_night", std::int64_t{3600});
+      location->insert_or_assign("custom_schedule", true);
+      location->insert_or_assign("sunset", "20:15");
+      location->insert_or_assign("sunrise", "06:45");
+      location->insert_or_assign("latitude", 10.75);
+      location->insert_or_assign("longitude", 106.67);
+      gnil::settings_document::syncFromRuntimeOverrides(document, *runtime);
+
+      auto persisted = gnil::settings_document::toRuntimeOverrides(document);
+      ok &= check(
+          persisted.has_value()
+              && (*persisted)["nightlight"]["enabled"].value<bool>() == true
+              && (*persisted)["nightlight"]["force"].value<bool>() == true
+              && (*persisted)["nightlight"]["temperature_day"].value<std::int64_t>() == 6200
+              && (*persisted)["nightlight"]["temperature_night"].value<std::int64_t>() == 3600,
+          "night light mutations survive public-document round trip"
+      );
+      ok &= check(
+          persisted.has_value()
+              && (*persisted)["location"]["custom_schedule"].value<bool>() == true
+              && (*persisted)["location"]["sunset"].value<std::string>() == "20:15"
+              && (*persisted)["location"]["sunrise"].value<std::string>() == "06:45"
+              && near((*persisted)["location"]["latitude"].value<double>().value_or(0.0), 10.75)
+              && near((*persisted)["location"]["longitude"].value<double>().value_or(0.0), 106.67),
+          "location schedule mutations survive public-document round trip"
       );
     }
 

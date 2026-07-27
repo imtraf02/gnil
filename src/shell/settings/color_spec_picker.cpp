@@ -1,7 +1,7 @@
 #include "shell/settings/color_spec_picker.h"
 
 #include "i18n/i18n.h"
-#include "ui/builders.h"
+#include "ui/builders/input.h"
 #include "ui/dialogs/color_picker_dialog.h"
 #include "ui/style.h"
 
