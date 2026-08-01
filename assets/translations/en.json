@@ -694,9 +694,15 @@
   "lockscreen": {
     "authenticating": "Authenticating…",
     "authentication-failed": "Authentication failed",
+    "calendar": {
+      "next": "Next month",
+      "previous": "Previous month"
+    },
     "caps-lock-on": "Caps Lock is on",
     "dashboard": {
+      "battery": "Battery",
       "media-idle": "Playback controls will appear here",
+      "memory": "Memory",
       "no-battery": "AC power",
       "no-notifications": "No notifications",
       "nothing-playing": "Nothing playing",
@@ -704,6 +710,7 @@
       "notifications": "Notifications",
       "notifications-private": "Unlock to view notifications",
       "now-playing": "Now playing",
+      "storage": "Storage",
       "system": "System",
       "system-details": "DISTRO: {distro}\nWM: Niri\nUP: {uptime}\nBATT: {battery}",
       "unavailable": "Unavailable",
@@ -714,9 +721,15 @@
       "weather-unavailable": "Weather unavailable",
       "weather-wind": "Wind {wind} km/h"
     },
+    "glance-hint": "Press any key or select Unlock",
+    "hero-caption": "Make space for what matters.",
+    "notifications": {
+      "close": "Close notifications"
+    },
     "password-cleared": "Password cleared",
     "password-placeholder": "Password",
     "ready": "Type your password and press Enter.",
+    "unlock": "Unlock",
     "unlocked": "Unlocked",
     "waiting": "Waiting for lock confirmation…"
   },

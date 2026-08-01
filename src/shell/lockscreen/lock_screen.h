@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 struct ScreencopyImage;
@@ -24,8 +25,10 @@ class ConfigService;
 
 class CompositorPlatform;
 class AccountsService;
+class CalendarService;
 class FingerprintAuthenticator;
 class LockSurface;
+class HttpClient;
 class MprisService;
 class NotificationManager;
 class RenderContext;
@@ -43,6 +46,8 @@ struct LockscreenServices {
   UPowerService* upower = nullptr;
   NotificationManager* notifications = nullptr;
   AccountsService* accounts = nullptr;
+  CalendarService* calendar = nullptr;
+  HttpClient* http = nullptr;
 };
 
 class LockScreen {
@@ -143,6 +148,8 @@ private:
   std::unordered_map<wl_output*, ScreencopyImage> m_desktopCaptures;
   PamAuthenticator m_authenticator;
   std::unique_ptr<FingerprintAuthenticator> m_fingerprint;
+  std::shared_ptr<void> m_artworkLifetime = std::make_shared<int>(0);
+  std::unordered_set<std::string> m_pendingArtworkDownloads;
   std::string m_user;
   std::string m_password;
   std::string m_status;

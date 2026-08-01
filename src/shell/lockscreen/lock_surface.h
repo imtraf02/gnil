@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 struct ext_session_lock_surface_v1;
 struct ext_session_lock_v1;
@@ -24,12 +25,12 @@ struct wl_output;
 
 class Button;
 class Box;
-class CountdownRingNode;
 class Flex;
 class Glyph;
 class Image;
 class Input;
 class Label;
+class ProgressBar;
 class Renderer;
 class SharedTextureCache;
 class Spinner;
@@ -61,18 +62,23 @@ struct LockscreenDashboardState {
   std::string weatherTemperature;
   std::string weatherCondition;
   std::string weatherDetail;
+  std::string weatherLocation;
   bool weatherAvailable = false;
   std::string systemIdentity;
   std::string systemDetails;
   std::string distroAssetPath;
   std::string mediaTitle;
   std::string mediaArtist;
+  std::string mediaArtworkPath;
+  std::int64_t mediaPositionUs = 0;
+  std::int64_t mediaLengthUs = 0;
   bool mediaAvailable = false;
   bool mediaPlaying = false;
   bool mediaCanPrevious = false;
   bool mediaCanPlayPause = false;
   bool mediaCanNext = false;
-  std::array<LockscreenMetricState, 4> metrics;
+  std::array<LockscreenMetricState, 3> metrics;
+  std::vector<int> calendarEventDateKeys;
   std::array<LockscreenNotificationPreview, 3> notificationPreviews;
   std::size_t notificationCount = 0;
   std::string avatarPath;
@@ -107,6 +113,10 @@ public:
   void setOnMediaPrevious(std::function<void()> callback);
   void setOnMediaPlayPause(std::function<void()> callback);
   void setOnMediaNext(std::function<void()> callback);
+  void revealPasswordPrompt();
+  void collapsePasswordPrompt();
+  [[nodiscard]] bool passwordPromptVisible() const noexcept { return m_passwordPromptVisible; }
+  [[nodiscard]] bool dismissTransientUi();
   void selectAllPassword();
   void clearPasswordSelection();
   void onThemeChanged();
@@ -143,17 +153,27 @@ private:
   void startIntroAnimation();
   void startPasswordErrorAnimation();
   void applyLockscreenPalette();
-  void layoutMetricViews(Renderer& renderer, float width, float height, float scale, float gap);
   void syncAvatar(Renderer& renderer, float avatarSize);
+  void syncHeroArtwork(Renderer& renderer, float artworkSize);
   void syncDashboardCopy();
+  void syncCalendarCopy();
+  void setNotificationPanelOpen(bool open, bool animate = true);
+  void setPasswordPromptVisible(bool visible, bool animate = true);
+  void changeCalendarMonth(int delta);
 
   struct MetricView {
-    Flex* card = nullptr;
-    CountdownRingNode* track = nullptr;
-    CountdownRingNode* progress = nullptr;
+    Flex* row = nullptr;
     Glyph* glyph = nullptr;
+    Label* label = nullptr;
     Label* value = nullptr;
+    ProgressBar* progress = nullptr;
     float displayedProgress = 0.0f;
+  };
+
+  struct CalendarCellView {
+    Flex* cell = nullptr;
+    Label* label = nullptr;
+    Box* eventDot = nullptr;
   };
 
   struct NotificationView {
@@ -170,32 +190,54 @@ private:
   WallpaperNode* m_wallpaper = nullptr;
   Box* m_tintOverlay = nullptr;
   Box* m_backdrop = nullptr;
-  Box* m_island = nullptr;
   Node* m_leftColumn = nullptr;
+  Node* m_centerColumn = nullptr;
   Node* m_rightColumn = nullptr;
+  Flex* m_identityCard = nullptr;
+  Label* m_identityHostLabel = nullptr;
+  Flex* m_clockBlock = nullptr;
   Flex* m_loginPanel = nullptr;
+  Node* m_promptHost = nullptr;
+  Button* m_unlockButton = nullptr;
+  Node* m_heroLayer = nullptr;
+  Box* m_heroBackSheetA = nullptr;
+  Box* m_heroBackSheetB = nullptr;
+  Flex* m_heroCard = nullptr;
+  Node* m_heroImageFrame = nullptr;
+  Image* m_heroImage = nullptr;
+  Glyph* m_heroFallbackGlyph = nullptr;
+  Label* m_heroCaptionLabel = nullptr;
+  Flex* m_calendarCard = nullptr;
+  Flex* m_calendarGrid = nullptr;
+  Button* m_calendarPreviousButton = nullptr;
+  Button* m_calendarMonthButton = nullptr;
+  Button* m_calendarNextButton = nullptr;
+  std::array<Label*, 7> m_calendarWeekdayLabels{};
+  std::array<CalendarCellView, 42> m_calendarCells{};
+  Button* m_notificationButton = nullptr;
+  InputArea* m_notificationBackdropArea = nullptr;
+  Flex* m_notificationPanel = nullptr;
+  Button* m_notificationCloseButton = nullptr;
   Flex* m_weatherCard = nullptr;
-  Flex* m_fetchCard = nullptr;
   Flex* m_mediaCard = nullptr;
+  Box* m_mediaArtworkFrame = nullptr;
+  Image* m_mediaArtwork = nullptr;
+  Glyph* m_mediaArtworkFallback = nullptr;
+  ProgressBar* m_mediaProgress = nullptr;
+  Label* m_mediaDurationLabel = nullptr;
   Flex* m_resourcesCard = nullptr;
-  Flex* m_notificationsCard = nullptr;
   Label* m_weatherTitleLabel = nullptr;
   Glyph* m_weatherGlyph = nullptr;
   Label* m_weatherTemperatureLabel = nullptr;
   Label* m_weatherConditionLabel = nullptr;
   Label* m_weatherDetailLabel = nullptr;
-  Image* m_distroImage = nullptr;
-  Glyph* m_distroGlyph = nullptr;
-  Label* m_systemIdentityLabel = nullptr;
-  Label* m_fetchLabel = nullptr;
-  std::array<Box*, 8> m_paletteDots{};
   Label* m_mediaHeaderLabel = nullptr;
   Label* m_mediaTitleLabel = nullptr;
   Label* m_mediaArtistLabel = nullptr;
   Button* m_mediaPreviousButton = nullptr;
   Button* m_mediaPlayPauseButton = nullptr;
   Button* m_mediaNextButton = nullptr;
-  std::array<MetricView, 4> m_metricViews{};
+  std::array<MetricView, 3> m_metricViews{};
   Label* m_notificationsHeaderLabel = nullptr;
   Label* m_notificationsLabel = nullptr;
   Flex* m_notificationsEmpty = nullptr;
@@ -257,6 +299,10 @@ private:
   int m_loadedAvatarSize = 0;
   std::string m_loadedDistroPath;
   int m_loadedDistroSize = 0;
+  std::string m_loadedHeroPath;
+  int m_loadedHeroSize = 0;
+  std::string m_loadedMediaArtworkPath;
+  int m_loadedMediaArtworkSize = 0;
   float m_introOffsetY = 0.0f;
   float m_introSideOffset = 0.0f;
   float m_introOpacity = 1.0f;
@@ -267,4 +313,10 @@ private:
   bool m_introPending = false;
   bool m_introStarted = false;
   bool m_unlocking = false;
+  bool m_passwordPromptVisible = false;
+  bool m_notificationPanelOpen = false;
+  int m_calendarMonthOffset = 0;
+  float m_calendarSlideOffset = 0.0f;
+  float m_notificationPanelOffsetY = 0.0f;
+  float m_promptTransition = 0.0f;
 };

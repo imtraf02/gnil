@@ -198,6 +198,8 @@ void Application::initLockScreenAndSession() {
           .upower = m_upowerService.get(),
           .notifications = &m_notificationManager,
           .accounts = m_accountsService.get(),
+          .calendar = &m_calendarService,
+          .http = &m_httpClient,
       }
   );
   m_wallpaper.setAutomationGate([this]() { return !m_lockScreen.isActive(); });

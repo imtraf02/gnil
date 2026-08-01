@@ -1,6 +1,7 @@
 #include "shell/lockscreen/lock_screen.h"
 
 #include "auth/fingerprint_authenticator.h"
+#include "calendar/calendar_service.h"
 #include "capture/screencopy_util.h"
 #include "compositors/compositor_platform.h"
 #include "config/config_service.h"
@@ -13,9 +14,11 @@
 #include "ext-session-lock-v1-client-protocol.h"
 #include "i18n/i18n.h"
 #include "dbus/accounts/accounts_service.h"
+#include "dbus/mpris/mpris_art.h"
 #include "dbus/mpris/mpris_service.h"
 #include "dbus/upower/upower_service.h"
 #include "notification/notification_manager.h"
+#include "net/http_client.h"
 #include "render/render_context.h"
 #include "shell/bar/widgets/keyboard_layout_widget.h"
 #include "shell/lockscreen/lock_surface.h"
@@ -29,11 +32,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <ctime>
 #include <filesystem>
 #include <format>
 #include <ranges>
 #include <string>
 #include <thread>
+#include <unordered_set>
 
 namespace {
 
@@ -86,11 +91,54 @@ namespace {
     return {};
   }
 
+  int localDateKey(std::chrono::system_clock::time_point time) {
+    const std::time_t raw = std::chrono::system_clock::to_time_t(time);
+    std::tm local{};
+    localtime_r(&raw, &local);
+    return (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday;
+  }
+
+  std::vector<int> calendarEventDateKeys(const CalendarService* calendar) {
+    if (calendar == nullptr || !calendar->hasData()) {
+      return {};
+    }
+    std::unordered_set<int> unique;
+    for (const CalendarEvent& event : calendar->snapshot().events) {
+      auto end = std::max(event.end, event.start);
+      if (end > event.start) {
+        end -= std::chrono::seconds(1);
+      }
+      std::time_t cursorRaw = std::chrono::system_clock::to_time_t(event.start);
+      std::tm cursor{};
+      localtime_r(&cursorRaw, &cursor);
+      cursor.tm_hour = 12;
+      cursor.tm_min = 0;
+      cursor.tm_sec = 0;
+      cursor.tm_isdst = -1;
+      const int endKey = localDateKey(end);
+      for (int guard = 0; guard < 370; ++guard) {
+        const int key = (cursor.tm_year + 1900) * 10000 + (cursor.tm_mon + 1) * 100 + cursor.tm_mday;
+        unique.insert(key);
+        if (key == endKey) {
+          break;
+        }
+        ++cursor.tm_mday;
+        if (std::mktime(&cursor) == -1) {
+          break;
+        }
+      }
+    }
+    std::vector<int> keys(unique.begin(), unique.end());
+    std::ranges::sort(keys);
+    return keys;
+  }
+
 } // namespace
 
 LockScreen::LockScreen() = default;
 
 LockScreen::~LockScreen() {
+  m_artworkLifetime.reset();
   invalidatePendingAuthentication();
   clearInstances();
   resetLockState();
@@ -405,22 +453,6 @@ void LockScreen::onKeyboardEvent(const KeyboardEvent& event) {
     return;
   }
 
-  // The password field always owns plain printable keys; Space is a Validate
-  // chord but must type a space, not submit (passwords may contain spaces).
-  if (!isPlainPrintableKey(event.utf32, event.modifiers, event.preedit)
-      && KeybindMatcher::matches(KeybindAction::Validate, event.sym, event.modifiers)) {
-    tryAuthenticate();
-    return;
-  }
-
-  if (KeybindMatcher::matches(KeybindAction::Cancel, event.sym, event.modifiers)) {
-    clearSensitiveString(m_password);
-    m_status = i18n::tr("lockscreen.password-cleared");
-    m_statusIsError = false;
-    updatePromptOnSurfaces();
-    return;
-  }
-
   LockSurface* targetSurface = nullptr;
   if (m_pointerSurface != nullptr) {
     for (auto& instance : m_instances) {
@@ -440,7 +472,41 @@ void LockScreen::onKeyboardEvent(const KeyboardEvent& event) {
       }
     }
   }
+
+  // The password field always owns plain printable keys; Space is a Validate
+  // chord but must type a space, not submit (passwords may contain spaces).
+  if (!isPlainPrintableKey(event.utf32, event.modifiers, event.preedit)
+      && KeybindMatcher::matches(KeybindAction::Validate, event.sym, event.modifiers)) {
+    if (targetSurface != nullptr && !targetSurface->passwordPromptVisible()) {
+      targetSurface->revealPasswordPrompt();
+      return;
+    }
+    tryAuthenticate();
+    return;
+  }
+
+  if (KeybindMatcher::matches(KeybindAction::Cancel, event.sym, event.modifiers)) {
+    if (targetSurface != nullptr && targetSurface->dismissTransientUi()) {
+      return;
+    }
+    if (m_password.empty() && targetSurface != nullptr && targetSurface->passwordPromptVisible()) {
+      targetSurface->collapsePasswordPrompt();
+      m_status.clear();
+      m_statusIsError = false;
+      updatePromptOnSurfaces();
+      return;
+    }
+    clearSensitiveString(m_password);
+    m_status = i18n::tr("lockscreen.password-cleared");
+    m_statusIsError = false;
+    updatePromptOnSurfaces();
+    return;
+  }
   if (targetSurface != nullptr) {
+    if (isPlainPrintableKey(event.utf32, event.modifiers, event.preedit)
+        && !targetSurface->passwordPromptVisible()) {
+      targetSurface->revealPasswordPrompt();
+    }
     targetSurface->onKeyboardEvent(event);
   }
 }
@@ -816,7 +882,6 @@ void LockScreen::retainDashboardSampling() {
   if (m_dashboardSamplingRetained || m_services.sysmon == nullptr) {
     return;
   }
-  m_services.sysmon->retainCpuTemp();
   m_services.sysmon->retainDiskPath("/");
   m_dashboardSamplingRetained = true;
 }
@@ -825,7 +890,6 @@ void LockScreen::releaseDashboardSampling() {
   if (!m_dashboardSamplingRetained || m_services.sysmon == nullptr) {
     return;
   }
-  m_services.sysmon->releaseCpuTemp();
   m_services.sysmon->releaseDiskPath("/");
   m_dashboardSamplingRetained = false;
 }
@@ -838,6 +902,7 @@ void LockScreen::updateDashboardOnSurfaces() {
   if (m_services.weather != nullptr && m_services.weather->hasData()) {
     const auto& weather = m_services.weather->snapshot();
     state.weatherAvailable = true;
+    state.weatherLocation = weather.locationName;
     state.weatherGlyph = WeatherService::glyphForCode(weather.current.weatherCode, weather.current.isDay);
     state.weatherTemperature = std::format(
         "{:.0f}{}", m_services.weather->displayTemperature(weather.current.temperatureC),
@@ -877,42 +942,48 @@ void LockScreen::updateDashboardOnSurfaces() {
       state.mediaTitle = player->title.empty() ? i18n::tr("lockscreen.dashboard.unknown-track") : player->title;
       state.mediaArtist = player->artists.empty() ? player->identity : joinedArtists(player->artists);
       state.mediaPlaying = player->playbackStatus == "Playing";
+      state.mediaPositionUs = std::max<std::int64_t>(0, player->positionUs);
+      state.mediaLengthUs = std::max<std::int64_t>(0, player->lengthUs);
       state.mediaCanPrevious = player->canGoPrevious;
       state.mediaCanPlayPause = player->canPlay || player->canPause;
       state.mediaCanNext = player->canGoNext;
+      const std::string artUrl = mpris::effectiveArtUrl(*player);
+      state.mediaArtworkPath = mpris::resolveArtworkSource(
+          m_services.http, m_pendingArtworkDownloads, artUrl,
+          [this]() {
+            if (isActive()) {
+              updateDashboardOnSurfaces();
+            }
+          },
+          m_artworkLifetime
+      );
     }
   }
 
   state.metrics = {
-      LockscreenMetricState{.glyph = "cpu", .value = "—", .progress = 0.0f, .available = false},
-      LockscreenMetricState{.glyph = "temperature", .value = "—", .progress = 0.0f, .available = false},
+      LockscreenMetricState{.glyph = "battery", .value = "—", .progress = 0.0f, .available = false},
       LockscreenMetricState{.glyph = "memory", .value = "—", .progress = 0.0f, .available = false},
       LockscreenMetricState{.glyph = "storage", .value = "—", .progress = 0.0f, .available = false},
   };
+  if (m_services.upower != nullptr && m_services.upower->state().isPresent) {
+    const float battery = static_cast<float>(std::clamp(m_services.upower->state().percentage, 0.0, 100.0));
+    state.metrics[0] = LockscreenMetricState{
+        .glyph = "battery", .value = std::format("{:.0f}%", battery), .progress = battery / 100.0f, .available = true
+    };
+  }
   if (m_services.sysmon != nullptr && m_services.sysmon->isRunning()) {
     const SystemStats stats = m_services.sysmon->latest();
-    const float cpu = static_cast<float>(std::clamp(stats.cpuUsagePercent, 0.0, 100.0));
     const float ram = static_cast<float>(std::clamp(stats.ramUsagePercent, 0.0, 100.0));
     const float disk = std::clamp(m_services.sysmon->diskUsagePercent("/"), 0.0f, 100.0f);
-    state.metrics[0] = LockscreenMetricState{
-        .glyph = "cpu", .value = std::format("{:.0f}%", cpu), .progress = cpu / 100.0f, .available = true
-    };
-    if (stats.cpuTempAvailable && stats.cpuTempC.has_value()) {
-      const float temperature = static_cast<float>(std::clamp(*stats.cpuTempC, 0.0, 100.0));
-      state.metrics[1] = LockscreenMetricState{
-          .glyph = "temperature",
-          .value = std::format("{:.0f}°", temperature),
-          .progress = temperature / 100.0f,
-          .available = true,
-      };
-    }
-    state.metrics[2] = LockscreenMetricState{
+    state.metrics[1] = LockscreenMetricState{
         .glyph = "memory", .value = std::format("{:.0f}%", ram), .progress = ram / 100.0f, .available = true
     };
-    state.metrics[3] = LockscreenMetricState{
+    state.metrics[2] = LockscreenMetricState{
         .glyph = "storage", .value = std::format("{:.0f}%", disk), .progress = disk / 100.0f, .available = true
     };
   }
+
+  state.calendarEventDateKeys = calendarEventDateKeys(m_services.calendar);
 
   state.showNotifications = m_configService == nullptr || m_configService->config().lockscreen.showNotifications;
   if (state.showNotifications && m_services.notifications != nullptr) {

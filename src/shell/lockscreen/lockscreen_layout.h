@@ -2,6 +2,12 @@
 
 namespace lockscreen_layout {
 
+  enum class Mode {
+    Wide,
+    Medium,
+    Compact,
+  };
+
   struct Rect {
     float x = 0.0f;
     float y = 0.0f;
@@ -14,19 +20,24 @@ namespace lockscreen_layout {
   };
 
   struct Layout {
-    bool fullDashboard = false;
+    Mode mode = Mode::Compact;
     float scale = 1.0f;
     float gap = 0.0f;
     float radius = 0.0f;
-    Rect island;
+    Rect canvas;
     Rect leftColumn;
     Rect centerColumn;
     Rect rightColumn;
-    Rect weatherCard;
-    Rect systemCard;
+    Rect identityCard;
+    Rect clockBlock;
     Rect mediaCard;
+    Rect heroCard;
+    Rect loginBlock;
+    Rect calendarCard;
+    Rect weatherCard;
     Rect metricsCard;
-    Rect notificationsCard;
+    Rect notificationButton;
+    Rect notificationPanel;
   };
 
   [[nodiscard]] Layout resolve(float screenWidth, float screenHeight) noexcept;
