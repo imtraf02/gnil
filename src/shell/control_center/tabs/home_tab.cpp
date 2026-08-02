@@ -11,6 +11,7 @@
 #include "dbus/mpris/mpris_art.h"
 #include "dbus/mpris/mpris_service.h"
 #include "dbus/network/inetwork_service.h"
+#include "dbus/upower/upower_service.h"
 #include "i18n/i18n.h"
 #include "notification/notifications.h"
 #include "render/animation/animation_manager.h"
@@ -24,6 +25,7 @@
 #include "system/distro_info.h"
 #include "system/gamma_service.h"
 #include "system/hardware_info.h"
+#include "system/format_units.h"
 #include "system/system_monitor_service.h"
 #include "system/weather_service.h"
 #include "time/time_format.h"
@@ -47,6 +49,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <sys/statvfs.h>
 
 using namespace control_center;
 
@@ -95,6 +98,16 @@ namespace {
   std::string userHostLine() { return std::format("{}@{}", sessionDisplayName(), hostName()); }
 
   std::string gnilVersionLine() { return std::format("GNIL {}", gnil::build_info::displayVersion()); }
+
+  std::string storageUsageLabel() {
+    struct statvfs stats {};
+    if (statvfs("/", &stats) != 0 || stats.f_blocks == 0 || stats.f_frsize == 0) {
+      return "—";
+    }
+    const double totalBytes = static_cast<double>(stats.f_blocks) * static_cast<double>(stats.f_frsize);
+    const double freeBytes = static_cast<double>(stats.f_bavail) * static_cast<double>(stats.f_frsize);
+    return FormatUnits::formatDecimalBytesUsage(std::max(0.0, totalBytes - freeBytes), totalBytes);
+  }
 
   void applyHomeCardStyle(Flex& card, float scale, float fillOpacity, bool /*showBorder*/) {
     applySectionCardStyle(card, scale, fillOpacity, /*showBorder=*/false);
@@ -171,7 +184,8 @@ namespace {
 
 HomeTab::HomeTab(const ControlCenterServices& services)
     : m_mpris(services.mpris), m_httpClient(services.httpClient), m_weather(services.weather),
-      m_config(services.config), m_accounts(services.accounts), m_wallpaper(services.wallpaper),
+      m_config(services.config), m_accounts(services.accounts), m_upower(services.upower),
+      m_wallpaper(services.wallpaper),
       m_thumbnails(services.thumbnails), m_sysmon(services.sysmon), m_services(services.shortcutServices()),
       m_audio(services.audio), m_brightness(services.brightness), m_nightLight(services.nightLight),
       m_platform(services.platform) {
@@ -218,104 +232,23 @@ std::unique_ptr<Flex> HomeTab::create() {
   const float scale = contentScale();
   const std::string displayName = sessionDisplayName();
 
-  // Root layout is a horizontal row with a compact navigation rail and three content columns.
-  auto tab = ui::row({
+  // The dashboard keeps the three primary columns together, with the system metrics and
+  // anniversary card forming a quiet footer beneath them.
+  auto tab = ui::column({
       .out = &m_rootLayout,
       .align = FlexAlign::Stretch,
       .gap = Style::panelPadding * scale,
-  });
-
-  // The rail keeps the dashboard destinations visible without competing with the cards.
-  // It intentionally uses the same semantic button palette as the rest of GNIL so it
-  // remains legible in both light and dark themes.
-  auto rail = ui::column({
-      .out = &m_sideRail,
-      .align = FlexAlign::Center,
-      .justify = FlexJustify::SpaceBetween,
-      .gap = Style::spaceMd * scale,
-      .minWidth = 60.0f * scale,
-      .maxWidth = 76.0f * scale,
       .fillHeight = true,
-      .width = 68.0f * scale,
   });
 
-  auto railIdentity = ui::column({
-      .align = FlexAlign::Center,
-      .justify = FlexJustify::Center,
-      .gap = Style::spaceXs * scale,
+  auto contentRow = ui::row({
+      .out = &m_contentRow,
+      .align = FlexAlign::Stretch,
+      .gap = Style::panelPadding * scale,
+      .fillWidth = true,
+      .fillHeight = true,
+      .flexGrow = 1.0f,
   });
-  auto railAvatar = ui::column({
-      .align = FlexAlign::Center,
-      .justify = FlexJustify::Center,
-      .fill = colorSpecFromRole(ColorRole::SurfaceVariant, 0.8f),
-      .radius = 30.0f * scale,
-      .width = 50.0f * scale,
-      .height = 50.0f * scale,
-  });
-  railAvatar->addChild(ui::glyph({
-      .glyph = "person",
-      .glyphSize = 24.0f * scale,
-      .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-  }));
-  railIdentity->addChild(std::move(railAvatar));
-  railIdentity->addChild(ui::label({
-      .text = "love.",
-      .fontSize = Style::fontSizeCaption * 0.95f * scale,
-      .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-  }));
-
-  auto railNavigation = ui::column({
-      .align = FlexAlign::Center,
-      .gap = Style::spaceXs * scale,
-  });
-  const auto railButton = [scale](std::string glyph, std::string tooltip, ButtonVariant variant,
-                                  std::function<void()> onClick) {
-    return ui::button({
-        .glyph = std::move(glyph),
-        .glyphSize = 20.0f * scale,
-        .controlHeight = 48.0f * scale,
-        .variant = variant,
-        .tooltip = std::move(tooltip),
-        .minWidth = 48.0f * scale,
-        .radius = Style::scaledRadiusLg(scale),
-        .onClick = std::move(onClick),
-    });
-  };
-  railNavigation->addChild(railButton("home", "Dashboard", ButtonVariant::Primary, []() {}));
-  railNavigation->addChild(railButton(
-      "folder", "Applications", ButtonVariant::Ghost,
-      []() { PanelManager::instance().togglePanel("launcher"); }
-  ));
-  railNavigation->addChild(railButton(
-      "device-desktop", "Performance", ButtonVariant::Ghost,
-      []() { openControlCenterTab("performance"); }
-  ));
-  railNavigation->addChild(railButton(
-      "music", "Media", ButtonVariant::Ghost,
-      []() { openControlCenterTab("media"); }
-  ));
-  railNavigation->addChild(railButton(
-      "image", "Wallpaper", ButtonVariant::Ghost,
-      []() { PanelManager::instance().togglePanel("wallpaper"); }
-  ));
-
-  auto railActions = ui::column({
-      .align = FlexAlign::Center,
-      .gap = Style::spaceXs * scale,
-  });
-  railActions->addChild(railButton(
-      "settings", "Settings", ButtonVariant::Ghost,
-      []() { PanelManager::instance().openPanel("settings"); }
-  ));
-  railActions->addChild(railButton(
-      "shutdown", "Power", ButtonVariant::Ghost,
-      []() { PanelManager::instance().togglePanel("session"); }
-  ));
-
-  rail->addChild(std::move(railIdentity));
-  rail->addChild(std::move(railNavigation));
-  rail->addChild(std::move(railActions));
-  tab->addChild(std::move(rail));
 
   // ================= Column 1: Left (Weather & Media) =================
   auto leftColumn = ui::column({
@@ -586,7 +519,7 @@ std::unique_ptr<Flex> HomeTab::create() {
 
   leftColumn->addChild(std::move(dateTimeCard));
   leftColumn->addChild(std::move(mediaCard));
-  tab->addChild(std::move(leftColumn));
+  contentRow->addChild(std::move(leftColumn));
 
   // ================= Column 2: Middle (User Profile & Shortcuts) =================
   auto middleColumn = ui::column({
@@ -906,7 +839,7 @@ std::unique_ptr<Flex> HomeTab::create() {
 
   middleColumn->addChild(std::move(userCard));
   middleColumn->addChild(std::move(grid));
-  tab->addChild(std::move(middleColumn));
+  contentRow->addChild(std::move(middleColumn));
 
   // ================= Column 3: Right (Hardware Sliders) =================
   auto rightColumn = ui::column({
@@ -1170,7 +1103,133 @@ std::unique_ptr<Flex> HomeTab::create() {
 
   rightColumn->addChild(std::move(volumeCard));
   rightColumn->addChild(std::move(brightnessCard));
-  tab->addChild(std::move(rightColumn));
+  contentRow->addChild(std::move(rightColumn));
+
+  tab->addChild(std::move(contentRow));
+
+  // ================= Footer (System Metrics & Anniversary) =================
+  auto bottomRow = ui::row({
+      .out = &m_bottomRow,
+      .align = FlexAlign::Stretch,
+      .gap = Style::panelPadding * scale,
+      .fillWidth = true,
+      .height = 84.0f * scale,
+  });
+
+  auto metricsCard = ui::row({
+      .align = FlexAlign::Center,
+      .gap = Style::panelPadding * 1.4f * scale,
+      .fillHeight = true,
+      .flexGrow = 1.0f,
+      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
+        applyHomeCardStyle(card, scale, opacity, borders);
+      },
+  });
+
+  const auto addFooterMetric = [scale](Flex& parent, std::string glyph, std::string title, Label** value,
+                                       ProgressBar** bar, Glyph** iconOut = nullptr) {
+    auto metric = ui::row({
+        .align = FlexAlign::Center,
+        .gap = Style::spaceSm * scale,
+        .flexGrow = 1.0f,
+    });
+    metric->addChild(ui::glyph({
+        .out = iconOut,
+        .glyph = std::move(glyph),
+        .glyphSize = Style::fontSizeTitle * 0.95f * scale,
+        .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+    }));
+    auto details = ui::column({
+        .align = FlexAlign::Stretch,
+        .gap = Style::spaceXs * 0.45f * scale,
+        .flexGrow = 1.0f,
+    });
+    details->addChild(ui::row(
+        {.align = FlexAlign::Center, .gap = Style::spaceXs * scale},
+        ui::label({
+            .text = std::move(title),
+            .fontSize = Style::fontSizeCaption * scale,
+            .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+            .flexGrow = 1.0f,
+        }),
+        ui::label({
+            .out = value,
+            .text = "—",
+            .fontSize = Style::fontSizeCaption * scale,
+            .color = colorSpecFromRole(ColorRole::OnSurface),
+        })
+    ));
+    details->addChild(ui::progressBar({
+        .out = bar,
+        .fill = colorSpecFromRole(ColorRole::Primary),
+        .track = colorSpecFromRole(ColorRole::Outline, 0.2f),
+        .progress = 0.0f,
+        .height = 4.0f * scale,
+    }));
+    metric->addChild(std::move(details));
+    parent.addChild(std::move(metric));
+  };
+
+  addFooterMetric(
+      *metricsCard, "battery-4", i18n::tr("lockscreen.dashboard.battery"), &m_batteryValue, &m_batteryBar,
+      &m_batteryGlyph
+  );
+  addFooterMetric(
+      *metricsCard, "memory", i18n::tr("lockscreen.dashboard.memory"), &m_memoryValue, &m_footerMemoryBar
+  );
+  addFooterMetric(
+      *metricsCard, "storage", i18n::tr("lockscreen.dashboard.storage"), &m_storageValue, &m_bottomStorageBar
+  );
+  bottomRow->addChild(std::move(metricsCard));
+
+  auto anniversaryCard = ui::row({
+      .out = &m_anniversaryCard,
+      .align = FlexAlign::Center,
+      .gap = Style::spaceSm * scale,
+      .fillHeight = true,
+      .width = 360.0f * scale,
+      .configure = [scale, opacity = panelCardOpacity(), borders = panelBordersEnabled()](Flex& card) {
+        applyHomeCardStyle(card, scale, opacity, borders);
+      },
+  });
+  anniversaryCard->addChild(ui::column(
+      {.align = FlexAlign::Center,
+       .justify = FlexJustify::Center,
+       .fill = colorSpecFromRole(ColorRole::SurfaceVariant, 0.8f),
+       .radius = Style::scaledRadiusMd(scale),
+       .width = 40.0f * scale,
+       .height = 40.0f * scale},
+      ui::glyph({
+          .glyph = "heart-filled",
+          .glyphSize = Style::fontSizeBody * scale,
+          .color = colorSpecFromRole(ColorRole::Primary),
+      })
+  ));
+  anniversaryCard->addChild(ui::column(
+      {.align = FlexAlign::Stretch, .justify = FlexJustify::Center, .gap = Style::spaceXs * 0.3f * scale,
+       .flexGrow = 1.0f},
+      ui::label({
+          .text = "Distance ♡ Anniversary",
+          .fontSize = Style::fontSizeMini * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+      }),
+      ui::label({
+          .out = &m_anniversaryDays,
+          .text = "152 days",
+          .fontSize = Style::fontSizeTitle * 1.05f * scale,
+          .fontWeight = FontWeight::Bold,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+      })
+  ));
+  anniversaryCard->addChild(ui::image({
+      .out = &m_anniversaryArt,
+      .fit = ImageFit::Cover,
+      .radius = Style::scaledRadiusMd(scale),
+      .width = 132.0f * scale,
+      .height = 72.0f * scale,
+  }));
+  bottomRow->addChild(std::move(anniversaryCard));
+  tab->addChild(std::move(bottomRow));
 
   return tab;
 }
@@ -1624,8 +1683,9 @@ void HomeTab::setActive(bool active) {
 void HomeTab::onClose() {
   m_progressTimer.stop();
   m_rootLayout = nullptr;
-  m_sideRail = nullptr;
+  m_contentRow = nullptr;
   m_bottomRow = nullptr;
+  m_anniversaryCard = nullptr;
   m_dateTimeCard = nullptr;
   m_mediaCard = nullptr;
   m_mediaText = nullptr;
@@ -1656,8 +1716,19 @@ void HomeTab::onClose() {
   m_cpuBar = nullptr;
   m_memoryBar = nullptr;
   m_storageBar = nullptr;
+  m_batteryValue = nullptr;
+  m_batteryGlyph = nullptr;
+  m_memoryValue = nullptr;
+  m_storageValue = nullptr;
+  m_batteryBar = nullptr;
+  m_footerMemoryBar = nullptr;
+  m_bottomStorageBar = nullptr;
+  m_anniversaryDays = nullptr;
+  m_anniversaryArt = nullptr;
   m_loadedAvatarPath.clear();
   m_loadedAvatarSize = 0;
+  m_loadedAnniversaryPath.clear();
+  m_loadedAnniversarySize = 0;
   // The crisp fade animation is tagged with the m_wallpaperBg node as owner, so
   // it is cancelled automatically when the node tree is destroyed on close.
   m_wallpaperCrispAnimId = 0;
@@ -1820,6 +1891,62 @@ void HomeTab::sync(Renderer& renderer) {
       if (m_storageSummary != nullptr) {
         m_storageSummary->setText("—");
       }
+    }
+  }
+
+  if (m_batteryValue != nullptr) {
+    if (m_upower != nullptr && m_upower->state().isPresent) {
+      const auto& battery = m_upower->state();
+      const int percent = static_cast<int>(std::lround(std::clamp(battery.percentage, 0.0, 100.0)));
+      m_batteryValue->setText(std::format("{}%", percent));
+      if (m_batteryBar != nullptr) {
+        m_batteryBar->setProgress(static_cast<float>(percent) / 100.0f);
+      }
+      if (m_batteryGlyph != nullptr) {
+        m_batteryGlyph->setGlyph(batteryGlyphName(battery.percentage, battery.state));
+      }
+    } else {
+      m_batteryValue->setText(i18n::tr("lockscreen.dashboard.no-battery"));
+      if (m_batteryBar != nullptr) {
+        m_batteryBar->setProgress(0.0f);
+      }
+    }
+  }
+
+  if (m_memoryValue != nullptr && m_storageValue != nullptr) {
+    if (m_sysmon != nullptr && m_sysmon->isRunning()) {
+      const auto& stats = m_sysmon->latest();
+      m_memoryValue->setText(FormatUnits::formatBinaryMibUsageAsGib(stats.ramUsedMb, stats.ramTotalMb));
+      if (m_footerMemoryBar != nullptr) {
+        m_footerMemoryBar->setProgress(static_cast<float>(std::clamp(stats.ramUsagePercent / 100.0, 0.0, 1.0)));
+      }
+    } else {
+      m_memoryValue->setText("—");
+      if (m_footerMemoryBar != nullptr) {
+        m_footerMemoryBar->setProgress(0.0f);
+      }
+    }
+    m_storageValue->setText(storageUsageLabel());
+    if (m_bottomStorageBar != nullptr && m_sysmon != nullptr) {
+      m_bottomStorageBar->setProgress(
+          std::clamp(m_sysmon->diskUsagePercent("/") / 100.0f, 0.0f, 1.0f)
+      );
+    } else if (m_bottomStorageBar != nullptr) {
+      m_bottomStorageBar->setProgress(0.0f);
+    }
+  }
+
+  if (m_anniversaryArt != nullptr && m_config != nullptr) {
+    const std::string displayPath = shell::avatarDisplayPath(m_accounts, m_config->config());
+    const int artSize = static_cast<int>(std::round(std::max(m_anniversaryArt->width(), m_anniversaryArt->height())));
+    if (displayPath != m_loadedAnniversaryPath || artSize != m_loadedAnniversarySize) {
+      if (displayPath.empty()) {
+        m_anniversaryArt->clear(renderer);
+      } else {
+        (void)m_anniversaryArt->setSourceFile(renderer, displayPath, artSize, false);
+      }
+      m_loadedAnniversaryPath = displayPath;
+      m_loadedAnniversarySize = artSize;
     }
   }
 

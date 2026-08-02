@@ -85,6 +85,7 @@ private:
   WeatherService* m_weather = nullptr;
   ConfigService* m_config = nullptr;
   AccountsService* m_accounts = nullptr;
+  UPowerService* m_upower = nullptr;
   Wallpaper* m_wallpaper = nullptr;
   ThumbnailService* m_thumbnails = nullptr;
   SystemMonitorService* m_sysmon = nullptr;
@@ -92,8 +93,9 @@ private:
   bool m_active = false;
 
   Flex* m_rootLayout = nullptr;
-  Flex* m_sideRail = nullptr;
+  Flex* m_contentRow = nullptr;
   Flex* m_bottomRow = nullptr;
+  Flex* m_anniversaryCard = nullptr;
   Flex* m_dateTimeCard = nullptr;
   Flex* m_mediaCard = nullptr;
   Flex* m_mediaText = nullptr;
@@ -126,8 +128,19 @@ private:
   ProgressBar* m_cpuBar = nullptr;
   ProgressBar* m_memoryBar = nullptr;
   ProgressBar* m_storageBar = nullptr;
+  Label* m_batteryValue = nullptr;
+  Glyph* m_batteryGlyph = nullptr;
+  Label* m_memoryValue = nullptr;
+  Label* m_storageValue = nullptr;
+  ProgressBar* m_batteryBar = nullptr;
+  ProgressBar* m_footerMemoryBar = nullptr;
+  ProgressBar* m_bottomStorageBar = nullptr;
+  Label* m_anniversaryDays = nullptr;
+  Image* m_anniversaryArt = nullptr;
   std::string m_loadedAvatarPath;
   int m_loadedAvatarSize = 0;
+  std::string m_loadedAnniversaryPath;
+  int m_loadedAnniversarySize = 0;
 
   // Two stacked layers: m_wallpaperPlaceholder shows the resident full-screen
   // wallpaper texture immediately (slightly soft), m_wallpaperBg holds the crisp
