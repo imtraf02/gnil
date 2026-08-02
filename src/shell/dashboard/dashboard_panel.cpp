@@ -115,6 +115,7 @@ void DashboardPanel::create() {
       .compact = false,
       .surfaceOpacity = 0.0f,
       .equalSegmentWidths = true,
+      .flexGrow = 1.0f,
       .onChange = [this](std::size_t slot) {
         if (slot < m_visiblePages.size()) {
           selectPage(m_visiblePages[slot], true);
@@ -151,7 +152,24 @@ void DashboardPanel::create() {
     m_visiblePages.push_back(Page::Dashboard);
     m_activePage = Page::Dashboard;
   }
-  root->addChild(std::move(tabs));
+  auto topBar = ui::row({
+      .align = FlexAlign::Center,
+      .gap = Style::spaceSm * scale,
+      .fillWidth = true,
+  });
+  topBar->addChild(std::move(tabs));
+  topBar->addChild(ui::button({
+      .text = "Settings",
+      .glyph = "settings",
+      .fontSize = Style::fontSizeCaption * scale,
+      .glyphSize = Style::fontSizeCaption * scale,
+      .controlHeight = Style::controlHeight * scale,
+      .variant = ButtonVariant::Ghost,
+      .tooltip = "Settings",
+      .paddingH = Style::spaceSm * scale,
+      .onClick = []() { PanelManager::instance().openPanel("settings"); },
+  }));
+  root->addChild(std::move(topBar));
   root->addChild(ui::box({
       .out = &m_tabIndicator,
       .fill = colorSpecFromRole(ColorRole::Primary),

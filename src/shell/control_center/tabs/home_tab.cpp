@@ -218,12 +218,104 @@ std::unique_ptr<Flex> HomeTab::create() {
   const float scale = contentScale();
   const std::string displayName = sessionDisplayName();
 
-  // Root layout is a horizontal row (3 columns)
+  // Root layout is a horizontal row with a compact navigation rail and three content columns.
   auto tab = ui::row({
       .out = &m_rootLayout,
       .align = FlexAlign::Stretch,
       .gap = Style::panelPadding * scale,
   });
+
+  // The rail keeps the dashboard destinations visible without competing with the cards.
+  // It intentionally uses the same semantic button palette as the rest of GNIL so it
+  // remains legible in both light and dark themes.
+  auto rail = ui::column({
+      .out = &m_sideRail,
+      .align = FlexAlign::Center,
+      .justify = FlexJustify::SpaceBetween,
+      .gap = Style::spaceMd * scale,
+      .minWidth = 60.0f * scale,
+      .maxWidth = 76.0f * scale,
+      .fillHeight = true,
+      .width = 68.0f * scale,
+  });
+
+  auto railIdentity = ui::column({
+      .align = FlexAlign::Center,
+      .justify = FlexJustify::Center,
+      .gap = Style::spaceXs * scale,
+  });
+  auto railAvatar = ui::column({
+      .align = FlexAlign::Center,
+      .justify = FlexJustify::Center,
+      .fill = colorSpecFromRole(ColorRole::SurfaceVariant, 0.8f),
+      .radius = 30.0f * scale,
+      .width = 50.0f * scale,
+      .height = 50.0f * scale,
+  });
+  railAvatar->addChild(ui::glyph({
+      .glyph = "person",
+      .glyphSize = 24.0f * scale,
+      .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+  }));
+  railIdentity->addChild(std::move(railAvatar));
+  railIdentity->addChild(ui::label({
+      .text = "love.",
+      .fontSize = Style::fontSizeCaption * 0.95f * scale,
+      .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+  }));
+
+  auto railNavigation = ui::column({
+      .align = FlexAlign::Center,
+      .gap = Style::spaceXs * scale,
+  });
+  const auto railButton = [scale](std::string glyph, std::string tooltip, ButtonVariant variant,
+                                  std::function<void()> onClick) {
+    return ui::button({
+        .glyph = std::move(glyph),
+        .glyphSize = 20.0f * scale,
+        .controlHeight = 48.0f * scale,
+        .variant = variant,
+        .tooltip = std::move(tooltip),
+        .minWidth = 48.0f * scale,
+        .radius = Style::scaledRadiusLg(scale),
+        .onClick = std::move(onClick),
+    });
+  };
+  railNavigation->addChild(railButton("home", "Dashboard", ButtonVariant::Primary, []() {}));
+  railNavigation->addChild(railButton(
+      "folder", "Applications", ButtonVariant::Ghost,
+      []() { PanelManager::instance().togglePanel("launcher"); }
+  ));
+  railNavigation->addChild(railButton(
+      "device-desktop", "Performance", ButtonVariant::Ghost,
+      []() { openControlCenterTab("performance"); }
+  ));
+  railNavigation->addChild(railButton(
+      "music", "Media", ButtonVariant::Ghost,
+      []() { openControlCenterTab("media"); }
+  ));
+  railNavigation->addChild(railButton(
+      "image", "Wallpaper", ButtonVariant::Ghost,
+      []() { PanelManager::instance().togglePanel("wallpaper"); }
+  ));
+
+  auto railActions = ui::column({
+      .align = FlexAlign::Center,
+      .gap = Style::spaceXs * scale,
+  });
+  railActions->addChild(railButton(
+      "settings", "Settings", ButtonVariant::Ghost,
+      []() { PanelManager::instance().openPanel("settings"); }
+  ));
+  railActions->addChild(railButton(
+      "shutdown", "Power", ButtonVariant::Ghost,
+      []() { PanelManager::instance().togglePanel("session"); }
+  ));
+
+  rail->addChild(std::move(railIdentity));
+  rail->addChild(std::move(railNavigation));
+  rail->addChild(std::move(railActions));
+  tab->addChild(std::move(rail));
 
   // ================= Column 1: Left (Weather & Media) =================
   auto leftColumn = ui::column({
@@ -1532,6 +1624,7 @@ void HomeTab::setActive(bool active) {
 void HomeTab::onClose() {
   m_progressTimer.stop();
   m_rootLayout = nullptr;
+  m_sideRail = nullptr;
   m_bottomRow = nullptr;
   m_dateTimeCard = nullptr;
   m_mediaCard = nullptr;
