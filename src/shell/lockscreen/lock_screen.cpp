@@ -180,6 +180,15 @@ void LockScreen::setSessionHooks(std::function<void()> onLocked, std::function<v
 
 void LockScreen::setLockEngagedCallback(std::function<void()> callback) { m_onLockEngaged = std::move(callback); }
 
+void LockScreen::setOnSystemAction(std::function<void(std::string_view)> callback) {
+  m_onSystemAction = std::move(callback);
+  for (auto& instance : m_instances) {
+    if (instance.surface != nullptr) {
+      instance.surface->setOnSystemAction(m_onSystemAction);
+    }
+  }
+}
+
 bool LockScreen::lock() {
   if (m_wayland == nullptr || m_renderContext == nullptr) {
     return false;
@@ -820,6 +829,7 @@ void LockScreen::createInstance(const WaylandOutput& output) {
   }
   surface->setRenderCallback([this]() { tryFlushPendingAfterLocked(); });
   surface->setOnLogin([this]() { tryAuthenticate(); });
+  surface->setOnSystemAction(m_onSystemAction);
   surface->setOnCycleLayout([this]() { cycleKeyboardLayout(); });
   surface->setOnPasswordChanged([this](const std::string& value) { handlePasswordEdited(value); });
   surface->setOnMediaPrevious([this]() {

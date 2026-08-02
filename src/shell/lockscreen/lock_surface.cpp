@@ -30,6 +30,7 @@
 #include <format>
 #include <memory>
 #include <numbers>
+#include <ranges>
 #include <string_view>
 
 namespace {
@@ -466,6 +467,57 @@ LockSurface::LockSurface(WaylandConnection& connection, ConfigService* config) :
       .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
       .textAlign = TextAlign::Center,
       .visible = false,
+  }));
+  m_loginPanel->addChild(ui::row({
+      .out = &m_systemActionsRow,
+      .align = FlexAlign::Center,
+      .justify = FlexJustify::Center,
+      .gap = Style::spaceXs,
+  }));
+  m_systemActionsRow->addChild(ui::button({
+      .out = &m_shutdownButton,
+      .text = i18n::tr("session.actions.shutdown"),
+      .glyph = "shutdown",
+      .fontSize = Style::fontSizeMini,
+      .glyphSize = 15.0f,
+      .controlHeight = Style::controlHeightSm,
+      .variant = ButtonVariant::Destructive,
+      .tooltip = i18n::tr("session.actions.shutdown"),
+      .radius = Style::controlHeightSm * 0.5f,
+      .flexGrow = 1.0f,
+      .onClick = [this]() {
+        if (m_onSystemAction) m_onSystemAction("shutdown");
+      },
+  }));
+  m_systemActionsRow->addChild(ui::button({
+      .out = &m_rebootButton,
+      .text = i18n::tr("session.actions.reboot"),
+      .glyph = "reboot",
+      .fontSize = Style::fontSizeMini,
+      .glyphSize = 15.0f,
+      .controlHeight = Style::controlHeightSm,
+      .variant = ButtonVariant::Secondary,
+      .tooltip = i18n::tr("session.actions.reboot"),
+      .radius = Style::controlHeightSm * 0.5f,
+      .flexGrow = 1.0f,
+      .onClick = [this]() {
+        if (m_onSystemAction) m_onSystemAction("reboot");
+      },
+  }));
+  m_systemActionsRow->addChild(ui::button({
+      .out = &m_suspendButton,
+      .text = i18n::tr("session.actions.suspend"),
+      .glyph = "suspend",
+      .fontSize = Style::fontSizeMini,
+      .glyphSize = 15.0f,
+      .controlHeight = Style::controlHeightSm,
+      .variant = ButtonVariant::Ghost,
+      .tooltip = i18n::tr("session.actions.suspend"),
+      .radius = Style::controlHeightSm * 0.5f,
+      .flexGrow = 1.0f,
+      .onClick = [this]() {
+        if (m_onSystemAction) m_onSystemAction("suspend");
+      },
   }));
 
   card(*m_rightColumn, &m_calendarCard, 0.82f);
@@ -1410,6 +1462,10 @@ void LockSurface::setBlackout(bool blackout) {
 
 void LockSurface::setOnLogin(std::function<void()> onLogin) { m_onLogin = std::move(onLogin); }
 
+void LockSurface::setOnSystemAction(std::function<void(std::string_view)> onSystemAction) {
+  m_onSystemAction = std::move(onSystemAction);
+}
+
 void LockSurface::setOnCycleLayout(std::function<void()> onCycleLayout) { m_onCycleLayout = std::move(onCycleLayout); }
 
 void LockSurface::setOnPasswordChanged(std::function<void(const std::string&)> onPasswordChanged) {
@@ -1843,6 +1899,14 @@ void LockSurface::updateCopy() {
       m_layoutChip->setEnabled(m_layoutSwitchable);
     }
   }
+  if (m_shutdownButton != nullptr) m_shutdownButton->setEnabled(systemActionEnabled("shutdown"));
+  if (m_rebootButton != nullptr) m_rebootButton->setEnabled(systemActionEnabled("reboot"));
+  if (m_suspendButton != nullptr) m_suspendButton->setEnabled(systemActionEnabled("suspend"));
+  if (m_systemActionsRow != nullptr) {
+    m_systemActionsRow->setVisible(
+        systemActionEnabled("shutdown") || systemActionEnabled("reboot") || systemActionEnabled("suspend")
+    );
+  }
 }
 
 void LockSurface::syncDashboardCopy() {
@@ -1949,6 +2013,17 @@ void LockSurface::syncDashboardCopy() {
       if (view.summary != nullptr) view.summary->setText(m_dashboard.notificationPreviews[i].summary);
     }
   }
+}
+
+bool LockSurface::systemActionEnabled(std::string_view action) const {
+  if (m_config == nullptr) {
+    return true;
+  }
+  const auto& configured = m_config->config().shell.session.actions;
+  const auto it = std::ranges::find_if(
+      configured, [action](const SessionPanelActionConfig& row) { return row.action == action; }
+  );
+  return it == configured.end() || it->enabled;
 }
 
 void LockSurface::syncCalendarCopy() {

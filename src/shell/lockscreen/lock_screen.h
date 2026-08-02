@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -62,6 +63,7 @@ public:
   );
   void setSessionHooks(std::function<void()> onLocked, std::function<void()> onUnlocked);
   void setLockEngagedCallback(std::function<void()> callback);
+  void setOnSystemAction(std::function<void(std::string_view)> callback);
   bool lock();
   void primeDesktopCaptures();
   void clearPrimedDesktopCaptures();
@@ -168,5 +170,6 @@ private:
   std::function<void()> m_onSessionLocked;
   std::function<void()> m_onSessionUnlocked;
   std::function<void()> m_onLockEngaged;
+  std::function<void(std::string_view)> m_onSystemAction;
   Timer m_suspendTimeoutTimer;
 };

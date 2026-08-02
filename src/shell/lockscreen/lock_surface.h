@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct ext_session_lock_surface_v1;
@@ -108,6 +109,7 @@ public:
   void setBlackout(bool blackout);
   [[nodiscard]] bool isBlackout() const noexcept { return m_blackout; }
   void setOnLogin(std::function<void()> onLogin);
+  void setOnSystemAction(std::function<void(std::string_view)> onSystemAction);
   void setOnCycleLayout(std::function<void()> onCycleLayout);
   void setOnPasswordChanged(std::function<void(const std::string&)> onPasswordChanged);
   void setOnMediaPrevious(std::function<void()> callback);
@@ -157,6 +159,7 @@ private:
   void syncHeroArtwork(Renderer& renderer, float artworkSize);
   void syncDashboardCopy();
   void syncCalendarCopy();
+  [[nodiscard]] bool systemActionEnabled(std::string_view action) const;
   void setNotificationPanelOpen(bool open, bool animate = true);
   void setPasswordPromptVisible(bool visible, bool animate = true);
   void changeCalendarMonth(int delta);
@@ -257,6 +260,10 @@ private:
   Spinner* m_loginSpinner = nullptr;
   Button* m_layoutChip = nullptr;
   Label* m_statusLabel = nullptr;
+  Flex* m_systemActionsRow = nullptr;
+  Button* m_shutdownButton = nullptr;
+  Button* m_rebootButton = nullptr;
+  Button* m_suspendButton = nullptr;
   SharedTextureCache* m_textureCache = nullptr;
   TextureHandle m_wallpaperTexture{};
   TextureHandle m_blurredWallpaperTexture{};
@@ -276,6 +283,7 @@ private:
   bool m_wallpaperDirty = false;
   InputDispatcher m_inputDispatcher;
   std::function<void()> m_onLogin;
+  std::function<void(std::string_view)> m_onSystemAction;
   std::function<void()> m_onCycleLayout;
   std::function<void(const std::string&)> m_onPasswordChanged;
   std::function<void()> m_onMediaPrevious;

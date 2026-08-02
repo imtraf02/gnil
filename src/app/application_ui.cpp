@@ -63,6 +63,7 @@
 #include "shell/launcher/launcher_panel.h"
 #include "shell/polkit/polkit_panel.h"
 #include "shell/session/session_ipc.h"
+#include "shell/session/session_action_meta.h"
 #include "shell/session/session_panel.h"
 #include "shell/settings/nexus_panel.h"
 #include "shell/setup_wizard/setup_wizard_panel.h"
@@ -202,6 +203,12 @@ void Application::initLockScreenAndSession() {
           .http = &m_httpClient,
       }
   );
+  m_lockScreen.setOnSystemAction([this](std::string_view action) {
+    const auto resolved = session_action::resolveConfiguredAction(m_configService.config().shell.session, action);
+    if (resolved.has_value() && resolved->enabled) {
+      m_sessionActionRunner.invoke(*resolved);
+    }
+  });
   m_wallpaper.setAutomationGate([this]() { return !m_lockScreen.isActive(); });
   m_configService.addReloadCallback([this]() {
     if (m_logindService != nullptr) {
