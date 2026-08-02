@@ -142,7 +142,7 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
   };
 
   add(
-      {.id = "media", .naturalWidth = 680.0f, .naturalHeight = 580.0f, .dynamicHeight = true,
+      {.id = "media", .naturalWidth = 500.0f, .naturalHeight = 240.0f, .dynamicHeight = true,
        .scrollable = false,
        .onOpen = [mpris = services.mpris]() { if (mpris != nullptr) mpris->refreshPlayers(); }},
       std::make_unique<MediaTab>(
@@ -151,13 +151,13 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
       )
   );
   add(
-      {.id = "audio", .naturalWidth = 400.0f},
+      {.id = "audio", .naturalWidth = 400.0f, .dynamicHeight = true},
       std::make_unique<AudioTab>(
           services.audio, services.easyEffects, services.mpris, services.config, wayland, renderContext
       )
   );
   add(
-      {.id = "brightness", .naturalWidth = 400.0f},
+      {.id = "brightness", .naturalWidth = 400.0f, .dynamicHeight = true},
       std::make_unique<MonitorTab>(services.brightness, services.config)
   );
   add(
@@ -165,11 +165,11 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
       std::make_unique<NightLightTab>(services.nightLight, services.config, services.platform)
   );
   add(
-      {.id = "system", .naturalWidth = 480.0f},
+      {.id = "system", .naturalWidth = 480.0f, .dynamicHeight = true},
       std::make_unique<SystemTab>(services.sysmon)
   );
   add(
-      {.id = "battery", .naturalWidth = 400.0f},
+      {.id = "battery", .naturalWidth = 400.0f, .dynamicHeight = true},
       std::make_unique<PowerTab>(services.upower, services.powerProfiles)
   );
   add(
@@ -180,19 +180,19 @@ std::vector<NamedContentPanel> makeContentPanels(const ControlCenterServices& se
       )
   );
   add(
-      {.id = "bluetooth", .naturalWidth = 480.0f},
+      {.id = "bluetooth", .naturalWidth = 480.0f, .dynamicHeight = true},
       std::make_unique<BluetoothTab>(services.bluetooth, services.bluetoothAgent)
   );
   add(
-      {.id = "weather", .naturalWidth = 480.0f},
+      {.id = "weather", .naturalWidth = 480.0f, .dynamicHeight = true},
       std::make_unique<WeatherTab>(services.weather, services.config)
   );
   add(
-      {.id = "calendar", .naturalWidth = 360.0f},
+      {.id = "calendar", .naturalWidth = 360.0f, .dynamicHeight = true},
       std::make_unique<CalendarTab>(services.config, services.calendar)
   );
   add(
-      {.id = "screen-time", .naturalWidth = 520.0f},
+      {.id = "screen-time", .naturalWidth = 520.0f, .dynamicHeight = true},
       std::make_unique<ScreenTimeTab>(services.screenTime)
   );
   return panels;

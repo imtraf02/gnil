@@ -193,6 +193,15 @@ std::unique_ptr<Flex> WeatherTab::create() {
               .fontSize = Style::fontSizeBody * scale,
               .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
               .maxLines = 2,
+          }),
+          ui::button({
+              .text = i18n::tr("dashboard.home.configure-now"),
+              .glyph = "settings",
+              .fontSize = Style::fontSizeMini * scale,
+              .glyphSize = Style::fontSizeMini * scale,
+              .controlHeight = Style::controlHeightSm * scale,
+              .variant = ButtonVariant::Outline,
+              .onClick = []() { PanelManager::instance().openPanel("settings"); },
           })
       )
   );
@@ -759,6 +768,11 @@ void WeatherTab::sync(Renderer& renderer) {
   }
 
   showLocationPrompt(false);
+  for (auto* row : m_detailRows) {
+    if (row != nullptr) {
+      row->setVisible(false);
+    }
+  }
 
   const bool showLocation = m_config == nullptr || m_config->config().shell.showLocation;
   if (m_updatedLabel != nullptr) {
@@ -883,6 +897,15 @@ void WeatherTab::sync(Renderer& renderer) {
     setForecastVisibleRowCount(0);
     hideEffect();
     return;
+  }
+
+  for (auto* row : m_detailRows) {
+    if (row != nullptr) {
+      row->setVisible(true);
+    }
+  }
+  if (m_timeZoneRow != nullptr) {
+    m_timeZoneRow->setVisible(showLocation);
   }
 
   m_currentGlyph->setGlyph(WeatherService::glyphForCode(snapshot.current.weatherCode, snapshot.current.isDay));

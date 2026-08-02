@@ -32,6 +32,7 @@ public:
   void setThumbSize(float size);
   void setControlHeight(float height);
   void setWheelAdjustEnabled(bool enabled);
+  void setTooltip(std::string text);
   void setOnValueChanged(std::function<void(double)> callback);
   void setOnDragEnd(std::function<void()> callback);
 

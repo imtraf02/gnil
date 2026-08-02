@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -22,6 +23,7 @@ class HttpClient;
 class IpcService;
 class ConfigService;
 class DependencyService;
+class Flex;
 class Glyph;
 class GridView;
 class Image;
@@ -39,6 +41,12 @@ class GammaService;
 namespace scripting {
   class ScriptApiContext;
 }
+
+struct HomeMetricPad {
+  Flex* metric = nullptr;
+  InputArea* hitArea = nullptr;
+  std::string name;
+};
 
 struct ShortcutPad {
   std::unique_ptr<Shortcut> shortcut;
@@ -59,8 +67,12 @@ public:
   void onClose() override;
 
 private:
+  enum class LayoutMode : std::uint8_t { Wide, Medium, Compact };
+
   void doLayout(Renderer& renderer, float contentWidth, float bodyHeight) override;
   void doUpdate(Renderer& renderer) override;
+  void applyResponsiveLayout(float contentWidth, float bodyHeight);
+  void resizeMetricBars();
   void layoutWallpaperBackground(Renderer& renderer);
   // Adds a card overlay for pointer and/or keyboard activation.
   struct CardOverlayOptions {
@@ -77,6 +89,7 @@ private:
   void sync(Renderer& renderer);
   void syncScaledFonts();
   void syncShortcuts();
+  void setMetricTooltip(std::string_view name, std::string detail);
   bool resizeMediaArtToCard();
   void onPanelCardOpacityChanged(float opacity) override;
 
@@ -94,6 +107,14 @@ private:
 
   Flex* m_rootLayout = nullptr;
   Flex* m_contentRow = nullptr;
+  Flex* m_mainColumn = nullptr;
+  Flex* m_topRow = nullptr;
+  Flex* m_lowerRow = nullptr;
+  Flex* m_centerColumn = nullptr;
+  Flex* m_rightColumn = nullptr;
+  Flex* m_shortcutCard = nullptr;
+  Flex* m_metricsCard = nullptr;
+  Flex* m_metricsRail = nullptr;
   Flex* m_bottomRow = nullptr;
   Flex* m_anniversaryCard = nullptr;
   Flex* m_dateTimeCard = nullptr;
@@ -110,6 +131,9 @@ private:
   Glyph* m_weatherGlyph = nullptr;
   Label* m_weatherLine = nullptr;
   Label* m_locationLabel = nullptr;
+  Flex* m_weatherLocationRow = nullptr;
+  Flex* m_humidityRow = nullptr;
+  Flex* m_sunsetRow = nullptr;
   Label* m_humidityLabel = nullptr;
   Label* m_sunsetLabel = nullptr;
   Label* m_userHost = nullptr;
@@ -123,11 +147,7 @@ private:
   InputArea* m_dateTimeCardArea = nullptr;
   InputArea* m_performanceCardArea = nullptr;
   Label* m_cpuSummary = nullptr;
-  Label* m_memorySummary = nullptr;
-  Label* m_storageSummary = nullptr;
   ProgressBar* m_cpuBar = nullptr;
-  ProgressBar* m_memoryBar = nullptr;
-  ProgressBar* m_storageBar = nullptr;
   Label* m_batteryValue = nullptr;
   Glyph* m_batteryGlyph = nullptr;
   Label* m_memoryValue = nullptr;
@@ -135,12 +155,8 @@ private:
   ProgressBar* m_batteryBar = nullptr;
   ProgressBar* m_footerMemoryBar = nullptr;
   ProgressBar* m_bottomStorageBar = nullptr;
-  Label* m_anniversaryDays = nullptr;
-  Image* m_anniversaryArt = nullptr;
   std::string m_loadedAvatarPath;
   int m_loadedAvatarSize = 0;
-  std::string m_loadedAnniversaryPath;
-  int m_loadedAnniversarySize = 0;
 
   // Two stacked layers: m_wallpaperPlaceholder shows the resident full-screen
   // wallpaper texture immediately (slightly soft), m_wallpaperBg holds the crisp
@@ -148,6 +164,7 @@ private:
   Image* m_wallpaperPlaceholder = nullptr;
   Image* m_wallpaperBg = nullptr;
   Box* m_wallpaperGradient = nullptr;
+  Box* m_userDetailsSurface = nullptr;
   std::string m_loadedWallpaperPath;
   int m_loadedWallpaperSize = 0;
   std::string m_crispWorkingPath;
@@ -155,6 +172,9 @@ private:
   bool m_crispShown = false;
   bool m_crispNeedsFade = false;
   std::uint32_t m_wallpaperCrispAnimId = 0;
+  std::uint32_t m_layoutModeAnimId = 0;
+  LayoutMode m_layoutMode = LayoutMode::Wide;
+  bool m_layoutModeInitialized = false;
   ThumbnailService::Subscription m_thumbnailPendingSub;
   Signal<>::ScopedConnection m_wallpaperChangedConn;
 
@@ -186,6 +206,7 @@ private:
 
   GridView* m_shortcutsGrid = nullptr;
   std::vector<ShortcutPad> m_shortcutPads;
+  std::vector<HomeMetricPad> m_metricPads;
 
   // Sliders for Column 3
   PipeWireService* m_audio = nullptr;

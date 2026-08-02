@@ -72,6 +72,13 @@ namespace i18n {
     }
   }
 
+  // Use an explicit product-safe fallback at presentation boundaries while
+  // keeping tr()'s visible !!key!! diagnostic behavior for development.
+  inline std::string trOr(std::string_view key, std::string_view fallback) {
+    const auto raw = Service::instance().lookup(key);
+    return raw.empty() ? std::string(fallback) : std::string(raw);
+  }
+
   template <typename... Args> std::string trp(std::string_view key, long count, Args&&... args) {
     if (count == 1) {
       return tr(key, "count", count, std::forward<Args>(args)...);

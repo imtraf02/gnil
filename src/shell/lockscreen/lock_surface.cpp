@@ -7,6 +7,7 @@
 #include "render/core/blur_cache.h"
 #include "render/core/render_styles.h"
 #include "render/core/shared_texture_cache.h"
+#include "render/animation/motion_service.h"
 #include "render/render_context.h"
 #include "render/scene/wallpaper_node.h"
 #include "shell/lockscreen/lockscreen_layout.h"
@@ -52,6 +53,23 @@ namespace {
     const std::int64_t minutes = totalSeconds / 60;
     const std::int64_t seconds = totalSeconds % 60;
     return std::format("{}:{:02}", minutes, seconds);
+  }
+
+  float phaseProgress(float progress, float start, float end) {
+    if (end <= start) {
+      return progress >= end ? 1.0f : 0.0f;
+    }
+    return std::clamp((progress - start) / (end - start), 0.0f, 1.0f);
+  }
+
+  float introSpatial(float progress, float start, float end) {
+    return applyEasing(Easing::CaelestiaExpressiveSpatial, phaseProgress(progress, start, end));
+  }
+
+  float introOpacity(float progress, float start, float end) {
+    return std::clamp(
+        applyEasing(Easing::CaelestiaDefaultEffects, phaseProgress(progress, start, end)), 0.0f, 1.0f
+    );
   }
 
 } // namespace
@@ -430,18 +448,26 @@ LockSurface::LockSurface(WaylandConnection& connection, ConfigService* config) :
         if (m_onLogin) m_onLogin();
       },
   }));
-  m_loginContentRow->addChild(ui::button({
+  m_loginContentRow->addChild(ui::node({
+      .out = &m_loginActionSlot,
+      .width = Style::controlHeightSm,
+      .height = Style::controlHeightSm,
+  }));
+  m_loginActionSlot->addChild(ui::button({
       .out = &m_loginButton,
       .glyph = "arrow-right",
       .glyphSize = 18.0f,
       .controlHeight = Style::controlHeightSm,
       .variant = ButtonVariant::Ghost,
       .radius = Style::controlHeightSm * 0.5f,
+      .width = Style::controlHeightSm,
+      .height = Style::controlHeightSm,
+      .participatesInLayout = false,
       .onClick = [this]() {
         if (m_onLogin) m_onLogin();
       },
   }));
-  m_loginContentRow->addChild(ui::spinner({
+  m_loginActionSlot->addChild(ui::spinner({
       .out = &m_loginSpinner,
       .color = colorSpecFromRole(ColorRole::Primary),
       .spinnerSize = 18.0f,
@@ -450,6 +476,11 @@ LockSurface::LockSurface(WaylandConnection& connection, ConfigService* config) :
       .width = Style::controlHeightSm,
       .height = Style::controlHeightSm,
       .visible = false,
+      .participatesInLayout = false,
+      .configure = [](Spinner& spinner) {
+        const float inset = (Style::controlHeightSm - 18.0f) * 0.5f;
+        spinner.setPosition(inset, inset);
+      },
   }));
   m_loginPanel->addChild(ui::button({
       .out = &m_layoutChip,
@@ -897,22 +928,45 @@ void LockSurface::setLockedState(bool locked) {
   if (m_locked) {
     m_introPending = true;
     m_introStarted = false;
+    m_introProgress = 0.0f;
+    m_unlockExitProgress = 0.0f;
     m_calendarMonthOffset = 0;
+    m_calendarPendingDelta = 0;
+    m_calendarTransitioning = false;
     setNotificationPanelOpen(false, false);
     setPasswordPromptVisible(false, false);
+    resetHeroParallax(false);
+    setAuthenticationVisual(m_authenticating, false);
+    if (m_authenticating || m_error || !m_password.empty()) {
+      setPasswordPromptVisible(true, false);
+    }
     m_inputDispatcher.setFocus(nullptr);
   } else {
     m_animations.cancelAll();
     m_unlocking = false;
     m_introPending = false;
     m_introStarted = false;
-    m_introOffsetY = 0.0f;
-    m_introSideOffset = 0.0f;
-    m_introOpacity = 1.0f;
+    m_introProgress = 1.0f;
+    m_unlockExitProgress = 0.0f;
+    m_authTransition = 0.0f;
     m_passwordErrorOffsetX = 0.0f;
+    resetHeroParallax(false);
     m_lastPromptWasError = false;
     m_passwordPromptVisible = false;
     m_notificationPanelOpen = false;
+    m_calendarPendingDelta = 0;
+    m_calendarTransitioning = false;
+    if (m_loginButton != nullptr) {
+      m_loginButton->setVisible(true);
+      m_loginButton->setOpacity(1.0f);
+      m_loginButton->setScale(1.0f);
+    }
+    if (m_loginSpinner != nullptr) {
+      m_loginSpinner->setVisible(false);
+      m_loginSpinner->setOpacity(0.0f);
+      m_loginSpinner->setScale(0.92f);
+      m_loginSpinner->stop();
+    }
     m_inputDispatcher.setFocus(nullptr);
   }
   requestUpdate();
@@ -931,9 +985,7 @@ void LockSurface::startIntroAnimation() {
 
   m_introPending = false;
   m_introStarted = true;
-  m_introOffsetY = 18.0f;
-  m_introSideOffset = 14.0f;
-  m_introOpacity = 0.0f;
+  m_introProgress = 0.0f;
   for (Node* node : {static_cast<Node*>(m_loginPanel), m_leftColumn, m_centerColumn, m_rightColumn}) {
     if (node != nullptr) {
       node->setOpacity(0.0f);
@@ -941,32 +993,16 @@ void LockSurface::startIntroAnimation() {
   }
 
   m_animations.animate(
-      m_introOffsetY, 0.0f, 200.0f, Easing::CaelestiaExpressiveSpatial,
+      0.0f, 1.0f, 220.0f, Easing::FluidSpatial,
       [this](float value) {
-        m_introOffsetY = value;
+        m_introProgress = std::clamp(value, 0.0f, 1.0f);
         requestLayout();
       },
-      {}, m_loginPanel
-  );
-  m_animations.animate(
-      m_introSideOffset, 0.0f, 200.0f, Easing::CaelestiaExpressiveSpatial,
-      [this](float value) {
-        m_introSideOffset = value;
+      [this]() {
+        m_introProgress = 1.0f;
         requestLayout();
       },
-      {}, m_leftColumn
-  );
-  m_animations.animate(
-      m_introOpacity, 1.0f, 180.0f, Easing::EaseOutCubic,
-      [this](float value) {
-        m_introOpacity = std::clamp(value, 0.0f, 1.0f);
-        for (Node* node : {static_cast<Node*>(m_loginPanel), m_leftColumn, m_centerColumn, m_rightColumn}) {
-          if (node != nullptr) {
-            node->setOpacity(m_introOpacity);
-          }
-        }
-      },
-      {}, m_centerColumn
+      m_loginPanel
   );
   requestFrameTick();
 }
@@ -999,18 +1035,15 @@ void LockSurface::beginUnlockAnimation(std::function<void()> finished) {
   m_unlocking = true;
   setNotificationPanelOpen(false, false);
   m_animations.cancelAll();
-  const float startOpacity = m_loginPanel != nullptr ? m_loginPanel->opacity() : 1.0f;
+  m_unlockExitProgress = 0.0f;
   m_animations.animate(
-      startOpacity, 0.0f, 150.0f, Easing::EaseInOutQuad,
+      0.0f, 1.0f, 160.0f, Easing::EaseInCubic,
       [this](float value) {
-        for (Node* node : {static_cast<Node*>(m_loginPanel), m_leftColumn, m_centerColumn, m_rightColumn,
-                           static_cast<Node*>(m_notificationButton)}) {
-          if (node != nullptr) {
-            node->setOpacity(value);
-          }
-        }
+        m_unlockExitProgress = std::clamp(value, 0.0f, 1.0f);
+        requestLayout();
       },
       [this, finished = std::move(finished)]() mutable {
+        m_unlockExitProgress = 1.0f;
         m_unlocking = false;
         if (finished) {
           finished();
@@ -1095,8 +1128,13 @@ void LockSurface::setPasswordPromptVisible(bool visible, bool animate) {
   const float target = visible ? 1.0f : 0.0f;
   const auto apply = [this](float value) {
     m_promptTransition = std::clamp(value, 0.0f, 1.0f);
-    if (m_unlockButton != nullptr) m_unlockButton->setOpacity(1.0f - m_promptTransition);
-    if (m_loginContentRow != nullptr) m_loginContentRow->setOpacity(m_promptTransition);
+    if (m_unlockButton != nullptr) {
+      m_unlockButton->setOpacity(1.0f - phaseProgress(m_promptTransition, 0.0f, 0.65f));
+    }
+    if (m_loginContentRow != nullptr) {
+      m_loginContentRow->setOpacity(phaseProgress(m_promptTransition, 0.20f, 1.0f));
+    }
+    requestLayout();
   };
   const auto finish = [this, visible]() {
     if (m_unlockButton != nullptr) m_unlockButton->setVisible(!visible);
@@ -1107,7 +1145,10 @@ void LockSurface::setPasswordPromptVisible(bool visible, bool animate) {
     apply(target);
     finish();
   } else {
-    m_animations.animate(m_promptTransition, target, 180.0f, Easing::EaseOutCubic, apply, finish, m_promptHost);
+    m_animations.animate(
+        m_promptTransition, target, visible ? 180.0f : 100.0f,
+        visible ? Easing::FluidSpatial : Easing::EaseInQuad, apply, finish, m_promptHost
+    );
     requestFrameTick();
   }
 
@@ -1134,6 +1175,139 @@ void LockSurface::collapsePasswordPrompt() {
   setPasswordPromptVisible(false);
 }
 
+void LockSurface::setAuthenticationVisual(bool authenticating, bool animate) {
+  if (m_loginButton == nullptr || m_loginSpinner == nullptr) {
+    return;
+  }
+
+  const void* transitionOwner = m_loginActionSlot != nullptr ? static_cast<const void*>(m_loginActionSlot)
+                                                              : static_cast<const void*>(m_loginContentRow);
+  m_animations.cancelForOwner(transitionOwner);
+  m_loginButton->setVisible(true);
+  m_loginSpinner->setVisible(true);
+  if (authenticating) {
+    m_loginSpinner->start();
+  }
+
+  const float target = authenticating ? 1.0f : 0.0f;
+  const auto apply = [this](float value) {
+    m_authTransition = std::clamp(value, 0.0f, 1.0f);
+    if (m_loginButton != nullptr) {
+      m_loginButton->setOpacity(1.0f - m_authTransition);
+      m_loginButton->setScale(1.0f - m_authTransition * 0.08f);
+    }
+    if (m_loginSpinner != nullptr) {
+      m_loginSpinner->setOpacity(m_authTransition);
+      m_loginSpinner->setScale(0.92f + m_authTransition * 0.08f);
+    }
+    requestRedraw();
+  };
+  const auto finish = [this, authenticating]() {
+    if (m_loginButton != nullptr) {
+      m_loginButton->setVisible(!authenticating);
+      m_loginButton->setOpacity(authenticating ? 0.0f : 1.0f);
+      m_loginButton->setScale(authenticating ? 0.92f : 1.0f);
+    }
+    if (m_loginSpinner != nullptr) {
+      m_loginSpinner->setVisible(authenticating);
+      m_loginSpinner->setOpacity(authenticating ? 1.0f : 0.0f);
+      m_loginSpinner->setScale(1.0f);
+      if (!authenticating) {
+        m_loginSpinner->stop();
+      }
+    }
+  };
+
+  if (!animate) {
+    apply(target);
+    finish();
+    return;
+  }
+
+  m_animations.animate(m_authTransition, target, 100.0f, Easing::EaseOutCubic, apply, finish, transitionOwner);
+  requestFrameTick();
+}
+
+void LockSurface::updateHeroParallax(float sceneX, float sceneY) {
+  if (!m_locked || m_blackout || m_heroLayer == nullptr || m_centerColumn == nullptr
+      || !m_centerColumn->visible() || !m_heroLayer->visible() || m_heroLayer->width() <= 0.0f
+      || m_heroLayer->height() <= 0.0f || !MotionService::instance().enabled()) {
+    return;
+  }
+
+  float heroX = 0.0f;
+  float heroY = 0.0f;
+  Node::absolutePosition(m_heroLayer, heroX, heroY);
+  const float normalizedX = std::clamp(
+      (sceneX - (heroX + m_heroLayer->width() * 0.5f)) / std::max(1.0f, m_heroLayer->width() * 0.5f), -1.0f, 1.0f
+  );
+  const float normalizedY = std::clamp(
+      (sceneY - (heroY + m_heroLayer->height() * 0.5f)) / std::max(1.0f, m_heroLayer->height() * 0.5f), -1.0f, 1.0f
+  );
+  const float targetX = normalizedX * 4.0f;
+  const float targetY = normalizedY * 3.0f;
+  const float targetRotation = normalizedX * 0.0061f;
+  const float targetScale = 1.005f;
+  if (std::abs(targetX - m_heroParallaxTargetX) < 0.05f
+      && std::abs(targetY - m_heroParallaxTargetY) < 0.05f
+      && std::abs(targetRotation - m_heroParallaxTargetRotation) < 0.0001f) {
+    return;
+  }
+
+  m_animations.cancelForOwner(m_heroLayer);
+  m_heroParallaxStartX = m_heroParallaxX;
+  m_heroParallaxStartY = m_heroParallaxY;
+  m_heroParallaxStartRotation = m_heroParallaxRotation;
+  m_heroParallaxStartScale = m_heroParallaxScale;
+  m_heroParallaxTargetX = targetX;
+  m_heroParallaxTargetY = targetY;
+  m_heroParallaxTargetRotation = targetRotation;
+  m_heroParallaxTargetScale = targetScale;
+  m_animations.animate(
+      0.0f, 1.0f, 120.0f, Easing::FluidSpatial,
+      [this](float progress) {
+        m_heroParallaxX = std::lerp(m_heroParallaxStartX, m_heroParallaxTargetX, progress);
+        m_heroParallaxY = std::lerp(m_heroParallaxStartY, m_heroParallaxTargetY, progress);
+        m_heroParallaxRotation =
+            std::lerp(m_heroParallaxStartRotation, m_heroParallaxTargetRotation, progress);
+        m_heroParallaxScale = std::lerp(m_heroParallaxStartScale, m_heroParallaxTargetScale, progress);
+        requestLayout();
+      },
+      {}, m_heroLayer
+  );
+  requestFrameTick();
+}
+
+void LockSurface::resetHeroParallax(bool animate) {
+  if (m_heroLayer == nullptr) {
+    return;
+  }
+
+  m_animations.cancelForOwner(m_heroLayer);
+  const auto apply = [this](float progress) {
+    m_heroParallaxX = std::lerp(m_heroParallaxStartX, 0.0f, progress);
+    m_heroParallaxY = std::lerp(m_heroParallaxStartY, 0.0f, progress);
+    m_heroParallaxRotation = std::lerp(m_heroParallaxStartRotation, 0.0f, progress);
+    m_heroParallaxScale = std::lerp(m_heroParallaxStartScale, 1.0f, progress);
+    requestLayout();
+  };
+  m_heroParallaxTargetX = 0.0f;
+  m_heroParallaxTargetY = 0.0f;
+  m_heroParallaxTargetRotation = 0.0f;
+  m_heroParallaxTargetScale = 1.0f;
+  m_heroParallaxStartX = m_heroParallaxX;
+  m_heroParallaxStartY = m_heroParallaxY;
+  m_heroParallaxStartRotation = m_heroParallaxRotation;
+  m_heroParallaxStartScale = m_heroParallaxScale;
+
+  if (!animate || !m_locked || !MotionService::instance().enabled()) {
+    apply(1.0f);
+    return;
+  }
+  m_animations.animate(0.0f, 1.0f, 160.0f, Easing::FluidSpatial, apply, {}, m_heroLayer);
+  requestFrameTick();
+}
+
 void LockSurface::setNotificationPanelOpen(bool open, bool animate) {
   if (m_notificationPanel == nullptr || m_notificationBackdropArea == nullptr) {
     m_notificationPanelOpen = open;
@@ -1149,13 +1323,15 @@ void LockSurface::setNotificationPanelOpen(bool open, bool animate) {
     m_notificationBackdropArea->setVisible(true);
     m_notificationPanel->setVisible(true);
     m_notificationPanel->setOpacity(animate ? 0.0f : 1.0f);
-    m_notificationPanelOffsetY = animate ? -4.0f : 0.0f;
+    m_notificationPanel->setScale(animate ? 0.97f : 1.0f);
+    m_notificationPanelOffsetY = animate ? -8.0f : 0.0f;
     if (animate) {
       m_animations.animate(
-          0.0f, 1.0f, 120.0f, Easing::EaseOutCubic,
+          0.0f, 1.0f, 140.0f, Easing::EaseOutCubic,
           [this](float value) {
             if (m_notificationPanel != nullptr) m_notificationPanel->setOpacity(value);
-            m_notificationPanelOffsetY = -4.0f * (1.0f - value);
+            if (m_notificationPanel != nullptr) m_notificationPanel->setScale(0.97f + value * 0.03f);
+            m_notificationPanelOffsetY = -8.0f * (1.0f - value);
             requestLayout();
           },
           {}, m_notificationPanel
@@ -1167,17 +1343,22 @@ void LockSurface::setNotificationPanelOpen(bool open, bool animate) {
     if (!animate) {
       m_notificationPanel->setOpacity(0.0f);
       m_notificationPanel->setVisible(false);
+      m_notificationPanel->setScale(1.0f);
       m_notificationPanelOffsetY = 0.0f;
     } else {
       m_animations.animate(
-          m_notificationPanel->opacity(), 0.0f, 80.0f, Easing::EaseInOutQuad,
+          m_notificationPanel->opacity(), 0.0f, 80.0f, Easing::EaseInQuad,
           [this](float value) {
             if (m_notificationPanel != nullptr) m_notificationPanel->setOpacity(value);
-            m_notificationPanelOffsetY = -4.0f * (1.0f - value);
+            if (m_notificationPanel != nullptr) m_notificationPanel->setScale(0.97f + value * 0.03f);
+            m_notificationPanelOffsetY = -8.0f * (1.0f - value);
             requestLayout();
           },
           [this]() {
-            if (m_notificationPanel != nullptr) m_notificationPanel->setVisible(false);
+            if (m_notificationPanel != nullptr) {
+              m_notificationPanel->setVisible(false);
+              m_notificationPanel->setScale(1.0f);
+            }
             m_notificationPanelOffsetY = 0.0f;
           },
           m_notificationPanel
@@ -1200,26 +1381,64 @@ void LockSurface::changeCalendarMonth(int delta) {
   if (delta == 0) {
     return;
   }
-  m_calendarMonthOffset = std::clamp(m_calendarMonthOffset + delta, -12, 12);
+
+  if (m_calendarTransitioning) {
+    const int target = std::clamp(m_calendarMonthOffset + m_calendarPendingDelta + delta, -12, 12);
+    m_calendarPendingDelta = target - m_calendarMonthOffset;
+    return;
+  }
+
+  const int nextOffset = std::clamp(m_calendarMonthOffset + delta, -12, 12);
+  const int effectiveDelta = nextOffset - m_calendarMonthOffset;
+  if (effectiveDelta == 0) {
+    return;
+  }
   if (m_calendarGrid == nullptr) {
+    m_calendarMonthOffset = nextOffset;
     requestUpdate();
     return;
   }
+
+  const float direction = effectiveDelta > 0 ? 1.0f : -1.0f;
+  m_calendarTransitioning = true;
   m_animations.cancelForOwner(m_calendarGrid);
-  m_calendarGrid->setOpacity(0.0f);
-  m_calendarSlideOffset = delta > 0 ? 8.0f : -8.0f;
-  requestUpdate();
+  m_calendarSlideOffset = 0.0f;
   m_animations.animate(
-      m_calendarSlideOffset, 0.0f, 160.0f, Easing::EaseOutCubic,
+      0.0f, -direction * 8.0f, 80.0f, Easing::EaseInCubic,
       [this](float value) {
         m_calendarSlideOffset = value;
         const float progress = 1.0f - std::min(1.0f, std::abs(value) / 8.0f);
         if (m_calendarGrid != nullptr) m_calendarGrid->setOpacity(progress);
         requestLayout();
       },
-      [this]() {
-        if (m_calendarGrid != nullptr) m_calendarGrid->setOpacity(1.0f);
-        m_calendarSlideOffset = 0.0f;
+      [this, nextOffset, direction]() {
+        m_calendarMonthOffset = nextOffset;
+        m_calendarSlideOffset = direction * 8.0f;
+        if (m_calendarGrid != nullptr) {
+          m_calendarGrid->setOpacity(0.0f);
+        }
+        requestUpdate();
+        m_animations.animate(
+            m_calendarSlideOffset, 0.0f, 120.0f, Easing::EaseOutCubic,
+            [this](float value) {
+              m_calendarSlideOffset = value;
+              const float progress = 1.0f - std::min(1.0f, std::abs(value) / 8.0f);
+              if (m_calendarGrid != nullptr) m_calendarGrid->setOpacity(progress);
+              requestLayout();
+            },
+            [this]() {
+              if (m_calendarGrid != nullptr) m_calendarGrid->setOpacity(1.0f);
+              m_calendarSlideOffset = 0.0f;
+              m_calendarTransitioning = false;
+              const int pendingDelta = m_calendarPendingDelta;
+              m_calendarPendingDelta = 0;
+              if (pendingDelta != 0) {
+                changeCalendarMonth(pendingDelta);
+              }
+            },
+            m_calendarGrid
+        );
+        requestFrameTick();
       },
       m_calendarGrid
   );
@@ -1338,11 +1557,15 @@ void LockSurface::setPromptState(
       && m_authenticating == authenticating) {
     return;
   }
+  const bool authenticationChanged = m_authenticating != authenticating;
   m_user = std::move(user);
   m_password = std::move(password);
   m_status = std::move(status);
   m_error = error;
   m_authenticating = authenticating;
+  if (authenticationChanged) {
+    setAuthenticationVisual(m_authenticating, m_locked && !m_blackout);
+  }
   if (m_locked && (m_authenticating || m_error || !m_password.empty())) {
     setPasswordPromptVisible(true);
   }
@@ -1502,12 +1725,15 @@ void LockSurface::onPointerEvent(const PointerEvent& event) {
   switch (event.type) {
   case PointerEvent::Type::Enter:
     m_inputDispatcher.pointerEnter(static_cast<float>(event.sx), static_cast<float>(event.sy), event.serial);
+    updateHeroParallax(static_cast<float>(event.sx), static_cast<float>(event.sy));
     break;
   case PointerEvent::Type::Leave:
     m_inputDispatcher.pointerLeave();
+    resetHeroParallax(true);
     break;
   case PointerEvent::Type::Motion:
     m_inputDispatcher.pointerMotion(static_cast<float>(event.sx), static_cast<float>(event.sy), event.serial);
+    updateHeroParallax(static_cast<float>(event.sx), static_cast<float>(event.sy));
     break;
   case PointerEvent::Type::Button: {
     const bool pressed = event.state == WL_POINTER_BUTTON_STATE_PRESSED;
@@ -1666,11 +1892,60 @@ void LockSurface::layoutScene(std::uint32_t width, std::uint32_t height) {
   const auto layout = lockscreen_layout::resolve(sw, sh);
   const float scale = layout.scale;
   const bool wide = layout.mode == lockscreen_layout::Mode::Wide;
-  const bool medium = layout.mode == lockscreen_layout::Mode::Medium;
   const bool compact = layout.mode == lockscreen_layout::Mode::Compact;
+  const float exitProgress = std::clamp(m_unlockExitProgress, 0.0f, 1.0f);
+  const float exitOpacity = 1.0f - exitProgress;
+  const float exitLift = exitProgress * 8.0f * scale;
+  const float exitScale = 1.0f - exitProgress * 0.015f;
+  const float leftSpatial = introSpatial(m_introProgress, 0.00f, 0.65f);
+  const float heroSpatial = introSpatial(m_introProgress, 0.08f, 0.80f);
+  const float rightSpatial = introSpatial(m_introProgress, 0.16f, 0.90f);
+  const float loginSpatial = introSpatial(m_introProgress, 0.28f, 1.00f);
+  const float leftOpacity = introOpacity(m_introProgress, 0.00f, 0.65f) * exitOpacity;
+  const float heroOpacity = introOpacity(m_introProgress, 0.08f, 0.80f) * exitOpacity;
+  const float rightOpacity = introOpacity(m_introProgress, 0.16f, 0.90f) * exitOpacity;
+  const float loginOpacity = introOpacity(m_introProgress, 0.28f, 1.00f) * exitOpacity;
+
+  const float resourceGap = std::max(2.0f, layout.contentGap * 0.5f);
+  const auto changed = [](float current, float next) { return std::abs(current - next) > 0.01f; };
+  const bool cardMetricsChanged = changed(m_appliedCardPadding, layout.cardPadding)
+      || changed(m_appliedContentGap, layout.contentGap)
+      || changed(m_appliedCardRadius, layout.radius)
+      || changed(m_appliedResourceGap, resourceGap);
+  if (cardMetricsChanged) {
+    const auto applyCardSpacing = [&layout](Flex* card) {
+      if (card == nullptr) {
+        return;
+      }
+      card->setPadding(layout.cardPadding);
+      card->setGap(layout.contentGap);
+      card->setRadius(layout.radius);
+    };
+    for (Flex* card : {m_identityCard, m_mediaCard, m_calendarCard, m_weatherCard}) {
+      applyCardSpacing(card);
+    }
+    applyCardSpacing(m_heroCard);
+    applyCardSpacing(m_notificationPanel);
+    if (m_resourcesCard != nullptr) {
+      m_resourcesCard->setPadding(layout.cardPadding);
+      m_resourcesCard->setGap(resourceGap);
+      m_resourcesCard->setRadius(layout.radius);
+    }
+    m_appliedCardPadding = layout.cardPadding;
+    m_appliedContentGap = layout.contentGap;
+    m_appliedResourceGap = resourceGap;
+    m_appliedCardRadius = layout.radius;
+  }
+  if (m_clockBlock != nullptr
+      && (changed(m_appliedClockPadding, layout.cardPadding) || changed(m_appliedClockGap, layout.contentGap))) {
+    m_clockBlock->setPadding(0.0f, layout.cardPadding);
+    m_clockBlock->setGap(layout.contentGap);
+    m_appliedClockPadding = layout.cardPadding;
+    m_appliedClockGap = layout.contentGap;
+  }
 
   m_leftColumn->setVisible(contentVisible);
-  m_centerColumn->setVisible(contentVisible && (wide || compact));
+  m_centerColumn->setVisible(contentVisible && (wide || (compact && layout.showHero)));
   m_rightColumn->setVisible(contentVisible && !compact);
   m_loginPanel->setVisible(contentVisible);
   m_notificationButton->setVisible(contentVisible);
@@ -1685,9 +1960,13 @@ void LockSurface::layoutScene(std::uint32_t width, std::uint32_t height) {
   };
 
   const lockscreen_layout::Rect leftFrame = compact ? layout.centerColumn : layout.leftColumn;
-  m_leftColumn->setPosition(leftFrame.x - m_introSideOffset, leftFrame.y);
+  m_leftColumn->setPosition(
+      leftFrame.x - (1.0f - leftSpatial) * 12.0f * scale,
+      leftFrame.y - exitLift
+  );
   m_leftColumn->setSize(leftFrame.width, leftFrame.height);
-  m_leftColumn->setOpacity(m_introOpacity);
+  m_leftColumn->setScale(exitScale);
+  m_leftColumn->setOpacity(leftOpacity);
   m_identityCard->arrange(*renderer, localRect(layout.identityCard, leftFrame));
   m_clockBlock->arrange(*renderer, localRect(layout.clockBlock, leftFrame));
   m_mediaCard->setVisible(!compact);
@@ -1698,13 +1977,13 @@ void LockSurface::layoutScene(std::uint32_t width, std::uint32_t height) {
   if (m_timeLabel != nullptr) {
     const float base = compact ? 74.0f : wide ? 86.0f : 78.0f;
     m_timeLabel->setFontSize(std::clamp(base * scale, 48.0f, 96.0f));
-    m_timeLabel->setMaxWidth(layout.clockBlock.width - Style::spaceLg * 2.0f);
+    m_timeLabel->setMaxWidth(std::max(1.0f, layout.clockBlock.width - layout.cardPadding * 2.0f));
   }
   if (m_dateLabel != nullptr) {
     m_dateLabel->setFontSize(std::max(Style::fontSizeCaption, Style::fontSizeTitle * scale));
-    m_dateLabel->setMaxWidth(layout.clockBlock.width - Style::spaceLg * 2.0f);
+    m_dateLabel->setMaxWidth(std::max(1.0f, layout.clockBlock.width - layout.cardPadding * 2.0f));
   }
-  syncAvatar(*renderer, std::clamp(56.0f * scale, 44.0f, 64.0f));
+  syncAvatar(*renderer, std::clamp(56.0f * scale, 40.0f, 64.0f));
 
   if (m_mediaArtworkFrame != nullptr) {
     const float thumb = std::clamp(72.0f * scale, 56.0f, 78.0f);
@@ -1719,13 +1998,21 @@ void LockSurface::layoutScene(std::uint32_t width, std::uint32_t height) {
   }
 
   const lockscreen_layout::Rect heroFrame = layout.heroCard;
-  if (wide || compact) {
+  const bool showHero = (wide || compact) && layout.showHero;
+  m_heroLayer->setVisible(showHero);
+  if (showHero) {
     const lockscreen_layout::Rect centerFrame = layout.centerColumn;
-    m_centerColumn->setPosition(centerFrame.x, centerFrame.y + m_introOffsetY);
+    m_centerColumn->setPosition(centerFrame.x, centerFrame.y + (1.0f - heroSpatial) * 16.0f * scale - exitLift);
     m_centerColumn->setSize(centerFrame.width, centerFrame.height);
-    m_centerColumn->setOpacity(m_introOpacity);
-    m_heroLayer->setPosition(heroFrame.x - centerFrame.x, heroFrame.y - centerFrame.y);
+    m_centerColumn->setScale((0.96f + heroSpatial * 0.04f) * exitScale);
+    m_centerColumn->setOpacity(heroOpacity);
+    m_heroLayer->setPosition(
+        heroFrame.x - centerFrame.x + m_heroParallaxX,
+        heroFrame.y - centerFrame.y + m_heroParallaxY
+    );
     m_heroLayer->setSize(heroFrame.width, heroFrame.height);
+    m_heroLayer->setRotation(m_heroParallaxRotation);
+    m_heroLayer->setScale(m_heroParallaxScale);
 
     const float heroHeight = heroFrame.height * 0.94f;
     const float heroWidth = compact
@@ -1738,8 +2025,9 @@ void LockSurface::layoutScene(std::uint32_t width, std::uint32_t height) {
     m_heroBackSheetB->setPosition(heroX - 8.0f * scale, heroY + 8.0f * scale);
     m_heroBackSheetB->setSize(heroWidth, heroHeight);
     const float captionHeight = compact ? 24.0f : 34.0f;
-    const float imageHeight = std::max(1.0f, heroHeight - captionHeight - Style::spaceMd * 2.0f - Style::spaceSm);
-    m_heroImageFrame->setSize(std::max(1.0f, heroWidth - Style::spaceMd * 2.0f), imageHeight);
+    const float imageHeight =
+        std::max(1.0f, heroHeight - captionHeight - layout.cardPadding * 2.0f - layout.contentGap);
+    m_heroImageFrame->setSize(std::max(1.0f, heroWidth - layout.cardPadding * 2.0f), imageHeight);
     m_heroCard->arrange(*renderer, LayoutRect{heroX, heroY, heroWidth, heroHeight});
     m_heroImage->setPosition(0.0f, 0.0f);
     m_heroImage->setSize(m_heroImageFrame->width(), m_heroImageFrame->height());
@@ -1750,13 +2038,19 @@ void LockSurface::layoutScene(std::uint32_t width, std::uint32_t height) {
     syncHeroArtwork(*renderer, std::max(heroWidth, imageHeight));
   } else {
     m_centerColumn->setVisible(false);
+    m_heroLayer->setRotation(0.0f);
+    m_heroLayer->setScale(1.0f);
     syncHeroArtwork(*renderer, 300.0f * scale);
   }
 
   if (!compact) {
-    m_rightColumn->setPosition(layout.rightColumn.x + m_introSideOffset, layout.rightColumn.y);
+    m_rightColumn->setPosition(
+        layout.rightColumn.x + (1.0f - rightSpatial) * 12.0f * scale,
+        layout.rightColumn.y - exitLift
+    );
     m_rightColumn->setSize(layout.rightColumn.width, layout.rightColumn.height);
-    m_rightColumn->setOpacity(m_introOpacity);
+    m_rightColumn->setScale(exitScale);
+    m_rightColumn->setOpacity(rightOpacity);
     m_calendarCard->arrange(*renderer, localRect(layout.calendarCard, layout.rightColumn));
     m_weatherCard->arrange(*renderer, localRect(layout.weatherCard, layout.rightColumn));
     m_resourcesCard->arrange(*renderer, localRect(layout.metricsCard, layout.rightColumn));
@@ -1765,11 +2059,10 @@ void LockSurface::layoutScene(std::uint32_t width, std::uint32_t height) {
     }
   }
 
-  m_loginBaseX = layout.loginBlock.x;
-  m_loginBaseY = layout.loginBlock.y;
-  m_loginPanel->setOpacity(m_introOpacity);
-  m_loginPanel->setGap(Style::spaceXs * scale);
-  const float loginY = layout.loginBlock.y + m_introOffsetY;
+  m_loginPanel->setOpacity(loginOpacity);
+  m_loginPanel->setScale((0.98f + loginSpatial * 0.02f) * exitScale);
+  m_loginPanel->setGap(std::max(Style::spaceXs, layout.contentGap * 0.6f));
+  const float loginY = layout.loginBlock.y + (1.0f - loginSpatial) * 20.0f * scale - exitLift;
   const float promptWidth = std::min(460.0f * scale, std::max(210.0f, layout.loginBlock.width));
   const float promptHeight = Style::controlHeightLg;
   m_promptHost->setSize(promptWidth, promptHeight);
@@ -1777,16 +2070,21 @@ void LockSurface::layoutScene(std::uint32_t width, std::uint32_t height) {
       *renderer,
       LayoutRect{layout.loginBlock.x, loginY, layout.loginBlock.width, layout.loginBlock.height}
   );
-  const float unlockWidth = std::min(230.0f * scale, promptWidth);
+  const float unlockWidth = std::min(std::max(160.0f, 230.0f * scale), promptWidth);
+  const float promptMorphWidth = std::lerp(unlockWidth, promptWidth, m_promptTransition);
+  const float promptMorphX = std::round((promptWidth - promptMorphWidth) * 0.5f);
   m_unlockButton->arrange(
       *renderer,
-      LayoutRect{std::round((promptWidth - unlockWidth) * 0.5f), 0.0f, unlockWidth, promptHeight}
+      LayoutRect{promptMorphX, 0.0f, promptMorphWidth, promptHeight}
   );
   m_loginContentRow->arrange(
       *renderer,
-      LayoutRect{m_passwordErrorOffsetX, 0.0f, promptWidth, promptHeight}
+      LayoutRect{promptMorphX + m_passwordErrorOffsetX, 0.0f, promptMorphWidth, promptHeight}
   );
 
+  const float notificationOpacity = introOpacity(m_introProgress, 0.16f, 0.90f) * exitOpacity;
+  m_notificationButton->setOpacity(notificationOpacity);
+  m_notificationButton->setScale((0.94f + notificationOpacity * 0.06f) * exitScale);
   m_notificationButton->arrange(
       *renderer,
       LayoutRect{
@@ -1813,10 +2111,6 @@ void LockSurface::layoutScene(std::uint32_t width, std::uint32_t height) {
   m_passwordField->setSurfaceOpacity(0.0f);
   m_passwordField->setTextAlign(TextAlign::Center);
   m_loginButton->setRadius(Style::controlHeightSm * 0.5f);
-
-  if (medium) {
-    m_centerColumn->setVisible(false);
-  }
   if (m_introPending) {
     startIntroAnimation();
   }
@@ -1861,14 +2155,10 @@ void LockSurface::updateCopy() {
   m_passwordField->setEnabled(!m_authenticating);
   if (m_loginButton != nullptr) {
     m_loginButton->setEnabled(!m_authenticating);
-    m_loginButton->setVisible(!m_authenticating);
   }
   if (m_loginSpinner != nullptr) {
-    m_loginSpinner->setVisible(m_authenticating);
     if (m_authenticating) {
       m_loginSpinner->start();
-    } else {
-      m_loginSpinner->stop();
     }
   }
   if (m_passwordCapsule != nullptr) {

@@ -1,4 +1,4 @@
-#include "i18n/i18n_service.h"
+#include "i18n/i18n.h"
 #include "time/time_format.h"
 
 #include <chrono>
@@ -42,6 +42,12 @@ int main() {
   i18n::Service::instance().init("en");
 
   bool ok = true;
+  ok = expectEqual(i18n::trOr("dashboard.home.anniversary.title", "Anniversary"), "Anniversary",
+                   "loads dashboard anniversary title")
+      && ok;
+  ok = expectEqual(i18n::trOr("dashboard.home.missing", "Safe fallback"), "Safe fallback",
+                   "uses fallback for a missing dashboard key")
+      && ok;
   ok = expectEqual(formatLocalUnixTime(1700000000, "%s"), "1700000000", "formats unix epoch token") && ok;
   ok = expectEqual(
            formatLocalUnixTime(1700000000, "recording_%s"), "recording_1700000000",

@@ -50,19 +50,15 @@ namespace {
   constexpr float kMediaUnit = 36.0f;
 
   constexpr float kArtworkSize = kMediaUnit * 13;
-  constexpr float kMediaNowCardMinHeight = kMediaUnit * 11 + Style::spaceSm * 2;
+  constexpr float kDashboardMediaNowCardMinHeight = 260.0f;
   constexpr float kMediaControlsHeight = kMediaUnit + Style::spaceXs;
-  constexpr float kMediaPlayPauseHeight = kMediaUnit + Style::spaceSm;
-  constexpr float kMediaArtworkMinHeight = kMediaUnit * 4;
-  // The standalone reference player uses a roomy, two-column 680px canvas.
+  // The standalone reference player uses a compact 500px canvas.
   // ContentPanel contributes 16px of outer inset on both sides.
-  constexpr float kReferenceCanvasWidth = 648.0f;
-  constexpr float kReferenceCardPadding = 24.0f;
-  constexpr float kReferenceCardGap = 16.0f;
-  constexpr float kReferenceArtworkSize = 264.0f;
-  constexpr float kReferenceBongoWidth = 190.0f;
-  constexpr float kReferenceBongoSlotHeight = 150.0f;
-  constexpr float kReferenceVisualizerHeight = 190.0f;
+  constexpr float kReferenceCanvasWidth = 468.0f;
+  constexpr float kReferenceCardPadding = 14.0f;
+  constexpr float kReferenceCardGap = 8.0f;
+  constexpr float kReferenceBongoWidth = 120.0f;
+  constexpr float kReferenceBongoSlotHeight = 90.0f;
   constexpr auto kNoActivePlayerGrace = std::chrono::milliseconds(2000);
   constexpr auto kTransientPositionRegressionWindow = std::chrono::milliseconds(1500);
   constexpr std::int64_t kTransientPositionRegressionFloorUs = 5'000'000;
@@ -85,7 +81,7 @@ namespace {
   std::string repeatGlyph(const std::string& loopStatus) { return loopStatus == "Track" ? "repeat-once" : "repeat"; }
 
   ButtonVariant toggleVariant(bool active) { return active ? ButtonVariant::Primary : ButtonVariant::Ghost; }
-  constexpr int kVisualizerBandCount = 32;
+  constexpr int kVisualizerBandCount = 96;
   constexpr float kBongoNaturalWidth = 260.0f;
   constexpr int kMaxBongoFrames = 128;
   constexpr std::size_t kMaxBongoRgbaBytes = 32ull * 1024 * 1024;
@@ -227,10 +223,11 @@ std::unique_ptr<Flex> MediaTab::create() {
   const float scale = contentScale();
   const bool referenceLayout = m_presentation == MediaTabPresentation::ReferencePanel;
 
-  auto tab = ui::row({
+  auto tab = ui::column({
       .out = &m_rootLayout,
       .align = FlexAlign::Stretch,
       .gap = Style::spaceSm * scale,
+      .fillWidth = true,
   });
 
   auto mediaColumn = ui::column({
@@ -242,8 +239,8 @@ std::unique_ptr<Flex> MediaTab::create() {
 
   auto nowCard = ui::column({
       .out = &m_nowCard,
-      .gap = Style::spaceMd * scale,
-      .minHeight = kMediaNowCardMinHeight * scale,
+      .gap = Style::spaceXs * scale,
+      .minHeight = (referenceLayout ? 110.0f : kDashboardMediaNowCardMinHeight) * scale,
       .flexGrow = 1.0f,
       .configure = [scale, opacity = panelCardOpacity()](Flex& card) {
         applySectionCardStyle(card, scale, opacity, /*showBorder=*/false);
@@ -258,6 +255,47 @@ std::unique_ptr<Flex> MediaTab::create() {
       .flexGrow = 1.0f,
   });
 
+  auto optionBtn = ui::button({
+      .out = &m_playerMenuButton,
+      .glyph = "more-vertical",
+      .glyphSize = Style::fontSizeBody * scale,
+      .enabled = false,
+      .variant = ButtonVariant::Ghost,
+      .minWidth = Style::controlHeightSm * scale,
+      .minHeight = Style::controlHeightSm * scale,
+      .padding = Style::spaceXs * scale,
+      .onClick = [this]() {
+        if (m_playerBusNames.empty()) {
+          return;
+        }
+        if (m_playerMenuPopup != nullptr && m_playerMenuPopup->isOpen()) {
+          m_playerMenuPopup->close();
+          PanelManager::instance().clearActivePopup();
+        } else {
+          openPlayerMenu();
+        }
+      },
+  });
+
+  auto nowCardHeader = ui::row(
+      {.align = FlexAlign::Center, .justify = FlexJustify::SpaceBetween, .fillWidth = true},
+      ui::row(
+          {.align = FlexAlign::Center, .gap = Style::spaceXs * scale},
+          ui::glyph({
+              .glyph = "disc",
+              .glyphSize = Style::fontSizeBody * scale,
+              .color = colorSpecFromRole(ColorRole::Primary),
+          }),
+          ui::label({
+              .text = i18n::tr("control-center.media.now-playing"),
+              .fontSize = Style::fontSizeBody * 0.9f * scale,
+              .fontWeight = FontWeight::Bold,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          })
+      ),
+      std::move(optionBtn)
+  );
+
   auto artContainer = ui::column({
       .out = &m_artContainer,
       .align = FlexAlign::Center,
@@ -267,26 +305,25 @@ std::unique_ptr<Flex> MediaTab::create() {
         box.setRadius(22.0f * scale);
       },
   });
+  const float initArtSize = (referenceLayout ? 100.0f : kArtworkSize) * scale;
   artContainer->addChild(ui::image({
       .out = &m_artwork,
       .fit = ImageFit::Cover,
-      .radius = 22.0f * scale,
-      .width = kArtworkSize * scale,
-      .height = kArtworkSize * scale,
+      .radius = 16.0f * scale,
+      .width = initArtSize,
+      .height = initArtSize,
   }));
   artContainer->addChild(ui::glyph({
       .out = &m_artFallbackGlyph,
       .glyph = "disc-filled",
-      .glyphSize = 64.0f * scale,
+      .glyphSize = 40.0f * scale,
       .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
   }));
 
   auto artworkRow = ui::row(
-      {.out = &m_artworkRow, .align = FlexAlign::Center, .justify = FlexJustify::Center, .gap = 0.0f, .flexGrow = 1.0f},
+      {.out = &m_artworkRow, .align = FlexAlign::Start, .justify = FlexJustify::Center, .gap = 0.0f, .flexGrow = 0.0f},
       std::move(artContainer)
   );
-  mediaStack->addChild(std::move(artworkRow));
-
   auto titleRow = ui::row(
       {.align = FlexAlign::Center,
        .justify = referenceLayout ? FlexJustify::Start : FlexJustify::Center,
@@ -325,8 +362,6 @@ std::unique_ptr<Flex> MediaTab::create() {
           .ellipsize = TextEllipsize::End,
       })
   );
-  mediaStack->addChild(std::move(infoColumn));
-
   auto progressRow = ui::row(
       {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
       ui::label({
@@ -376,7 +411,6 @@ std::unique_ptr<Flex> MediaTab::create() {
           .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
       })
   );
-  mediaStack->addChild(std::move(progressRow));
 
   auto controls = ui::row({
       .align = FlexAlign::Center,
@@ -498,8 +532,6 @@ std::unique_ptr<Flex> MediaTab::create() {
       })
   );
 
-  mediaStack->addChild(std::move(controls));
-
   auto volumePill = ui::row({
       .align = FlexAlign::Center,
       .gap = Style::spaceXs * scale,
@@ -514,9 +546,9 @@ std::unique_ptr<Flex> MediaTab::create() {
       .presentation = SliderPresentation::LevelCompact,
       .glyph = "volume-high",
       .glyphSize = Style::fontSizeCaption * scale,
-      .trackHeight = 18.0f * scale,
-      .thumbSize = 33.0f * scale,
-      .controlHeight = 33.0f * scale,
+      .trackHeight = 24.0f * scale,
+      .thumbSize = 36.0f * scale,
+      .controlHeight = 36.0f * scale,
       .flexGrow = 1.0f,
       .onValueChanged =
           [this](double value) {
@@ -527,221 +559,49 @@ std::unique_ptr<Flex> MediaTab::create() {
           },
   }));
 
-  mediaStack->addChild(std::move(volumePill));
+  auto infoControlsColumn = ui::column({
+      .align = FlexAlign::Stretch,
+      .gap = Style::spaceXs * scale,
+      .flexGrow = 1.0f,
+  });
+  infoControlsColumn->addChild(std::move(infoColumn));
+  infoControlsColumn->addChild(std::move(progressRow));
+  infoControlsColumn->addChild(std::move(controls));
+  infoControlsColumn->addChild(std::move(volumePill));
+
+  auto contentRow = ui::row({
+      .align = FlexAlign::Start,
+      .gap = Style::spaceMd * scale,
+      .fillWidth = true,
+      .flexGrow = 1.0f,
+  });
+  contentRow->addChild(std::move(artworkRow));
+  contentRow->addChild(std::move(infoControlsColumn));
+
+  mediaStack->addChild(std::move(nowCardHeader));
+  mediaStack->addChild(std::move(contentRow));
 
   nowCard->addChild(std::move(mediaStack));
   mediaColumn->addChild(std::move(nowCard));
 
-  auto visualizerColumn = ui::column({
-      .out = &m_visualizerColumn,
-      .align = FlexAlign::Stretch,
-      .gap = Style::spaceSm * scale,
-      .clipChildren = true,
-      .flexGrow = 4.0f,
-  });
-
-  {
-    auto lyricsCard = ui::column({
-        .out = &m_lyricsCard,
-        .align = FlexAlign::Center,
-        .justify = FlexJustify::Center,
-        .gap = Style::spaceSm * scale,
-        .fillWidth = true,
-        .flexGrow = referenceLayout ? 0.0f : 1.0f,
-        .configure = [scale, opacity = panelCardOpacity()](Flex& card) {
-          applySectionCardStyle(card, scale, opacity, /*showBorder=*/false);
-          card.setAlign(FlexAlign::Center);
-          card.setJustify(FlexJustify::Center);
-          card.setRadius(20.0f * scale);
-        },
-    });
-
-    auto optionBtn = ui::button({
-        .out = &m_playerMenuButton,
-        .glyph = "more-vertical",
-        .glyphSize = Style::fontSizeBody * scale,
-        .enabled = false,
-        .variant = ButtonVariant::Ghost,
-        .minWidth = Style::controlHeightSm * scale,
-        .minHeight = Style::controlHeightSm * scale,
-        .padding = Style::spaceXs * scale,
-        .onClick = [this]() {
-          if (m_playerBusNames.empty()) {
-            return;
-          }
-          if (m_playerMenuPopup != nullptr && m_playerMenuPopup->isOpen()) {
-            m_playerMenuPopup->close();
-            PanelManager::instance().clearActivePopup();
-          } else {
-            openPlayerMenu();
-          }
-        },
-    });
-    if (referenceLayout) {
-      auto goodVibesHeader = ui::row({
-          .align = FlexAlign::Center,
-          .gap = Style::spaceSm * scale,
-          .fillWidth = true,
-      });
-      goodVibesHeader->addChild(ui::glyph({
-          .glyph = "sparkles",
-          .glyphSize = Style::fontSizeTitle * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
-      }));
-      goodVibesHeader->addChild(ui::label({
-          .text = i18n::tr("control-center.media.good-vibes"),
-          .fontSize = Style::fontSizeTitle * scale,
-          .fontWeight = FontWeight::Bold,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
-          .flexGrow = 1.0f,
-      }));
-      goodVibesHeader->addChild(std::move(optionBtn));
-      lyricsCard->addChild(std::move(goodVibesHeader));
-    } else {
-      optionBtn->setParticipatesInLayout(false);
-      lyricsCard->addChild(std::move(optionBtn));
-    }
-
-    if (!referenceLayout) {
-      auto lyricsHeader = ui::row(
-          {.align = FlexAlign::Center,
-           .justify = FlexJustify::SpaceBetween,
-           .gap = Style::spaceSm * scale,
-           .minHeight = Style::controlHeightSm * scale},
-          ui::label({
-              .text = i18n::tr("control-center.media.sync-lyrics"),
-              .fontSize = Style::fontSizeHeader * scale,
-              .fontWeight = FontWeight::Bold,
-              .color = colorSpecFromRole(ColorRole::OnSurface),
-          }),
-          ui::glyph({
-              .glyph = "more-vertical",
-              .glyphSize = Style::fontSizeBody * scale,
-              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-          })
-      );
-      lyricsCard->addChild(std::move(lyricsHeader));
-      lyricsCard->addChild(ui::box({
-          .fill = colorSpecFromRole(ColorRole::Outline, 0.15f),
-          .height = 1.0f * scale,
-      }));
-    }
-
-    auto lyricsCenterBox = ui::column({
-        .align = FlexAlign::Center,
-        .justify = FlexJustify::Center,
-        .gap = Style::spaceSm * scale,
-        .fillWidth = true,
-        .flexGrow = referenceLayout ? 0.0f : 1.0f,
-    });
-
-    auto lyricsEmptyState = ui::column({
-        .out = &m_lyricsEmptyState,
-        .align = FlexAlign::Center,
-        .justify = FlexJustify::Center,
-        .gap = Style::spaceSm * scale,
-        .fillWidth = true,
-        .flexGrow = 1.0f,
-    });
-    lyricsEmptyState->addChild(
-        ui::row(
-            {.align = FlexAlign::Center,
-             .justify = FlexJustify::Center,
-             .minHeight = (referenceLayout ? kReferenceBongoSlotHeight : 170.0f) * scale,
-             .fillWidth = true},
-            ui::image({
-                .out = &m_bongoCat,
-                .fit = ImageFit::Contain,
-            })
-        )
-    );
-
-    lyricsCenterBox->addChild(std::move(lyricsEmptyState));
-    if (!referenceLayout) {
-      auto lyricsLines = ui::column({
-          .out = &m_lyricsLines,
-          .align = FlexAlign::Center,
-          .justify = FlexJustify::Center,
-          .gap = Style::spaceSm * scale,
-          .fillWidth = true,
-          .flexGrow = 1.0f,
-          .visible = false,
-          .participatesInLayout = false,
-      });
-      lyricsLines->addChild(ui::label({
-          .out = &m_lyricsPrevious,
-          .text = "",
-          .fontSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant, 0.65f),
-          .visible = false,
-      }));
-      lyricsLines->addChild(ui::label({
-          .out = &m_lyricsCurrent,
-          .text = "",
-          .fontSize = Style::fontSizeTitle * scale,
-          .fontWeight = FontWeight::Bold,
-          .color = colorSpecFromRole(ColorRole::Primary),
-          .visible = false,
-      }));
-      lyricsLines->addChild(ui::label({
-          .out = &m_lyricsNext,
-          .text = "",
-          .fontSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-          .visible = false,
-      }));
-      lyricsCenterBox->addChild(std::move(lyricsLines));
-    }
-    lyricsCard->addChild(std::move(lyricsCenterBox));
-    if (referenceLayout) {
-      lyricsCard->addChild(ui::label({
-          .text = i18n::tr("control-center.media.have-a-nice-day"),
-          .fontSize = Style::fontSizeBody * scale,
-          .fontWeight = FontWeight::Medium,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
-          .maxLines = 1,
-          .textAlign = TextAlign::Center,
-      }));
-    }
-    visualizerColumn->addChild(std::move(lyricsCard));
-
-  }
-
   auto visualizerCard = ui::column({
       .align = FlexAlign::Stretch,
-      .gap = Style::spaceXs * scale,
-      .minHeight = 108.0f * scale,
+      .gap = 0.0f,
+      .minHeight = (referenceLayout ? 65.0f : 80.0f) * scale,
       .fillWidth = true,
-      .flexGrow = 1.0f,
+      .flexGrow = 0.0f,
       .configure = [scale, opacity = panelCardOpacity()](Flex& card) {
         applySectionCardStyle(card, scale, opacity, /*showBorder=*/false);
-        card.setRadius(20.0f * scale);
-        card.setPadding(Style::spaceSm * scale, Style::spaceMd * scale);
+        card.setRadius(16.0f * scale);
+        card.setPadding(Style::spaceSm * scale, Style::spaceSm * scale);
       },
   });
-
-  auto visualizerHeader = ui::row(
-      {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
-      ui::glyph({
-          .glyph = "wave-sine",
-          .glyphSize = Style::fontSizeBody * scale,
-          .color = colorSpecFromRole(ColorRole::Primary),
-      }),
-      ui::label({
-          .text = i18n::tr("control-center.media.audio-output"),
-          .fontSize = Style::fontSizeBody * scale,
-          .fontWeight = FontWeight::Bold,
-          .color = colorSpecFromRole(ColorRole::OnSurface),
-          .flexGrow = 1.0f,
-      })
-  );
-  visualizerCard->addChild(std::move(visualizerHeader));
 
   auto visualizerBody = ui::row({
       .out = &m_visualizerBody,
       .align = FlexAlign::End,
       .justify = FlexJustify::Center,
-      .minHeight = 75.0f * scale,
+      .minHeight = 65.0f * scale,
       .fillWidth = true,
       .flexGrow = 1.0f,
   });
@@ -759,24 +619,8 @@ std::unique_ptr<Flex> MediaTab::create() {
   visualizerBody->addChild(std::move(visualizerSpectrum));
   visualizerCard->addChild(std::move(visualizerBody));
 
-  visualizerCard->addChild(ui::row(
-      {.align = FlexAlign::Center, .gap = Style::spaceSm * scale, .fillWidth = true},
-      ui::glyph({
-          .glyph = "volume",
-          .glyphSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-      }),
-      ui::label({
-          .out = &m_visualizerStatus,
-          .text = i18n::tr("control-center.media.waiting-for-audio"),
-          .fontSize = Style::fontSizeCaption * scale,
-          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-      })
-  ));
-
-  visualizerColumn->addChild(std::move(visualizerCard));
   tab->addChild(std::move(mediaColumn));
-  tab->addChild(std::move(visualizerColumn));
+  tab->addChild(std::move(visualizerCard));
 
   if (m_wayland != nullptr && m_renderContext != nullptr) {
     m_playerMenuPopup = std::make_unique<ContextMenuPopup>(*m_wayland, *m_renderContext);
@@ -818,25 +662,22 @@ void MediaTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight
     m_mediaColumn->setGap(0.0f);
     m_nowCard->setPadding(cardPadding, cardPadding);
     m_nowCard->setGap(kReferenceCardGap * referenceScale);
-    m_visualizerColumn->setGap(kReferenceCardGap * referenceScale);
-    m_mediaStack->setGap(6.0f * referenceScale);
-    if (m_artworkRow != nullptr) {
-      const float artSide = kReferenceArtworkSize * referenceScale;
-      m_artworkRow->setMinHeight(artSide);
-      m_artworkRow->setMaxHeight(artSide);
+    if (m_visualizerColumn != nullptr) {
+      m_visualizerColumn->setGap(kReferenceCardGap * referenceScale);
     }
+    m_mediaStack->setGap(6.0f * referenceScale);
     if (m_visualizerBody != nullptr) {
-      m_visualizerBody->setMinHeight(kReferenceVisualizerHeight * referenceScale);
+      m_visualizerBody->setMinHeight(65.0f * referenceScale);
     }
     if (m_progressSlider != nullptr) {
-      m_progressSlider->setControlHeight(28.0f * referenceScale);
-      m_progressSlider->setTrackHeight(4.0f * referenceScale);
-      m_progressSlider->setThumbSize(12.0f * referenceScale);
+      m_progressSlider->setControlHeight(30.0f * referenceScale);
+      m_progressSlider->setTrackHeight(6.0f * referenceScale);
+      m_progressSlider->setThumbSize(18.0f * referenceScale);
     }
     if (m_volumeSlider != nullptr) {
-      m_volumeSlider->setControlHeight(24.0f * referenceScale);
-      m_volumeSlider->setTrackHeight(4.0f * referenceScale);
-      m_volumeSlider->setThumbSize(10.0f * referenceScale);
+      m_volumeSlider->setControlHeight(32.0f * referenceScale);
+      m_volumeSlider->setTrackHeight(24.0f * referenceScale);
+      m_volumeSlider->setThumbSize(36.0f * referenceScale);
     }
   }
   m_rootLayout->setSize(contentWidth, std::max(0.0f, bodyHeight));
@@ -851,87 +692,34 @@ void MediaTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight
   const float mediaStackHeight = m_mediaStack->height();
   m_mediaStack->setSize(mediaWidth, mediaStackHeight);
 
-  if (m_artworkRow != nullptr) {
-    // Horizontal Flex with justify Center under-reports its width when the child is narrower than
-    // the stretched cross-axis; min width keeps the row full-bleed so art centers.
-    m_artworkRow->setMinWidth(mediaWidth);
-  }
-
-  if (m_artwork != nullptr) {
-    const float sideButtonSize = referenceLayout ? 32.0f * referenceScale : kMediaControlsHeight * scale;
-    const float playPauseButtonSize = referenceLayout ? 56.0f * referenceScale : kMediaPlayPauseHeight * scale;
-    const float sideGlyphSize = referenceLayout ? 20.0f * referenceScale : Style::fontSizeTitle * scale;
-    const float playPauseGlyphSize = referenceLayout
-        ? 26.0f * referenceScale
-        : (Style::fontSizeTitle + Style::spaceXs) * scale;
-
-    for (auto* button : {m_repeatButton, m_prevButton, m_nextButton, m_shuffleButton}) {
-      if (button != nullptr) {
-        button->setMinWidth(sideButtonSize);
-        button->setMinHeight(sideButtonSize);
-        button->setGlyphSize(sideGlyphSize);
-        button->setPadding(referenceLayout ? 4.0f * referenceScale : Style::spaceSm * scale,
-                           referenceLayout ? 4.0f * referenceScale : Style::spaceSm * scale);
-        button->setRadius(Style::scaledRadiusLg(scale));
-      }
-    }
-    if (m_playPauseButton != nullptr) {
-      m_playPauseButton->setMinWidth(playPauseButtonSize);
-      m_playPauseButton->setMinHeight(playPauseButtonSize);
-      m_playPauseButton->setGlyphSize(playPauseGlyphSize);
-      m_playPauseButton->setPadding(referenceLayout ? 10.0f * referenceScale : Style::spaceSm * scale,
-                                    referenceLayout ? 10.0f * referenceScale : Style::spaceSm * scale);
-      m_playPauseButton->setRadius(playPauseButtonSize * 0.5f);
-    }
-  }
-
+  const float textMaxWidth = std::max(1.0f, mediaWidth - (100.0f * scale + Style::spaceMd * scale));
   if (m_trackTitle != nullptr) {
-    m_trackTitle->setMaxWidth(mediaWidth);
+    m_trackTitle->setMaxWidth(textMaxWidth);
   }
   if (m_trackArtist != nullptr) {
-    m_trackArtist->setMaxWidth(mediaWidth);
+    m_trackArtist->setMaxWidth(textMaxWidth);
   }
   if (m_trackAlbum != nullptr) {
-    m_trackAlbum->setMaxWidth(mediaWidth);
-  }
-  if (m_progressSlider != nullptr) {
-    m_progressSlider->setSize(mediaWidth, 0.0f);
+    m_trackAlbum->setMaxWidth(textMaxWidth);
   }
 
   m_mediaStack->layout(renderer);
 
   if (m_artwork != nullptr && m_artworkRow != nullptr) {
-    const float artWidth =
-        std::max(1.0f, m_artworkRow->width() - (m_artworkRow->paddingLeft() + m_artworkRow->paddingRight()));
-    const float artHeight = referenceLayout
-        ? kReferenceArtworkSize * referenceScale
-        : std::max(
-              kMediaArtworkMinHeight * scale,
-              m_artworkRow->height() - (m_artworkRow->paddingTop() + m_artworkRow->paddingBottom())
-          );
-    // Media art is always presented as a square (album-art convention).
-    const float side = std::min(artWidth, artHeight);
+    const float currentScale = referenceLayout ? referenceScale : scale;
+    const float side = 100.0f * currentScale;
     if (m_artContainer != nullptr) {
       m_artContainer->setSize(side, side);
-      m_artContainer->setRadius(22.0f * scale);
+      m_artContainer->setRadius(16.0f * currentScale);
     }
     if (m_artwork != nullptr) {
       m_artwork->setSize(side, side);
-      m_artwork->setRadius(22.0f * scale);
+      m_artwork->setRadius(22.0f * currentScale);
       m_artwork->setVisible(m_artwork->hasImage());
     }
     if (m_artFallbackGlyph != nullptr) {
+      m_artFallbackGlyph->setGlyphSize(std::max(32.0f * currentScale, side * 0.35f));
       m_artFallbackGlyph->setVisible(m_artwork == nullptr || !m_artwork->hasImage());
-    }
-    if (!referenceLayout && m_playerMenuButton != nullptr && m_lyricsCard != nullptr) {
-      const float btnSize = referenceLayout ? 26.0f * referenceScale : kMediaControlsHeight * scale;
-      const float offsetX = 12.0f * (referenceLayout ? referenceScale : scale);
-      const float offsetY = 10.0f * (referenceLayout ? referenceScale : scale);
-      m_playerMenuButton->setSize(btnSize, btnSize);
-      m_playerMenuButton->setPosition(
-          std::max(0.0f, m_lyricsCard->width() - btnSize - offsetX),
-          offsetY
-      );
     }
     m_mediaStack->layout(renderer);
   }

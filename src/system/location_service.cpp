@@ -33,10 +33,20 @@ std::optional<ResolvedLocation> LocationService::resolvedLocation() const noexce
   if (!coordinatesValid()) {
     return std::nullopt;
   }
+
+  // Older settings files may explicitly contain an empty address while omitting
+  // coordinates. Keep those profiles aligned with the new default location label.
+  const LocationConfig defaults;
+  const bool usesDefaultCoordinates = m_config.latitude == defaults.latitude
+      && m_config.longitude == defaults.longitude;
+  const std::string name = m_config.address.empty() && usesDefaultCoordinates
+      ? defaults.address
+      : m_config.address;
+
   return ResolvedLocation{
       .latitude = *m_config.latitude,
       .longitude = *m_config.longitude,
-      .name = m_config.address,
+      .name = name,
       .sourceLabel = "manual",
   };
 }

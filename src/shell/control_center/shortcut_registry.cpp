@@ -63,7 +63,7 @@ namespace {
       if (m_svc != nullptr) {
         const NetworkState& state = m_svc->state();
         if (state.kind == NetworkConnectivity::Wireless && state.connected && !state.ssid.empty()) {
-          return state.ssid;
+          return std::format("{}\n{}", defaultLabel(), state.ssid);
         }
       }
       return defaultLabel();

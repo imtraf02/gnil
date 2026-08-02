@@ -16,6 +16,7 @@
 #include <cmath>
 #include <linux/input-event-codes.h>
 #include <memory>
+#include <utility>
 
 namespace {
 
@@ -327,6 +328,12 @@ void Slider::setControlHeight(float height) {
 }
 
 void Slider::setWheelAdjustEnabled(bool enabled) { m_wheelAdjustEnabled = enabled; }
+
+void Slider::setTooltip(std::string text) {
+  if (m_inputArea != nullptr) {
+    m_inputArea->setTooltip(std::move(text));
+  }
+}
 
 void Slider::setOnValueChanged(std::function<void(double)> callback) { m_onValueChanged = std::move(callback); }
 

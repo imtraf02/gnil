@@ -55,10 +55,10 @@ private:
   };
 
   static constexpr std::array<PageMeta, kPageCount> kPages{{
-      {Page::Dashboard, "dashboard", "Dashboard", "dashboard", 1360.0f, 780.0f},
-      {Page::Media, "media", "Media", "disc-filled", 1000.0f, 520.0f},
-      {Page::Performance, "performance", "Performance", "activity-heartbeat", 1000.0f, 650.0f},
-      {Page::Weather, "weather", "Weather", "weather-cloud-sun", 840.0f, 500.0f},
+      {Page::Dashboard, "dashboard", "Dashboard", "dashboard", 1120.0f, 600.0f},
+      {Page::Media, "media", "Media", "disc-filled", 860.0f, 440.0f},
+      {Page::Performance, "performance", "Performance", "activity-heartbeat", 920.0f, 560.0f},
+      {Page::Weather, "weather", "Weather", "weather-cloud-sun", 760.0f, 440.0f},
   }};
 
   void onPanelBordersChanged(bool enabled) override;

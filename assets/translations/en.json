@@ -220,8 +220,17 @@
       "no-displays": "No monitors available",
       "unknown-resolution": "Unknown resolution"
     },
+    "header": {
+      "session": "Session",
+      "settings": "Settings"
+    },
     "home": {
       "avatar-error-title": "Avatar not updated",
+      "anniversary": {
+        "empty": "Add a date to show the countdown.",
+        "title": "Anniversary"
+      },
+      "configure-now": "Configure now",
       "media": {
         "idle": "Idle",
         "no-active-player": "No active player",
@@ -3744,7 +3753,10 @@
   "dashboard": {
     "home": {
       "audio": {
+        "brightness": "Brightness",
+        "microphone-value": "Microphone level",
         "title": "Audio Control",
+        "volume": "Volume",
         "microphone": "Microphone",
         "mute-all": "Mute all",
         "no-output": "No output device",
@@ -3755,9 +3767,24 @@
       },
       "media": {
         "now-playing": "Now Playing",
-        "open": "Open Media"
+        "open": "Open Media",
+        "next": "Next track",
+        "pause": "Pause",
+        "play": "Play",
+        "previous": "Previous track",
+        "seek": "Seek position",
+        "shuffle": "Shuffle"
+      },
+      "metrics": {
+        "battery": "Battery",
+        "cpu": "CPU usage",
+        "memory": "Memory usage",
+        "storage": "Storage usage",
+        "title": "System status",
+        "unavailable": "Unavailable"
       },
       "shortcuts": {
+        "title": "Quick controls",
         "vpn": "VPN"
       },
       "storage": "Storage",

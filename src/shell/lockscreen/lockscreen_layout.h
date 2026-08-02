@@ -22,8 +22,13 @@ namespace lockscreen_layout {
   struct Layout {
     Mode mode = Mode::Compact;
     float scale = 1.0f;
+    float density = 1.0f;
+    float outerMargin = 0.0f;
     float gap = 0.0f;
+    float cardPadding = 0.0f;
+    float contentGap = 0.0f;
     float radius = 0.0f;
+    bool showHero = true;
     Rect canvas;
     Rect leftColumn;
     Rect centerColumn;

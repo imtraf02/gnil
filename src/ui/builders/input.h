@@ -82,6 +82,7 @@ namespace ui {
     std::optional<float> trackHeight = std::nullopt;
     std::optional<float> thumbSize = std::nullopt;
     std::optional<float> controlHeight = std::nullopt;
+    std::optional<std::string> tooltip = std::nullopt;
     std::optional<bool> wheelAdjustEnabled = std::nullopt;
     std::optional<float> width = std::nullopt;
     std::optional<float> height = std::nullopt;

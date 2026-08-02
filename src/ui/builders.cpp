@@ -613,6 +613,9 @@ namespace ui {
     if (props.controlHeight.has_value()) {
       control->setControlHeight(*props.controlHeight);
     }
+    if (props.tooltip.has_value()) {
+      control->setTooltip(std::move(*props.tooltip));
+    }
     if (props.wheelAdjustEnabled.has_value()) {
       control->setWheelAdjustEnabled(*props.wheelAdjustEnabled);
     }

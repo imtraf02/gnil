@@ -67,10 +67,13 @@ temperature_day = 6500
 temperature_night = 4000
 
 [settings.location]
-address = ""
+# Ho Chi Minh City, Vietnam — IANA timezone: Asia/Ho_Chi_Minh (UTC+07:00)
+address = "Hồ Chí Minh, Việt Nam"
 custom_schedule = false
 sunset = ""
 sunrise = ""
+latitude = 10.8231
+longitude = 106.6297
 
 [settings.wallpaper]
 enabled = true

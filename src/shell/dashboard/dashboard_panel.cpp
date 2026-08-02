@@ -104,7 +104,7 @@ void DashboardPanel::create() {
   auto root = ui::column({
       .out = &m_rootLayout,
       .align = FlexAlign::Stretch,
-      .gap = Style::spaceSm * scale,
+      .gap = Style::spaceXs * scale,
       .padding = 0.0f,
       .clipChildren = true,
   });
@@ -112,7 +112,7 @@ void DashboardPanel::create() {
   auto tabs = ui::segmented({
       .out = &m_tabStrip,
       .scale = scale,
-      .compact = false,
+      .compact = true,
       .surfaceOpacity = 0.0f,
       .equalSegmentWidths = true,
       .flexGrow = 1.0f,
@@ -154,19 +154,20 @@ void DashboardPanel::create() {
   }
   auto topBar = ui::row({
       .align = FlexAlign::Center,
-      .gap = Style::spaceSm * scale,
+      .gap = Style::spaceXs * scale,
       .fillWidth = true,
   });
   topBar->addChild(std::move(tabs));
   topBar->addChild(ui::button({
-      .text = "Settings",
       .glyph = "settings",
       .fontSize = Style::fontSizeCaption * scale,
       .glyphSize = Style::fontSizeCaption * scale,
-      .controlHeight = Style::controlHeight * scale,
+      .controlHeight = Style::controlHeightSm * scale,
       .variant = ButtonVariant::Ghost,
       .tooltip = "Settings",
-      .paddingH = Style::spaceSm * scale,
+      .minWidth = Style::controlHeightSm * scale,
+      .minHeight = Style::controlHeightSm * scale,
+      .padding = Style::spaceXs * scale,
       .onClick = []() { PanelManager::instance().openPanel("settings"); },
   }));
   root->addChild(std::move(topBar));
